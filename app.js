@@ -152,7 +152,17 @@ async function api(path, options = {}) {
     },
     ...options
   });
-  if (!response.ok) throw new Error(await response.text());
+  if (!response.ok) {
+    const text = await response.text();
+    let message = text;
+    try {
+      const payload = JSON.parse(text);
+      message = payload.error || payload.message || text;
+    } catch {
+      message = text;
+    }
+    throw new Error(message || 'Request failed');
+  }
   return response.json();
 }
 
@@ -1092,8 +1102,8 @@ $('#addUserBtn').onclick = async () => {
     $('#newUserRole').value = 'Employee';
     renderNewUserLocationChecks();
     toast(email ? 'Invite sent' : 'User added');
-  } catch {
-    toast('User did not save — restart the backend server');
+  } catch (error) {
+    toast(`User did not save: ${error.message}`);
   }
 };
 
@@ -1154,8 +1164,8 @@ async function saveExistingUser(id) {
       locationIds: [document.querySelector(`[data-user-location="${id}"]`).value]
     });
     toast('User saved');
-  } catch {
-    toast('User did not save — restart the backend server');
+  } catch (error) {
+    toast(`User did not save: ${error.message}`);
   }
 }
 

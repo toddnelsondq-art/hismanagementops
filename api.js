@@ -171,6 +171,13 @@ async function saveLocation(location) {
 async function sendInvite(payload) {
   const locationIds = (payload.locationIds || [payload.locationId]).filter(Boolean);
   const locationId = payload.locationId || locationIds[0] || DEFAULT_LOCATION_ID;
+  await saveUser({
+    email: payload.email,
+    name: payload.name,
+    role: payload.role || 'Employee',
+    locationId,
+    locationIds
+  });
   const inviteRows = await supabase('/rest/v1/invites', {
     method: 'POST',
     headers: { Prefer: 'return=representation' },
@@ -184,27 +191,25 @@ async function sendInvite(payload) {
     })
   });
   const redirectTo = `${SITE_URL}/?invite=${inviteRows[0].id}`;
-  await supabase('/auth/v1/invite', {
-    method: 'POST',
-    body: JSON.stringify({
-      email: payload.email,
-      data: {
-        invite_id: inviteRows[0].id,
-        name: payload.name,
-        role: payload.role || 'Employee',
-        location_id: locationId,
-        location_ids: locationIds
-      },
-      redirect_to: redirectTo
-    })
-  });
-  await saveUser({
-    email: payload.email,
-    name: payload.name,
-    role: payload.role || 'Employee',
-    locationId,
-    locationIds
-  });
+  try {
+    await supabase('/auth/v1/invite', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: payload.email,
+        data: {
+          invite_id: inviteRows[0].id,
+          name: payload.name,
+          role: payload.role || 'Employee',
+          location_id: locationId,
+          location_ids: locationIds
+        },
+        redirect_to: redirectTo
+      })
+    });
+  } catch (error) {
+    error.message = `User profile saved, but invite email failed: ${error.message}`;
+    throw error;
+  }
   return inviteRows[0];
 }
 
