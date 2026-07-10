@@ -254,7 +254,10 @@ async function loadState() {
     temperatureItems = state.temperatureItems || defaultTemperatureItems;
     users = state.users?.length ? state.users : users;
     locations = state.locations?.length ? state.locations : locations;
-    if (window.dailyOpsAuth?.profile?.id) currentUserId = window.dailyOpsAuth.profile.id;
+    if (window.dailyOpsAuth?.profile?.id) {
+      currentUserId = window.dailyOpsAuth.profile.id;
+      localStorage.setItem('dailyops-current-user', currentUserId);
+    }
     if (!users.some(user => user.id === currentUserId)) currentUserId = users[0].id;
     if (!locations.some(location => location.id === currentLocationId)) currentLocationId = locations[0].id;
     apiOnline = true;
@@ -401,7 +404,14 @@ function render() {
 
   $('#greeting').textContent = `Good morning, ${activeUser.name.split(' ')[0]}`;
   $('#homeGreeting').textContent = `Welcome, ${activeUser.name.split(' ')[0]}`;
-  $('#currentUser').innerHTML = users.map(user => `<option value="${user.id}" ${user.id === currentUserId ? 'selected' : ''}>${user.name} — ${user.role}</option>`).join('');
+  if (window.dailyOpsAuth?.enabled && window.dailyOpsAuth.profile) {
+    const profile = window.dailyOpsAuth.profile;
+    $('#currentUser').innerHTML = `<option value="${profile.id}" selected>${escapeHtml(profile.name)} — ${escapeHtml(profile.role)}</option>`;
+    $('#currentUser').disabled = true;
+  } else {
+    $('#currentUser').innerHTML = users.map(user => `<option value="${user.id}" ${user.id === currentUserId ? 'selected' : ''}>${user.name} — ${user.role}</option>`).join('');
+    $('#currentUser').disabled = false;
+  }
   $('#currentLocation').innerHTML = visibleLocations.map(location => `<option value="${location.id}" ${location.id === currentLocationId ? 'selected' : ''}>${location.name}</option>`).join('');
   $('#locationChooser').style.display = aboveStore ? 'block' : 'none';
   if (!canUseHistory(activeUser)) historyScope = 'location';
@@ -867,6 +877,7 @@ $('#newUserRole').onchange = renderNewUserLocationChecks;
 $('#newUserLocation').onchange = renderNewUserLocationChecks;
 
 $('#currentUser').onchange = async event => {
+  if (window.dailyOpsAuth?.enabled) return;
   currentUserId = event.target.value;
   localStorage.setItem('dailyops-current-user', currentUserId);
   const user = currentUser();

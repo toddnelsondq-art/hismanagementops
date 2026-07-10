@@ -277,6 +277,29 @@ function userLocationIds(profile) {
   return Array.isArray(profile?.location_ids) && profile.location_ids.length ? profile.location_ids : [profile?.location_id || DEFAULT_LOCATION_ID];
 }
 
+function appProfile(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    role: row.role,
+    locationId: row.location_id,
+    locationIds: userLocationIds(row)
+  };
+}
+
+function bestProfile(rows) {
+  const rank = {
+    Owner: 5,
+    'Director of Operations': 4,
+    'Area Manager': 3,
+    Manager: 2,
+    Employee: 1
+  };
+  return [...rows].sort((a, b) => (rank[b.role] || 0) - (rank[a.role] || 0))[0];
+}
+
 function isFullAccess(profile) {
   return FULL_ACCESS_ROLES.includes(profile?.role);
 }
@@ -318,9 +341,22 @@ async function acceptInvite(event) {
   const authUser = await currentAuthUser(event);
   if (!authUser?.email) throw Object.assign(new Error('Not signed in'), { statusCode: 401 });
   const email = authUser.email.toLowerCase();
-  const inviteRows = await supabase(`/rest/v1/invites?email=eq.${encodeURIComponent(email)}&accepted_at=is.null&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=*&order=created_at.desc&limit=1`);
   let profileRows = await supabase(`/rest/v1/app_users?email=eq.${encodeURIComponent(email)}&select=*`);
+  let profile = bestProfile(profileRows);
 
+  if (profile) {
+    if (!profile.auth_user_id) {
+      await supabase(`/rest/v1/app_users?id=eq.${encodeURIComponent(profile.id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ auth_user_id: authUser.id, accepted_at: new Date().toISOString() })
+      });
+      profileRows = await supabase(`/rest/v1/app_users?email=eq.${encodeURIComponent(email)}&select=*`);
+      profile = bestProfile(profileRows);
+    }
+    return appProfile(profile);
+  }
+
+  const inviteRows = await supabase(`/rest/v1/invites?email=eq.${encodeURIComponent(email)}&accepted_at=is.null&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=*&order=created_at.desc&limit=1`);
   if (inviteRows[0]) {
     const invite = inviteRows[0];
     await supabase(`/rest/v1/invites?id=eq.${invite.id}`, {
@@ -347,15 +383,11 @@ async function acceptInvite(event) {
       })
     });
     profileRows = await supabase(`/rest/v1/app_users?email=eq.${encodeURIComponent(email)}&select=*`);
-  } else if (profileRows[0] && !profileRows[0].auth_user_id) {
-    await supabase(`/rest/v1/app_users?id=eq.${encodeURIComponent(profileRows[0].id)}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ auth_user_id: authUser.id, accepted_at: new Date().toISOString() })
-    });
+    profile = bestProfile(profileRows);
   }
 
-  if (!profileRows[0]) throw Object.assign(new Error('No invite found for this email'), { statusCode: 403 });
-  return profileRows[0];
+  if (!profile) throw Object.assign(new Error('No invite found for this email'), { statusCode: 403 });
+  return appProfile(profile);
 }
 
 async function readMaintenanceKey(key, fallback = []) {
