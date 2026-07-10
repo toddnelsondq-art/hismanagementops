@@ -142,6 +142,7 @@ async function saveUser(user) {
     headers: { Prefer: 'resolution=merge-duplicates' },
     body: JSON.stringify({
       id,
+      auth_user_id: user.authUserId || undefined,
       email: user.email || null,
       name: user.name,
       role: user.role || 'Employee',
@@ -152,6 +153,39 @@ async function saveUser(user) {
     })
   });
   return readUsers();
+}
+
+async function createAuthUserWithPassword(payload, locationId, locationIds) {
+  if (!payload.email || !payload.temporaryPassword) return null;
+  const response = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
+    method: 'POST',
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      email: payload.email,
+      password: payload.temporaryPassword,
+      email_confirm: true,
+      user_metadata: {
+        name: payload.name,
+        role: payload.role || 'Employee',
+        location_id: locationId,
+        location_ids: locationIds
+      }
+    })
+  });
+  const text = await response.text();
+  const result = text ? JSON.parse(text) : null;
+  if (!response.ok) {
+    const alreadyExists = response.status === 422 && /already|registered|exists/i.test(JSON.stringify(result));
+    if (alreadyExists) return null;
+    const error = new Error(result?.msg || result?.message || text || 'Could not create Supabase login');
+    error.statusCode = response.status;
+    throw error;
+  }
+  return result;
 }
 
 async function saveLocation(location) {
@@ -171,13 +205,25 @@ async function saveLocation(location) {
 async function sendInvite(payload) {
   const locationIds = (payload.locationIds || [payload.locationId]).filter(Boolean);
   const locationId = payload.locationId || locationIds[0] || DEFAULT_LOCATION_ID;
+  const authUser = await createAuthUserWithPassword(payload, locationId, locationIds);
+  const authUserId = authUser?.id || authUser?.user?.id;
   await saveUser({
+    id: payload.email ? safeName(payload.email) : undefined,
+    authUserId,
     email: payload.email,
     name: payload.name,
     role: payload.role || 'Employee',
     locationId,
     locationIds
   });
+  if (payload.temporaryPassword) {
+    return {
+      id: authUser?.id || `password-${Date.now()}`,
+      authUserId,
+      email: payload.email,
+      passwordCreated: true
+    };
+  }
   const inviteRows = await supabase('/rest/v1/invites', {
     method: 'POST',
     headers: { Prefer: 'return=representation' },

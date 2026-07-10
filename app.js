@@ -601,6 +601,7 @@ function applyRoleAccess(user) {
   document.querySelector('[data-view="historyView"]').style.display = showHistory ? '' : 'none';
   document.querySelector('[data-view="manageView"]').style.display = showManage ? '' : 'none';
   $('#roleBtn').style.display = showManage ? '' : 'none';
+  $('#signOutBtn').style.display = window.dailyOpsAuth?.enabled ? '' : 'none';
   if (!showHub && ($('#homeView').classList.contains('active') || $('#maintenanceView').classList.contains('active'))) switchView('todayView');
   if (!showHistory && $('#historyView').classList.contains('active')) switchView('todayView');
   if (!showManage && $('#manageView').classList.contains('active')) switchView('todayView');
@@ -1088,7 +1089,10 @@ $('#savePhotoBtn').onclick = async () => {
 $('#addUserBtn').onclick = async () => {
   const name = $('#newUserName').value.trim();
   const email = $('#newUserEmail').value.trim();
+  const temporaryPassword = $('#newUserPassword').value.trim();
   if (!name) return toast('Enter a user name');
+  if (temporaryPassword && !email) return toast('Enter an email when setting a temporary password');
+  if (temporaryPassword && temporaryPassword.length < 6) return toast('Temporary password must be at least 6 characters');
   const locationId = $('#newUserLocation').value;
   const role = $('#newUserRole').value;
   const selectedLocations = [...document.querySelectorAll('#newUserLocations input:checked')].map(input => input.value);
@@ -1096,12 +1100,13 @@ $('#addUserBtn').onclick = async () => {
   if (!allowedAssignableRoles().includes(role)) return toast('You do not have access to create that role');
   if (!isFullAccess() && locationIds.some(savedLocation => !userLocationIds().includes(savedLocation))) return toast('You can only add users to your locations');
   try {
-    await saveUser({ name, email, role, locationId, locationIds, invitedBy: currentUser().name });
+    await saveUser({ name, email, temporaryPassword, role, locationId, locationIds, invitedBy: currentUser().name });
     $('#newUserName').value = '';
     $('#newUserEmail').value = '';
+    $('#newUserPassword').value = '';
     $('#newUserRole').value = 'Employee';
     renderNewUserLocationChecks();
-    toast(email ? 'Invite sent' : 'User added');
+    toast(temporaryPassword ? 'User added with temporary password' : (email ? 'Invite sent' : 'User added'));
   } catch (error) {
     toast(`User did not save: ${error.message}`);
   }
@@ -1225,6 +1230,7 @@ document.querySelectorAll('nav button').forEach(button => {
 });
 
 $('#roleBtn').onclick = () => $('#manageNav').click();
+$('#signOutBtn').onclick = () => window.dailyOpsSignOut ? window.dailyOpsSignOut() : toast('Sign out is available on the hosted app');
 $('#backToHistoryBtn').onclick = () => switchView('historyView');
 $('#exportAllBtn').onclick = () => downloadReports(history.map(reportKey));
 $('#exportSelectedBtn').onclick = () => downloadReports(selectedHistoryKeys());

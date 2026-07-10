@@ -32,6 +32,14 @@
   border-color:#dce4ee;
 }
 
+.header-actions{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+}
+
 .hub-tile{border-color:#dce4ee}
 .hub-tile:hover{background:#eef3fa}
 .urgent{border-left-color:#e21a2d}

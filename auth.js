@@ -15,9 +15,13 @@
   function blockHostedApp(message) {
     const overlay = makeOverlay(message);
     const input = overlay.querySelector('#authEmail');
+    const password = overlay.querySelector('#authPassword');
     const button = overlay.querySelector('#authSendBtn');
+    const passwordButton = overlay.querySelector('#authPasswordBtn');
     if (input) input.style.display = 'none';
+    if (password) password.style.display = 'none';
     if (button) button.style.display = 'none';
+    if (passwordButton) passwordButton.style.display = 'none';
     return new Promise(() => {});
   }
 
@@ -34,8 +38,12 @@
         <label>Email
           <input id="authEmail" type="email" placeholder="you@example.com" autocomplete="email">
         </label>
-        <button id="authSendBtn">Send sign-in email</button>
-        <p class="hint">Users can only join after they have been invited by an authorized manager.</p>
+        <label>Password
+          <input id="authPassword" type="password" placeholder="Password or temporary password" autocomplete="current-password">
+        </label>
+        <button id="authPasswordBtn">Sign in</button>
+        <button id="authSendBtn" class="ghost" type="button">Email me a sign-in link</button>
+        <p class="hint">Users can only join after they have been created or invited by an authorized manager.</p>
       </div>
     `;
     document.body.append(overlay);
@@ -79,6 +87,14 @@
       const { data } = await client.auth.getSession();
       if (!data.session) {
         const overlay = makeOverlay();
+        overlay.querySelector('#authPasswordBtn').onclick = async () => {
+          const email = overlay.querySelector('#authEmail').value.trim();
+          const password = overlay.querySelector('#authPassword').value;
+          if (!email || !password) return setMessage('Enter your email and password.');
+          const { error } = await client.auth.signInWithPassword({ email, password });
+          if (error) return setMessage(error.message);
+          window.location.reload();
+        };
         overlay.querySelector('#authSendBtn').onclick = async () => {
           const email = overlay.querySelector('#authEmail').value.trim();
           if (!email) return setMessage('Enter the invited email address first.');
@@ -103,6 +119,11 @@
       if (!accepted.ok) {
         const overlay = makeOverlay('This email is signed in, but it does not have an active invite.');
         overlay.querySelector('#authSendBtn').textContent = 'Send another sign-in email';
+        overlay.querySelector('#authPasswordBtn').onclick = async () => {
+          await client.auth.signOut();
+          window.location.reload();
+        };
+        overlay.querySelector('#authPasswordBtn').textContent = 'Sign out and try another account';
         overlay.querySelector('#authSendBtn').onclick = async () => {
           const email = overlay.querySelector('#authEmail').value.trim();
           if (!email) return setMessage('Enter the invited email address first.');
@@ -121,4 +142,10 @@
       return state;
     }
   }
+
+  window.dailyOpsSignOut = async function () {
+    if (state.client) await state.client.auth.signOut();
+    window.localStorage.removeItem('dailyops-current-user');
+    window.location.reload();
+  };
 })();
