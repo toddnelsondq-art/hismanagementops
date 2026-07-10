@@ -1,0 +1,192 @@
+:root{
+  --ink:#082852;
+  --green:#0a2e5c;
+  --mint:#eef3fa;
+  --cream:#f5f7fb;
+  --gold:#e21a2d;
+  --line:#dce4ee;
+  --muted:#647386;
+}
+
+.app-logo{
+  width:48px;
+  height:48px;
+  border-radius:12px;
+  object-fit:cover;
+  box-shadow:0 6px 18px #08285222;
+  background:#fff;
+}
+
+.hero-logo{
+  display:block;
+  width:min(100%,360px);
+  border-radius:24px;
+  margin:0 auto 16px;
+  box-shadow:0 12px 32px #08285222;
+  background:#fff;
+}
+
+.hub-card{
+  text-align:center;
+  background:linear-gradient(180deg,#fff,#f4f7fb);
+  border-color:#dce4ee;
+}
+
+.hub-tile{border-color:#dce4ee}
+.hub-tile:hover{background:#eef3fa}
+.urgent{border-left-color:#e21a2d}
+.urgent-label{color:#c41224}
+.reading-due,.overdue-row span{color:#c41224;background:#ffe9ec}
+textarea{
+  width:100%;
+  min-height:96px;
+  padding:12px;
+  border:1px solid var(--line);
+  border-radius:9px;
+  margin-top:5px;
+  font:inherit;
+  resize:vertical;
+}
+
+.maintenance-metrics{
+  display:grid;
+  grid-template-columns:repeat(5,1fr);
+  gap:10px;
+  margin-bottom:12px;
+}
+
+.metric-card{
+  margin:0;
+  text-align:center;
+  color:var(--ink);
+  background:#fff;
+}
+
+.metric-card b{
+  display:block;
+  color:var(--gold);
+  font-size:24px;
+}
+
+.metric-card span{
+  color:var(--muted);
+  font-size:12px;
+  font-weight:800;
+  text-transform:uppercase;
+}
+
+.metric-card.active,.metric-card:hover{
+  background:#eef3fa;
+  outline:2px solid #dce4ee;
+}
+
+.maintenance-row{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:flex-start;
+}
+
+.maintenance-row.compact{
+  align-items:center;
+}
+
+.row-actions{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+}
+
+.row-actions button{
+  padding:8px 11px;
+}
+
+.maintenance-actions{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:10px;
+  margin:12px 0 18px;
+}
+
+.maintenance-actions button{
+  min-height:52px;
+}
+
+.maint-panel{
+  display:none;
+}
+
+.maint-panel.open{
+  display:block;
+}
+
+.ops-grid{
+  margin-top:16px;
+}
+
+.pill-row{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin:12px 0 16px;
+}
+
+.pill-row button{
+  width:auto;
+  border:1px solid var(--line);
+  background:#fff;
+  color:var(--ink);
+  box-shadow:none;
+}
+
+.pill-row button.active{
+  border-color:var(--brand-blue);
+  background:var(--brand-blue);
+  color:#fff;
+}
+
+#authOverlay{
+  position:fixed;
+  inset:0;
+  z-index:9999;
+  display:grid;
+  place-items:center;
+  padding:20px;
+  background:linear-gradient(180deg,#071d3cdd,#071d3cf2);
+}
+
+.auth-card{
+  width:min(420px,100%);
+  padding:24px;
+  border-radius:24px;
+  background:#fff;
+  box-shadow:0 24px 80px #0005;
+  text-align:left;
+}
+
+.auth-card img{
+  display:block;
+  width:120px;
+  border-radius:20px;
+  margin:0 auto 12px;
+}
+
+.auth-card h2{
+  text-align:center;
+  color:var(--ink);
+}
+
+@media(max-width:480px){
+  .app-logo{width:40px;height:40px}
+  .hero-logo{border-radius:18px}
+}
+
+@media(max-width:700px){
+  .maintenance-metrics{grid-template-columns:repeat(2,1fr)}
+  .maintenance-actions{grid-template-columns:1fr 1fr}
+  .maintenance-row{display:block}
+  .maintenance-row .status{display:inline-block;margin-top:8px}
+  .row-actions{justify-content:flex-start;margin-top:8px}
+}
