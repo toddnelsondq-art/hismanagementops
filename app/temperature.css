@@ -1,0 +1,8 @@
+.temp-group{border-top:1px solid var(--line);padding-top:12px;margin-top:12px}
+.temp-group h4{margin:0 0 5px;font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted)}
+.temp-group .temp-entry{display:grid;grid-template-columns:1fr auto;align-items:center;padding:7px 0;gap:8px;border-top:0;margin-top:0}
+.temp-pick{width:100%;background:#fff;color:var(--ink);text-align:left;border-radius:10px;padding:10px;transition:.15s}
+.temp-pick:hover,.temp-pick:focus{background:var(--mint);outline:0}
+.reading-chips{grid-column:1/-1;display:flex;gap:5px;flex-wrap:wrap}
+.reading-chip{font-size:11px;background:var(--mint);color:var(--green);padding:3px 7px;border-radius:99px}
+.reading-due{font-size:11px;color:#9a6400;background:#fff3d8;padding:3px 7px;border-radius:99px}

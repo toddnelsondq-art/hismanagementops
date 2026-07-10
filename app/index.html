@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>HIS Management Group</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="temperature.css">
+  <link rel="stylesheet" href="his-theme.css">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <img class="app-logo" src="assets/his-management.png" alt="HIS Management Group Inc logo">
+      <div>
+        <span class="eyebrow">HIS MANAGEMENT GROUP INC</span>
+        <h1>Operations Hub</h1>
+      </div>
+    </div>
+    <button id="roleBtn" class="ghost">Manager view</button>
+  </header>
+
+  <main>
+    <section id="homeView" class="view active">
+      <div class="date">
+        <div>
+          <p>OPERATIONS PLATFORM</p>
+          <h2 id="homeGreeting">Welcome</h2>
+        </div>
+      </div>
+
+      <article class="card hub-card">
+        <div>
+          <img class="hero-logo" src="assets/his-management.png" alt="HIS Management Group Inc logo">
+          <h3>HIS Management Group Inc</h3>
+          <p class="hint">Select the section you want to work in. More tools can be added here as the platform grows.</p>
+        </div>
+      </article>
+
+      <div class="hub-grid">
+        <button class="hub-tile" data-section-view="todayView">
+          <span class="icon">✓</span>
+          <div>
+            <b>Daily Task Lists</b>
+            <p>Checklists, temperatures, required photos, reports, and missed-list tracking.</p>
+          </div>
+        </button>
+        <button class="hub-tile" data-section-view="maintenanceView">
+          <span class="icon">🔧</span>
+          <div>
+            <b>Maintenance Tasks</b>
+            <p>Coming next: repair requests, assigned maintenance work, status tracking, and location follow-up.</p>
+          </div>
+        </button>
+      </div>
+    </section>
+
+    <section id="maintenanceView" class="view">
+      <div class="date">
+        <div>
+          <p>MAINTENANCE</p>
+          <h2>Maintenance task app</h2>
+        </div>
+      </div>
+      <div class="report-actions">
+        <button data-section-view="homeView" class="ghost">Back to main page</button>
+      </div>
+
+      <article class="card form-card">
+        <label>Maintenance location
+          <select id="maintenanceLocation"></select>
+        </label>
+        <p class="hint">Built from the maintenance tracking spreadsheet: work orders, equipment, PM schedule, vendors, locations, and dashboard lists.</p>
+      </article>
+
+      <div class="maintenance-metrics" id="maintenanceMetrics"></div>
+
+      <article class="card form-card">
+        <h3>Create work order</h3>
+        <label>Category
+          <select id="woCategory"></select>
+        </label>
+        <label>Equipment
+          <select id="woEquipment"></select>
+        </label>
+        <p class="hint">If the equipment is not listed, add it below first, then create the work order.</p>
+        <label>Priority
+          <select id="woPriority"></select>
+        </label>
+        <label>Vendor
+          <select id="woVendor"></select>
+        </label>
+        <label>Issue description
+          <textarea id="woIssue" placeholder="Describe the issue, symptoms, and anything already checked."></textarea>
+        </label>
+        <label>Target date
+          <input id="woTargetDate" type="date">
+        </label>
+        <label>Attach photo
+          <input id="woPhoto" type="file" accept="image/*" capture="environment">
+        </label>
+        <label>Service manual / document
+          <input id="woManual" type="file" accept="application/pdf,image/*">
+        </label>
+        <button id="createWorkOrderBtn">Create work order</button>
+      </article>
+
+      <div class="maintenance-actions">
+        <button data-maint-section="equipmentForm">Add equipment</button>
+        <button data-maint-section="pmForm" class="ghost">Add PM task</button>
+        <button data-maint-section="equipmentDirectory" class="ghost">View equipment</button>
+        <button data-maint-section="vendorDirectory" class="ghost">Preferred vendors</button>
+      </div>
+
+      <article class="card form-card maint-panel" id="equipmentForm">
+        <div class="modal-head"><h3>Add equipment</h3><button class="x" data-maint-close type="button">×</button></div>
+        <label>Equipment name
+          <input id="eqName" placeholder="e.g. Fryer 2">
+        </label>
+        <label>Equipment type
+          <select id="eqType"></select>
+        </label>
+        <label>Manufacturer
+          <input id="eqManufacturer" placeholder="e.g. Frymaster">
+        </label>
+        <label>Model
+          <input id="eqModel">
+        </label>
+        <label>Serial number
+          <input id="eqSerial">
+        </label>
+        <label>Service manual / document
+          <input id="eqManual" type="file" accept="application/pdf,image/*">
+        </label>
+        <button id="addEquipmentBtn">Add equipment</button>
+      </article>
+
+      <article class="card form-card maint-panel" id="pmForm">
+        <div class="modal-head"><h3>Add PM task</h3><button class="x" data-maint-close type="button">×</button></div>
+        <label>Equipment
+          <select id="pmEquipment"></select>
+        </label>
+        <label>Task
+          <input id="pmTask" placeholder="e.g. Clean condenser coil">
+        </label>
+        <label>Frequency
+          <select id="pmFrequency"></select>
+        </label>
+        <label>Next due
+          <input id="pmNextDue" type="date">
+        </label>
+        <label>Assigned to
+          <input id="pmAssignedTo" placeholder="e.g. Store Manager">
+        </label>
+        <label>Instructions / Checklist
+          <textarea id="pmInstructions"></textarea>
+        </label>
+        <label>Attach photo
+          <input id="pmPhoto" type="file" accept="image/*" capture="environment">
+        </label>
+        <label>Service manual / document
+          <input id="pmManual" type="file" accept="application/pdf,image/*">
+        </label>
+        <button id="addPmBtn">Add PM task</button>
+      </article>
+
+      <div class="section-title"><h3>Open work orders</h3><span id="woCount"></span></div>
+      <div id="workOrderList"></div>
+
+      <div class="section-title"><h3>PM due / overdue</h3><span id="pmCount"></span></div>
+      <div id="pmList"></div>
+
+      <article class="maint-panel" id="equipmentDirectory">
+        <div class="section-title"><h3>Equipment</h3><span id="equipmentCount"></span></div>
+        <div id="equipmentList"></div>
+      </article>
+
+      <article class="maint-panel" id="vendorDirectory">
+        <div class="section-title"><h3>Preferred vendors</h3><span id="vendorCount"></span></div>
+        <div id="vendorList"></div>
+      </article>
+    </section>
+
+    <section id="todayView" class="view">
+      <div class="date">
+        <div>
+          <p id="todayLabel"></p>
+          <h2 id="greeting">Good morning</h2>
+        </div>
+        <span class="status" id="progressBadge">0 of 5 done</span>
+      </div>
+
+      <article class="card form-card">
+        <label>Who is using this device?
+          <select id="currentUser"></select>
+        </label>
+        <label id="locationChooser">Location
+          <select id="currentLocation"></select>
+        </label>
+        <p class="hint">This tags new temperature readings, photos, and completions with the selected person.</p>
+      </article>
+
+      <div class="progress"><i id="progressBar"></i></div>
+
+      <article class="card temp-card">
+        <div>
+          <span class="icon">◒</span>
+          <div>
+            <h3>Temperature checks</h3>
+            <p>Two readings required for every listed item</p>
+          </div>
+        </div>
+        <button id="addTempBtn">+ Log temp</button>
+        <div id="tempList" class="temp-list"></div>
+      </article>
+
+      <div class="section-title">
+        <h3>Opening checklist</h3>
+        <span id="taskCount"></span>
+      </div>
+      <div id="taskList"></div>
+      <button id="finishBtn" class="finish" disabled>Complete daily checklist</button>
+    </section>
+
+    <section id="historyView" class="view">
+      <div class="date">
+        <div>
+          <p>RECORDS</p>
+          <h2>Checklist history</h2>
+        </div>
+      </div>
+      <article class="card export-card">
+        <div>
+          <h3>Export reports</h3>
+          <p class="hint">Select one or more completed days, then save them as a report file you can open on a PC.</p>
+        </div>
+        <div class="export-actions">
+          <select id="historyScope">
+            <option value="location">This location</option>
+            <option value="all">All locations</option>
+          </select>
+          <button id="exportSelectedBtn">Export selected</button>
+          <button id="exportAllBtn" class="ghost">Export all</button>
+        </div>
+      </article>
+      <div id="historyList"></div>
+    </section>
+
+    <section id="reportView" class="view">
+      <div class="date">
+        <div>
+          <p>DAILY REPORT</p>
+          <h2 id="reportTitle">Completed checklist</h2>
+        </div>
+      </div>
+      <div class="report-actions">
+        <button id="backToHistoryBtn" class="ghost">Back to history</button>
+        <button id="exportReportBtn">Export this report</button>
+      </div>
+      <div id="reportDetail"></div>
+    </section>
+
+    <section id="manageView" class="view">
+      <div class="date">
+        <div>
+          <p>MANAGER TOOLS</p>
+          <h2>Daily assignments</h2>
+        </div>
+      </div>
+
+      <article class="card form-card">
+        <h3>Add a task for today</h3>
+        <label>Task description
+          <input id="newTask" placeholder="e.g. Deep clean ice machine">
+        </label>
+        <label class="check"><input type="checkbox" id="photoRequired"> Require a photo</label>
+        <button id="pushTaskBtn">Push to today's checklist</button>
+      </article>
+
+      <h3 id="locationAdminTitle">Store locations</h3>
+      <article class="card" id="locationAdminCard">
+        <p class="hint">Rename the 13 locations here. These names appear in reports, history, and missed-checklist alerts.</p>
+        <div id="locationList"></div>
+      </article>
+
+      <article class="card form-card" id="addUserCard">
+        <h3>Add an employee or manager</h3>
+        <label>Name
+          <input id="newUserName" placeholder="e.g. Jordan Smith">
+        </label>
+        <label>Email invite
+          <input id="newUserEmail" type="email" placeholder="employee@example.com">
+        </label>
+        <label>Role
+          <select id="newUserRole">
+            <option>Employee</option>
+            <option>Manager</option>
+            <option>Area Manager</option>
+            <option>Director of Operations</option>
+            <option>Owner</option>
+          </select>
+        </label>
+        <label>Home location
+          <select id="newUserLocation"></select>
+        </label>
+        <button id="addUserBtn">Add user</button>
+      </article>
+
+      <h3 id="usersTitle">Users</h3>
+      <div id="userList"></div>
+
+      <h3>Locations missing today's checklist</h3>
+      <article class="card">
+        <p class="hint">For now this is the notification list. When email/text service is connected, these are the stores that would notify Area Managers and the Director of Operations.</p>
+        <div id="overdueList"></div>
+      </article>
+
+      <h3>Today's team progress</h3>
+      <article class="card team">
+        <span class="avatar" id="teamAvatar">--</span>
+        <div>
+          <b id="teamName">Current user</b>
+          <p id="teamStatus">Checklist in progress</p>
+        </div>
+        <span id="teamPct">0%</span>
+      </article>
+    </section>
+  </main>
+
+  <nav>
+    <button data-view="homeView" class="active" id="homeNav">⌂<span>Home</span></button>
+    <button data-view="todayView">✓<span>Today</span></button>
+    <button data-view="historyView">▤<span>History</span></button>
+    <button data-view="manageView" id="manageNav">＋<span>Manage</span></button>
+  </nav>
+
+  <dialog id="tempDialog">
+    <form method="dialog">
+      <div class="modal-head">
+        <h3>Log temperature</h3>
+        <button value="cancel" class="x">×</button>
+      </div>
+      <label>Area
+        <select id="tempArea">
+          <option>Grill Area</option>
+          <option>Chill Area</option>
+        </select>
+      </label>
+      <label>Item
+        <select id="tempItem"></select>
+      </label>
+      <label>Temperature (°F)
+        <input id="tempValue" type="number" step="0.1" inputmode="decimal" placeholder="165.0">
+      </label>
+      <p class="hint">Recorded with the selected user and current time.</p>
+      <button id="saveTempBtn" value="default">Save temperature</button>
+    </form>
+  </dialog>
+
+  <dialog id="photoDialog">
+    <form method="dialog">
+      <div class="modal-head">
+        <h3>Add required photo</h3>
+        <button value="cancel" class="x">×</button>
+      </div>
+      <p id="photoTaskName"></p>
+      <label class="camera">📷<b>Take or choose photo</b>
+        <input id="photoInput" type="file" accept="image/*" capture="environment">
+      </label>
+      <img id="photoPreview" alt="Photo preview">
+      <button id="savePhotoBtn" value="default" disabled>Use this photo</button>
+    </form>
+  </dialog>
+
+  <dialog id="userDialog">
+    <form method="dialog">
+      <div class="modal-head">
+        <h3>Edit user</h3>
+        <button value="cancel" class="x">×</button>
+      </div>
+      <input id="editUserId" type="hidden">
+      <label>Name
+        <input id="editUserName">
+      </label>
+      <label>Email
+        <input id="editUserEmail" type="email">
+      </label>
+      <label>Role
+        <select id="editUserRole">
+          <option>Employee</option>
+          <option>Manager</option>
+          <option>Area Manager</option>
+          <option>Director of Operations</option>
+          <option>Owner</option>
+        </select>
+      </label>
+      <label>Home location
+        <select id="editUserLocation"></select>
+      </label>
+      <div id="editUserLocationsWrap">
+        <b>Attached locations</b>
+        <p class="hint">For Area Managers, Director of Operations, and Owner-level users.</p>
+        <div id="editUserLocations" class="location-checks"></div>
+      </div>
+      <button id="saveUserEditBtn" value="default">Save user</button>
+    </form>
+  </dialog>
+
+  <dialog id="workOrderDialog">
+    <form method="dialog">
+      <div class="modal-head">
+        <h3 id="editWoTitle">Edit work order</h3>
+        <button value="cancel" class="x">×</button>
+      </div>
+      <input id="editWoId" type="hidden">
+      <input id="editWoLocationId" type="hidden">
+      <label>Status
+        <select id="editWoStatus"></select>
+      </label>
+      <label>Priority
+        <select id="editWoPriority"></select>
+      </label>
+      <label>Assigned to
+        <input id="editWoAssignedTo">
+      </label>
+      <label>Vendor
+        <select id="editWoVendor"></select>
+      </label>
+      <label>Issue / comments
+        <textarea id="editWoIssue"></textarea>
+      </label>
+      <label>Resolution notes
+        <textarea id="editWoResolution"></textarea>
+      </label>
+      <label>Target date
+        <input id="editWoTargetDate" type="date">
+      </label>
+      <label>Date completed
+        <input id="editWoCompletedDate" type="date">
+      </label>
+      <label>Labor hours
+        <input id="editWoLabor" type="number" step="0.25">
+      </label>
+      <label>Parts cost
+        <input id="editWoParts" type="number" step="0.01">
+      </label>
+      <label>Vendor cost
+        <input id="editWoVendorCost" type="number" step="0.01">
+      </label>
+      <label>Add photo
+        <input id="editWoPhoto" type="file" accept="image/*" capture="environment">
+      </label>
+      <label>Add service manual / document
+        <input id="editWoManual" type="file" accept="application/pdf,image/*">
+      </label>
+      <button id="saveWorkOrderBtn" value="default">Save work order</button>
+    </form>
+  </dialog>
+
+  <div id="toast"></div>
+  <script src="auth.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
