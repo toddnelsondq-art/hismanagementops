@@ -48,8 +48,8 @@ The project now includes the first hosted backend path:
 
 - Netlify serves the files in `app/`.
 - Netlify Functions answer the same `/api/...` routes the local Python server uses.
-- Supabase stores locations, invited users, daily records, maintenance data, and uploaded files.
-- Supabase Auth sends invite/sign-in emails.
+- Supabase stores locations, users, daily records, maintenance data, and uploaded files.
+- Supabase Auth handles email/password login.
 
 ### 1. Create Supabase project
 
@@ -59,7 +59,7 @@ In Supabase:
 2. Open SQL Editor.
 3. Run [`supabase/schema.sql`](supabase/schema.sql).
 4. Go to Authentication > Providers > Email and keep email sign-in enabled.
-5. For invite-only testing, disable open/public signups if your Supabase project exposes that option.
+5. Disable open/public signups if your Supabase project exposes that option.
 
 The schema creates:
 
@@ -97,7 +97,7 @@ Before the first hosted login, add your email to the seeded Owner row:
 
 The app will link that Supabase login to the Owner profile.
 
-### 4. Invite users
+### 4. Create users
 
 When hosted auth is enabled:
 
@@ -110,4 +110,4 @@ When hosted auth is enabled:
 
 Users can sign out from the button in the app header, then sign back in with email/password.
 
-Locally, the Python server still works for quick testing. The hosted invite email flow requires Netlify + Supabase environment variables.
+Locally, the Python server still works for quick testing. Hosted email/password login requires Netlify + Supabase environment variables.

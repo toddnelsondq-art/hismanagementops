@@ -202,9 +202,12 @@ async function saveLocation(location) {
   return readLocations();
 }
 
-async function sendInvite(payload) {
+async function createUserLogin(payload) {
   const locationIds = (payload.locationIds || [payload.locationId]).filter(Boolean);
   const locationId = payload.locationId || locationIds[0] || DEFAULT_LOCATION_ID;
+  if (AUTH_REQUIRED && !payload.temporaryPassword) {
+    throw Object.assign(new Error('Temporary password is required for hosted user creation'), { statusCode: 400 });
+  }
   const authUser = await createAuthUserWithPassword(payload, locationId, locationIds);
   const authUserId = authUser?.id || authUser?.user?.id;
   await saveUser({
@@ -216,50 +219,12 @@ async function sendInvite(payload) {
     locationId,
     locationIds
   });
-  if (payload.temporaryPassword) {
-    return {
-      id: authUser?.id || `password-${Date.now()}`,
-      authUserId,
-      email: payload.email,
-      passwordCreated: true
-    };
-  }
-  if (AUTH_REQUIRED) {
-    throw Object.assign(new Error('Temporary password is required for hosted user creation'), { statusCode: 400 });
-  }
-  const inviteRows = await supabase('/rest/v1/invites', {
-    method: 'POST',
-    headers: { Prefer: 'return=representation' },
-    body: JSON.stringify({
-      email: payload.email,
-      name: payload.name,
-      role: payload.role || 'Employee',
-      location_id: locationId,
-      location_ids: locationIds,
-      invited_by: payload.invitedBy || null
-    })
-  });
-  const redirectTo = `${SITE_URL}/?invite=${inviteRows[0].id}`;
-  try {
-    await supabase('/auth/v1/invite', {
-      method: 'POST',
-      body: JSON.stringify({
-        email: payload.email,
-        data: {
-          invite_id: inviteRows[0].id,
-          name: payload.name,
-          role: payload.role || 'Employee',
-          location_id: locationId,
-          location_ids: locationIds
-        },
-        redirect_to: redirectTo
-      })
-    });
-  } catch (error) {
-    error.message = `User profile saved, but invite email failed: ${error.message}`;
-    throw error;
-  }
-  return inviteRows[0];
+  return {
+    id: authUserId || safeName(payload.email || payload.name),
+    authUserId,
+    email: payload.email,
+    passwordCreated: Boolean(payload.temporaryPassword)
+  };
 }
 
 async function currentAuthUser(event) {
@@ -638,7 +603,7 @@ exports.handler = async event => {
     }
     if (method === 'POST' && apiPath === '/invite') {
       assertManageAccess(actor, body);
-      return json(200, { invite: await sendInvite({ ...body, invitedBy: body.invitedBy || actor?.name }), users: await readUsers() });
+      return json(200, { login: await createUserLogin({ ...body, invitedBy: body.invitedBy || actor?.name }), users: await readUsers() });
     }
     if (method === 'POST' && apiPath === '/location') {
       if (AUTH_REQUIRED && !isFullAccess(actor)) throw Object.assign(new Error('Only Director or Owner can edit store names'), { statusCode: 403 });
