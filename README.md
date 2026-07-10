@@ -104,11 +104,10 @@ When hosted auth is enabled:
 1. Sign in as the Owner profile.
 2. Go to Manage > Add an employee or manager.
 3. Enter name, email, role, and location.
-4. Optionally enter a temporary password.
-5. If a temporary password is entered, the user can sign in with email + that password.
-6. If no temporary password is entered, the app sends a Supabase email invite / sign-in link.
-7. The user can only join with the role and location assignment saved by the manager.
+4. Enter a temporary password.
+5. The user can sign in with email + that temporary password.
+6. The user can only join with the role and location assignment saved by the manager.
 
-Users can sign out from the button in the app header, then sign back in with email/password or request another email sign-in link.
+Users can sign out from the button in the app header, then sign back in with email/password.
 
 Locally, the Python server still works for quick testing. The hosted invite email flow requires Netlify + Supabase environment variables.

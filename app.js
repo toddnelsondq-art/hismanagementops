@@ -1102,6 +1102,8 @@ $('#addUserBtn').onclick = async () => {
   const email = $('#newUserEmail').value.trim();
   const temporaryPassword = $('#newUserPassword').value.trim();
   if (!name) return toast('Enter a user name');
+  if (window.dailyOpsAuth?.enabled && !email) return toast('Enter an email for hosted login');
+  if (window.dailyOpsAuth?.enabled && !temporaryPassword) return toast('Enter a temporary password for hosted login');
   if (temporaryPassword && !email) return toast('Enter an email when setting a temporary password');
   if (temporaryPassword && temporaryPassword.length < 6) return toast('Temporary password must be at least 6 characters');
   const locationId = $('#newUserLocation').value;
@@ -1117,7 +1119,7 @@ $('#addUserBtn').onclick = async () => {
     $('#newUserPassword').value = '';
     $('#newUserRole').value = 'Employee';
     renderNewUserLocationChecks();
-    toast(temporaryPassword ? 'User added with temporary password' : (email ? 'Invite sent' : 'User added'));
+    toast(temporaryPassword ? 'User added with temporary password' : 'User added');
   } catch (error) {
     toast(`User did not save: ${error.message}`);
   }
@@ -1187,7 +1189,7 @@ async function saveExistingUser(id) {
 
 async function saveUser(user) {
   if (apiOnline) {
-    const path = user.email && !user.id ? '/api/invite' : '/api/user';
+    const path = user.email && user.temporaryPassword && !user.id ? '/api/invite' : '/api/user';
     users = (await api(path, { method: 'POST', body: JSON.stringify(user) })).users;
   } else {
     const id = user.id || user.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');

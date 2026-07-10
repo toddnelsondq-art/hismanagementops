@@ -17,7 +17,10 @@
         <h1>Operations Hub</h1>
       </div>
     </div>
-    <button id="roleBtn" class="ghost">Manager view</button>
+    <div class="header-actions">
+      <button id="roleBtn" class="ghost">Manager view</button>
+      <button id="signOutBtn" class="ghost">Sign out</button>
+    </div>
   </header>
 
   <main>
@@ -288,8 +291,11 @@
         <label>Name
           <input id="newUserName" placeholder="e.g. Jordan Smith">
         </label>
-        <label>Email invite
+        <label>Email
           <input id="newUserEmail" type="email" placeholder="employee@example.com">
+        </label>
+        <label>Temporary password
+          <input id="newUserPassword" type="text" placeholder="Temporary password">
         </label>
         <label>Role
           <select id="newUserRole">

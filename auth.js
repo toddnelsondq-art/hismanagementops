@@ -25,7 +25,7 @@
     return new Promise(() => {});
   }
 
-  function makeOverlay(message = 'Sign in with the email address that was invited to this app.') {
+  function makeOverlay(message = 'Sign in with the email and password provided by your manager.') {
     let overlay = document.querySelector('#authOverlay');
     if (overlay) return overlay;
     overlay = document.createElement('div');
@@ -42,8 +42,7 @@
           <input id="authPassword" type="password" placeholder="Password or temporary password" autocomplete="current-password">
         </label>
         <button id="authPasswordBtn">Sign in</button>
-        <button id="authSendBtn" class="ghost" type="button">Email me a sign-in link</button>
-        <p class="hint">Users can only join after they have been created or invited by an authorized manager.</p>
+        <p class="hint">Users can only join after they have been created by an authorized manager.</p>
       </div>
     `;
     document.body.append(overlay);
@@ -95,15 +94,6 @@
           if (error) return setMessage(error.message);
           window.location.reload();
         };
-        overlay.querySelector('#authSendBtn').onclick = async () => {
-          const email = overlay.querySelector('#authEmail').value.trim();
-          if (!email) return setMessage('Enter the invited email address first.');
-          const { error } = await client.auth.signInWithOtp({
-            email,
-            options: { emailRedirectTo: window.location.origin }
-          });
-          setMessage(error ? error.message : 'Check your email for the sign-in link.');
-        };
         return new Promise(() => {});
       }
 
@@ -117,19 +107,12 @@
         body: '{}'
       });
       if (!accepted.ok) {
-        const overlay = makeOverlay('This email is signed in, but it does not have an active invite.');
-        overlay.querySelector('#authSendBtn').textContent = 'Send another sign-in email';
+        const overlay = makeOverlay('This login is not attached to an active app user.');
         overlay.querySelector('#authPasswordBtn').onclick = async () => {
           await client.auth.signOut();
           window.location.reload();
         };
         overlay.querySelector('#authPasswordBtn').textContent = 'Sign out and try another account';
-        overlay.querySelector('#authSendBtn').onclick = async () => {
-          const email = overlay.querySelector('#authEmail').value.trim();
-          if (!email) return setMessage('Enter the invited email address first.');
-          await client.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin } });
-          setMessage('Check your email for the sign-in link.');
-        };
         return new Promise(() => {});
       }
       const payload = await accepted.json();

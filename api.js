@@ -224,6 +224,9 @@ async function sendInvite(payload) {
       passwordCreated: true
     };
   }
+  if (AUTH_REQUIRED) {
+    throw Object.assign(new Error('Temporary password is required for hosted user creation'), { statusCode: 400 });
+  }
   const inviteRows = await supabase('/rest/v1/invites', {
     method: 'POST',
     headers: { Prefer: 'return=representation' },
