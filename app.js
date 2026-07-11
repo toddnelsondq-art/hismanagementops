@@ -403,7 +403,7 @@ function render() {
   if (!visibleLocations.some(location => location.id === currentLocationId)) currentLocationId = visibleLocations[0]?.id || currentLocationId;
 
   $('#greeting').textContent = `Good morning, ${activeUser.name.split(' ')[0]}`;
-  $('#homeGreeting').textContent = `Welcome, ${activeUser.name.split(' ')[0]}`;
+  $('#homeGreeting').textContent = 'Dashboard';
   if (window.dailyOpsAuth?.enabled && window.dailyOpsAuth.profile) {
     const profile = window.dailyOpsAuth.profile;
     $('#currentUser').innerHTML = `<option value="${profile.id}" selected>${escapeHtml(profile.name)} — ${escapeHtml(profile.role)}</option>`;
@@ -607,11 +607,14 @@ function applyRoleAccess(user) {
   const showHub = canUseHub(user);
   const showHistory = canUseHistory(user);
   const showManage = canUseManage(user);
-  document.querySelector('[data-view="homeView"]').style.display = showHub ? '' : 'none';
-  document.querySelector('[data-view="historyView"]').style.display = showHistory ? '' : 'none';
-  document.querySelector('[data-view="manageView"]').style.display = showManage ? '' : 'none';
+  document.querySelectorAll('[data-view="homeView"]').forEach(button => button.style.display = showHub ? '' : 'none');
+  document.querySelectorAll('[data-view="maintenanceView"]').forEach(button => button.style.display = showHub ? '' : 'none');
+  document.querySelectorAll('[data-view="historyView"]').forEach(button => button.style.display = showHistory ? '' : 'none');
+  document.querySelectorAll('[data-view="manageView"]').forEach(button => button.style.display = showManage ? '' : 'none');
   $('#roleBtn').style.display = showManage ? '' : 'none';
   $('#signOutBtn').style.display = window.dailyOpsAuth?.enabled ? '' : 'none';
+  $('#sideUserName').textContent = user.name;
+  $('#sideUserRole').textContent = user.role;
   if (!showHub && ($('#homeView').classList.contains('active') || $('#maintenanceView').classList.contains('active'))) switchView('todayView');
   if (!showHistory && $('#historyView').classList.contains('active')) switchView('todayView');
   if (!showManage && $('#manageView').classList.contains('active')) switchView('todayView');
@@ -773,10 +776,9 @@ function openReport(key) {
 }
 
 function switchView(viewId) {
-  document.querySelectorAll('.view, nav button').forEach(entry => entry.classList.remove('active'));
+  document.querySelectorAll('.view, nav button, .ops-sidebar button').forEach(entry => entry.classList.remove('active'));
   $(`#${viewId}`).classList.add('active');
-  const navButton = document.querySelector(`nav button[data-view="${viewId}"]`);
-  if (navButton) navButton.classList.add('active');
+  document.querySelectorAll(`[data-view="${viewId}"]`).forEach(button => button.classList.add('active'));
 }
 
 document.addEventListener('click', async event => {
@@ -1238,7 +1240,7 @@ $('#finishBtn').onclick = async () => {
   await persistAndRender('Daily checklist complete');
 };
 
-document.querySelectorAll('nav button').forEach(button => {
+document.querySelectorAll('nav button, .ops-sidebar button[data-view]').forEach(button => {
   button.onclick = () => switchView(button.dataset.view);
 });
 

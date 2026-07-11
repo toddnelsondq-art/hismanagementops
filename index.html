@@ -11,14 +11,13 @@
 <body>
   <header>
     <div class="brand">
-      <img class="app-logo" src="assets/his-management.png" alt="HIS Management Group Inc logo">
       <div>
         <span class="eyebrow">HIS MANAGEMENT GROUP INC</span>
-        <h1>Operations Hub</h1>
+        <h1>HIS OPS</h1>
       </div>
     </div>
     <div class="header-actions">
-      <button id="roleBtn" class="ghost">Manager view</button>
+      <button id="roleBtn" class="ghost">Manage</button>
       <button id="signOutBtn" class="ghost">Sign out</button>
     </div>
   </header>
@@ -28,31 +27,23 @@
       <div class="date">
         <div>
           <p>OPERATIONS PLATFORM</p>
-          <h2 id="homeGreeting">Welcome</h2>
+          <h2 id="homeGreeting">Dashboard</h2>
         </div>
       </div>
-
-      <article class="card hub-card">
-        <div>
-          <img class="hero-logo" src="assets/his-management.png" alt="HIS Management Group Inc logo">
-          <h3>HIS Management Group Inc</h3>
-          <p class="hint">Select the section you want to work in. More tools can be added here as the platform grows.</p>
-        </div>
-      </article>
 
       <div class="hub-grid">
         <button class="hub-tile" data-section-view="todayView">
           <span class="icon">✓</span>
           <div>
-            <b>Daily Task Lists</b>
-            <p>Checklists, temperatures, required photos, reports, and missed-list tracking.</p>
+            <b>Daily Operations</b>
+            <p>Task lists, temperature logs, required photos, reports, and missed-list tracking.</p>
           </div>
         </button>
         <button class="hub-tile" data-section-view="maintenanceView">
           <span class="icon">🔧</span>
           <div>
-            <b>Maintenance Tasks</b>
-            <p>Coming next: repair requests, assigned maintenance work, status tracking, and location follow-up.</p>
+            <b>Maintenance</b>
+            <p>Work orders, equipment, PM tasks, vendors, and location follow-up.</p>
           </div>
         </button>
       </div>
@@ -337,6 +328,27 @@
       </article>
     </section>
   </main>
+
+  <aside class="ops-sidebar">
+    <div class="side-brand">
+      <img class="app-logo" src="assets/his-management.png" alt="HIS Management Group Inc logo">
+      <div>
+        <b>HIS OPS</b>
+        <span>Daily operations</span>
+      </div>
+    </div>
+    <button data-view="homeView" class="active" id="sideHomeNav"><span class="nav-icon">▦</span><span>Dashboard</span></button>
+    <button data-view="todayView"><span class="nav-icon">☑</span><span>Daily Ops</span></button>
+    <button data-view="taskListsView"><span class="nav-icon">✓</span><span>Task Lists</span></button>
+    <button data-view="tempLogsView"><span class="nav-icon">◒</span><span>Temp Logs</span></button>
+    <button data-view="maintenanceView"><span class="nav-icon">🔧</span><span>Maintenance</span></button>
+    <button data-view="historyView"><span class="nav-icon">▤</span><span>Reports</span></button>
+    <button data-view="manageView" id="sideManageNav"><span class="nav-icon">⚙</span><span>Manage</span></button>
+    <div class="side-user">
+      <b id="sideUserName">Current user</b>
+      <span id="sideUserRole">role</span>
+    </div>
+  </aside>
 
   <nav>
     <button data-view="homeView" class="active" id="homeNav">⌂<span>Home</span></button>
