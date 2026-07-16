@@ -1,0 +1,26 @@
+{
+  "name": "HIS Operations Hub",
+  "short_name": "HIS OPS",
+  "description": "Daily checklists, temperature logs, maintenance, FPC, notices, and operations tools for HIS Management Group Inc.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b182d",
+  "theme_color": "#082852",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "assets/pwa-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/pwa-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

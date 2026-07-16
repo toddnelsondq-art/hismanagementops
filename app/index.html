@@ -3,7 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#082852">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="HIS OPS">
   <title>HIS Management Group</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="assets/pwa-icon-180.png">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="temperature.css">
   <link rel="stylesheet" href="his-theme.css">
@@ -11,13 +17,16 @@
 <body>
   <header>
     <div class="brand">
-      <img class="app-logo" src="assets/his-management.png" alt="HIS Management Group Inc logo">
       <div>
         <span class="eyebrow">HIS MANAGEMENT GROUP INC</span>
-        <h1>Operations Hub</h1>
+        <h1>HIS OPS</h1>
       </div>
     </div>
-    <button id="roleBtn" class="ghost">Manager view</button>
+    <div class="header-actions">
+      <button id="noticesBtn" class="ghost notice-button">Notices <span id="noticeBadge">0</span></button>
+      <button id="changePasswordBtn" class="ghost">Change password</button>
+      <button id="signOutBtn" class="ghost">Sign out</button>
+    </div>
   </header>
 
   <main>
@@ -25,34 +34,119 @@
       <div class="date">
         <div>
           <p>OPERATIONS PLATFORM</p>
-          <h2 id="homeGreeting">Welcome</h2>
+          <h2 id="homeGreeting">Dashboard</h2>
         </div>
       </div>
 
-      <article class="card hub-card">
-        <div>
-          <img class="hero-logo" src="assets/his-management.png" alt="HIS Management Group Inc logo">
-          <h3>HIS Management Group Inc</h3>
-          <p class="hint">Select the section you want to work in. More tools can be added here as the platform grows.</p>
-        </div>
-      </article>
-
       <div class="hub-grid">
-        <button class="hub-tile" data-section-view="todayView">
+        <button class="hub-tile" data-section-view="taskListsView">
           <span class="icon">✓</span>
           <div>
-            <b>Daily Task Lists</b>
-            <p>Checklists, temperatures, required photos, reports, and missed-list tracking.</p>
+            <b>Daily Operations</b>
+            <p>Task lists, temperature logs, required photos, reports, and missed-list tracking.</p>
           </div>
         </button>
         <button class="hub-tile" data-section-view="maintenanceView">
           <span class="icon">🔧</span>
           <div>
-            <b>Maintenance Tasks</b>
-            <p>Coming next: repair requests, assigned maintenance work, status tracking, and location follow-up.</p>
+            <b>Maintenance</b>
+            <p>Work orders, equipment, PM tasks, vendors, and location follow-up.</p>
           </div>
         </button>
       </div>
+      <article class="card dashboard-controls">
+        <label>Time period
+          <select id="dashboardRange">
+            <option value="day">Current day</option>
+            <option value="week">Current week</option>
+            <option value="month">Current month</option>
+          </select>
+        </label>
+        <label>Location
+          <select id="dashboardLocation"></select>
+        </label>
+      </article>
+
+      <article class="card dashboard-alerts-card" id="dashboardAlertsCard">
+        <div class="maintenance-row compact">
+          <div>
+            <p class="eyebrow">ALERTS</p>
+            <h3>Upcoming visits and events</h3>
+          </div>
+          <button class="ghost" data-section-view="calendarView" type="button">Open calendar</button>
+        </div>
+        <div id="dashboardAlertList" class="calendar-event-list"></div>
+      </article>
+
+      <article class="card dashboard-upcoming-card" id="dashboardUpcomingTasksCard">
+        <div class="maintenance-row compact">
+          <div>
+            <p class="eyebrow">NEXT 15 DAYS</p>
+            <h3>Upcoming maintenance + FPC tasks</h3>
+            <p class="hint">Area Managers and above can move urgent items higher on this list.</p>
+          </div>
+          <span class="status" id="dashboardUpcomingCount">0 tasks</span>
+        </div>
+        <div id="dashboardUpcomingTasks" class="upcoming-task-list"></div>
+      </article>
+
+      <div class="dashboard-grid">
+        <article class="card dashboard-card ops-dashboard-card">
+          <div>
+            <p class="eyebrow">DAILY OPS</p>
+            <h3>Cleaning + temp logs</h3>
+          </div>
+          <div class="pie-row">
+            <div class="pie-chart" id="opsPie" style="--pct:0"><span id="opsPieLabel">0%</span></div>
+            <div class="chart-legend">
+              <p><b id="opsCompleted">0</b> completed</p>
+              <p><b id="opsRemaining">0</b> remaining</p>
+              <p class="hint" id="opsChartHint">Task lists and temp log requirements.</p>
+            </div>
+          </div>
+        </article>
+
+        <article class="card dashboard-card">
+          <div>
+            <p class="eyebrow">MAINTENANCE</p>
+            <h3>Work orders</h3>
+          </div>
+          <div class="pie-row">
+            <div class="pie-chart maintenance-pie" id="maintenancePie" style="--pct:0"><span id="maintenancePieLabel">0%</span></div>
+            <div class="chart-legend">
+              <p><b id="maintenanceCompleted">0</b> completed</p>
+              <p><b id="maintenanceOpen">0</b> in progress</p>
+              <p class="hint" id="maintenanceChartHint">Completed vs open/in-progress maintenance tasks.</p>
+            </div>
+          </div>
+        </article>
+
+        <article class="card dashboard-card">
+          <div>
+            <p class="eyebrow">FPC</p>
+            <h3>Repair items</h3>
+          </div>
+          <div class="pie-row">
+            <div class="pie-chart fpc-pie" id="fpcPie" style="--pct:0"><span id="fpcPieLabel">0%</span></div>
+            <div class="chart-legend">
+              <p><b id="fpcCompleted">0</b> completed</p>
+              <p><b id="fpcOpen">0</b> open / in progress</p>
+              <p class="hint" id="fpcChartHint">Completed vs open FPC repair items.</p>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <article class="card dashboard-progress-card">
+        <div class="maintenance-row compact">
+          <div>
+            <p class="eyebrow">PROGRESS DETAIL</p>
+            <h3 id="dashboardProgressTitle">Location progress</h3>
+          </div>
+          <span class="status" id="dashboardProgressCount">0 rows</span>
+        </div>
+        <div id="dashboardProgressBars" class="progress-bars"></div>
+      </article>
     </section>
 
     <section id="maintenanceView" class="view">
@@ -108,9 +202,20 @@
       <div class="maintenance-actions">
         <button data-maint-section="equipmentForm">Add equipment</button>
         <button data-maint-section="pmForm" class="ghost">Add PM task</button>
+        <button data-maint-section="maintenanceImportPanel" class="ghost">Import workbook</button>
         <button data-maint-section="equipmentDirectory" class="ghost">View equipment</button>
         <button data-maint-section="vendorDirectory" class="ghost">Preferred vendors</button>
       </div>
+
+      <article class="card form-card maint-panel" id="maintenanceImportPanel">
+        <div class="modal-head"><h3>Import maintenance workbook</h3><button class="x" data-maint-close type="button">×</button></div>
+        <p class="hint">Upload one Excel workbook with tabs named Locations, Equipment, PM Tasks, Vendors, and Lists. Only tabs included in the workbook will be updated.</p>
+        <label>Maintenance workbook
+          <input id="maintenanceWorkbookFile" type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+        </label>
+        <button id="importMaintenanceWorkbookBtn" type="button">Import workbook</button>
+        <div id="maintenanceImportResult" class="hint"></div>
+      </article>
 
       <article class="card form-card maint-panel" id="equipmentForm">
         <div class="modal-head"><h3>Add equipment</h3><button class="x" data-maint-close type="button">×</button></div>
@@ -177,6 +282,7 @@
 
       <article class="maint-panel" id="vendorDirectory">
         <div class="section-title"><h3>Preferred vendors</h3><span id="vendorCount"></span></div>
+        <button id="addVendorOpenBtn" class="ghost" type="button">Add vendor</button>
         <div id="vendorList"></div>
       </article>
     </section>
@@ -190,8 +296,8 @@
         <span class="status" id="progressBadge">0 of 5 done</span>
       </div>
 
-      <article class="card form-card">
-        <label>Who is using this device?
+      <article class="card form-card" id="deviceUserCard">
+        <label id="currentUserChooser">Who is using this device?
           <select id="currentUser"></select>
         </label>
         <label id="locationChooser">Location
@@ -246,6 +352,283 @@
       <div id="historyList"></div>
     </section>
 
+    <section id="noticesView" class="view">
+      <div class="date">
+        <div>
+          <p>COMMUNICATIONS</p>
+          <h2>Notices</h2>
+        </div>
+      </div>
+      <div id="noticeList"></div>
+    </section>
+
+    <section id="calendarView" class="view">
+      <div class="date">
+        <div>
+          <p>ALERTS + CALENDAR</p>
+          <h2>Group calendar</h2>
+        </div>
+        <span class="status" id="calendarEventCount">0 upcoming</span>
+      </div>
+
+      <article class="card form-card" id="calendarEventFormCard">
+        <h3>Add calendar event</h3>
+        <input id="calendarEventId" type="hidden">
+        <label>Event title
+          <input id="calendarEventTitle" placeholder="e.g. FPC revisit, Store inspection, Area meeting">
+        </label>
+        <label>Event type
+          <select id="calendarEventType">
+            <option>FPC revisit</option>
+            <option>Inspection visit</option>
+            <option>Operations visit</option>
+            <option>Meeting</option>
+            <option>Other</option>
+          </select>
+        </label>
+        <div class="two-col">
+          <label>Date
+            <input id="calendarEventDate" type="date">
+          </label>
+          <label>Time
+            <input id="calendarEventTime" type="time">
+          </label>
+        </div>
+        <label>Location
+          <select id="calendarEventLocation"></select>
+        </label>
+        <label>Notes
+          <textarea id="calendarEventNotes" placeholder="Optional notes for managers"></textarea>
+        </label>
+        <div class="row-actions">
+          <button id="saveCalendarEventBtn" type="button">Save event</button>
+          <button id="cancelCalendarEventBtn" class="ghost" type="button">Cancel edit</button>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="maintenance-row compact">
+          <div>
+            <h3>Upcoming alerts</h3>
+            <p class="hint">FPC revisits, inspection visits, and important group calendar events.</p>
+          </div>
+          <label class="mini-label">View
+            <select id="calendarLocationFilter"></select>
+          </label>
+        </div>
+        <div id="calendarEventList" class="calendar-event-list"></div>
+      </article>
+    </section>
+
+    <section id="fpcView" class="view">
+      <div class="date">
+        <div>
+          <p>FACILITY PRIDE CHECK</p>
+          <h2>FPC inspections</h2>
+        </div>
+        <span class="status" id="fpcOpenCount">0 open</span>
+      </div>
+
+      <article class="card location-switcher">
+        <label>FPC location
+          <select id="fpcLocation"></select>
+        </label>
+        <p class="hint">View inspection documents and repair items for the selected location.</p>
+      </article>
+
+      <article class="card form-card collapsible-card">
+        <h3>Add FPC inspection</h3>
+        <label>Inspection date
+          <input id="fpcInspectionDate" type="date">
+        </label>
+        <label>Inspection file
+          <input id="fpcInspectionFile" type="file">
+        </label>
+        <label>Or paste shared link
+          <input id="fpcInspectionLink" type="url" placeholder="https://drive.google.com/...">
+        </label>
+        <button id="saveFpcInspectionBtn" type="button">Save inspection</button>
+      </article>
+
+      <article class="card form-card collapsible-card">
+        <h3>Add repair item</h3>
+        <label>Inspection
+          <select id="fpcRecordSelect"></select>
+        </label>
+        <label>Item needing attention
+          <textarea id="fpcItemDescription" placeholder="Describe what needs to be repaired or corrected"></textarea>
+        </label>
+        <label>Priority
+          <select id="fpcItemPriority">
+            <option>Medium</option>
+            <option>High</option>
+            <option>Low</option>
+          </select>
+        </label>
+        <label>Assigned to
+          <input id="fpcItemAssignedTo" placeholder="Manager, vendor, maintenance tech, etc.">
+        </label>
+        <label>Target date
+          <input id="fpcItemTargetDate" type="date">
+        </label>
+        <label>Photo showing what needs to be done
+          <input id="fpcItemPhoto" type="file" accept="image/*" capture="environment">
+        </label>
+        <label>Or paste photo/shared folder link
+          <input id="fpcItemPhotoLink" type="url" placeholder="https://drive.google.com/...">
+        </label>
+        <button id="saveFpcItemBtn" type="button">Add FPC item</button>
+      </article>
+
+      <div id="fpcList"></div>
+    </section>
+
+    <section id="storeDocsView" class="view">
+      <div class="date">
+        <div>
+          <p>STORE DOCUMENTS</p>
+          <h2>Store Documents</h2>
+        </div>
+        <span class="status" id="storeDocsCount">0 documents</span>
+      </div>
+
+      <article class="card location-switcher">
+        <label>Document location
+          <select id="storeDocsLocation"></select>
+        </label>
+        <p class="hint">View documents for the selected store or all assigned locations.</p>
+      </article>
+
+      <article class="card form-card" id="storeDocsUploadCard">
+        <h3>Add store document</h3>
+        <p class="hint">Area Managers and above can upload documents. Managers can view documents for their store.</p>
+        <label>Title
+          <input id="storeDocTitle" placeholder="e.g. Fire inspection report">
+        </label>
+        <label>Category
+          <select id="storeDocCategory">
+            <option>General</option>
+            <option>Inspection</option>
+            <option>Permit</option>
+            <option>Insurance</option>
+            <option>Training</option>
+            <option>Operations</option>
+            <option>Other</option>
+          </select>
+        </label>
+        <label>Notes
+          <textarea id="storeDocNotes" placeholder="Optional notes about this document"></textarea>
+        </label>
+        <label>Document file
+          <input id="storeDocFile" type="file">
+        </label>
+        <label>Or paste shared document link
+          <input id="storeDocLink" type="url" placeholder="https://drive.google.com/...">
+        </label>
+        <button id="saveStoreDocBtn" type="button">Upload document</button>
+      </article>
+
+      <div id="storeDocsList"></div>
+    </section>
+
+    <section id="resourcesView" class="view">
+      <div class="date">
+        <div>
+          <p>RESOURCES</p>
+          <h2>Resources</h2>
+        </div>
+        <span class="status" id="resourcesCount">0 links</span>
+      </div>
+
+      <article class="card location-switcher">
+        <label>Resource location
+          <select id="resourcesLocation"></select>
+        </label>
+        <p class="hint">View links for the selected store or all assigned locations.</p>
+      </article>
+
+      <article class="card form-card collapsible-card" id="resourcesAdminCard">
+        <h3>Add or edit resource link</h3>
+        <p class="hint">Managers and above can add web pages, shared folders, training links, ordering pages, and other useful resources.</p>
+        <input id="resourceId" type="hidden">
+        <label>Title
+          <input id="resourceTitle" placeholder="e.g. DQ Hub, Training videos, Order guide">
+        </label>
+        <label>Web address
+          <input id="resourceUrl" type="url" placeholder="https://...">
+        </label>
+        <label>Category
+          <select id="resourceCategory">
+            <option>General</option>
+            <option>Training</option>
+            <option>Operations</option>
+            <option>Ordering</option>
+            <option>Food Safety</option>
+            <option>HR</option>
+            <option>Vendor</option>
+            <option>Other</option>
+          </select>
+        </label>
+        <label>Visible to
+          <select id="resourceMinRole">
+            <option value="Employee">Employees and above</option>
+            <option value="Manager">Managers and above</option>
+            <option value="Area Manager">Area Managers and above</option>
+            <option value="Director of Operations">Director / Owner only</option>
+          </select>
+        </label>
+        <label>Location
+          <select id="resourceLocation"></select>
+        </label>
+        <label>Notes
+          <textarea id="resourceNotes" placeholder="Optional note about what this link is for"></textarea>
+        </label>
+        <div class="row-actions">
+          <button id="saveResourceBtn" type="button">Save resource</button>
+          <button id="cancelResourceEditBtn" class="ghost" type="button">Cancel edit</button>
+        </div>
+      </article>
+
+      <div id="resourcesList"></div>
+    </section>
+
+    <section id="smallwaresView" class="view">
+      <div class="date">
+        <div>
+          <p>SMALLWARES</p>
+          <h2>Smallwares Requests</h2>
+        </div>
+        <span class="status" id="smallwaresCount">0 open</span>
+      </div>
+
+      <article class="card location-switcher">
+        <label>Request location
+          <select id="smallwaresLocation"></select>
+        </label>
+        <p class="hint">Managers can request items for their store. Area Managers and above can approve requests.</p>
+      </article>
+
+      <article class="card form-card">
+        <h3>Request smallwares</h3>
+        <label>Item needed
+          <input id="smallwaresItem" placeholder="e.g. spatulas, sauce bottles, thermometer probes">
+        </label>
+        <label>Quantity
+          <input id="smallwaresQty" type="number" min="1" value="1">
+        </label>
+        <label>Reason / notes
+          <textarea id="smallwaresNotes" placeholder="Why is this needed? Broken, missing, new station setup, etc."></textarea>
+        </label>
+        <button id="submitSmallwaresBtn" type="button">Submit request</button>
+      </article>
+
+      <div class="report-actions">
+        <button id="showApprovedSmallwaresBtn" class="ghost" type="button">Approved requests</button>
+      </div>
+
+      <div id="smallwaresList"></div>
+    </section>
+
     <section id="reportView" class="view">
       <div class="date">
         <div>
@@ -260,6 +643,33 @@
       <div id="reportDetail"></div>
     </section>
 
+    <section id="locationsView" class="view">
+      <div class="date">
+        <div>
+          <p>LOCATION ADMIN</p>
+          <h2>Store locations</h2>
+        </div>
+      </div>
+
+      <article class="card form-card" id="importLocationsCard">
+        <h3>Import locations from Excel</h3>
+        <p class="hint">Upload an .xlsx or .csv file with columns for Location ID and Location Name. This updates the store names used in reports, history, and alerts.</p>
+        <label>Location spreadsheet
+          <input id="locationImportFile" type="file" accept=".xlsx,.xls,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+        </label>
+        <div class="row-actions import-actions">
+          <button id="importLocationsBtn" type="button">Import locations</button>
+          <a class="button-link ghost" href="assets/location-import-template.csv" download>Download template</a>
+        </div>
+        <div id="locationImportResult" class="hint"></div>
+      </article>
+
+      <article class="card" id="locationAdminCard">
+        <p class="hint">Rename locations here one at a time if you only need a quick change.</p>
+        <div id="locationList"></div>
+      </article>
+    </section>
+
     <section id="manageView" class="view">
       <div class="date">
         <div>
@@ -268,7 +678,7 @@
         </div>
       </div>
 
-      <article class="card form-card">
+      <article class="card form-card collapsible-card">
         <h3>Add a task for today</h3>
         <label>Task description
           <input id="newTask" placeholder="e.g. Deep clean ice machine">
@@ -277,25 +687,141 @@
         <button id="pushTaskBtn">Push to today's checklist</button>
       </article>
 
-      <h3 id="locationAdminTitle">Store locations</h3>
-      <article class="card" id="locationAdminCard">
-        <p class="hint">Rename the 13 locations here. These names appear in reports, history, and missed-checklist alerts.</p>
-        <div id="locationList"></div>
+      <article class="card form-card collapsible-card" id="checklistTemplateCard">
+        <h3>Permanent checklist items</h3>
+        <p class="hint">Add or remove items here when you want the change to apply to future days.</p>
+        <label>Editing scope
+          <select id="templateScope"></select>
+        </label>
+        <label>Checklist
+          <select id="templateSection"></select>
+        </label>
+        <label>Main set
+          <select id="templateCategory">
+            <option>Manager</option>
+            <option>Chill</option>
+            <option>Grill</option>
+            <option>Service</option>
+          </select>
+        </label>
+        <label>Prep quantity list
+          <select id="templatePrepArea">
+            <option value="">Not a prep quantity item</option>
+            <option value="Grill">Grill prep item</option>
+            <option value="Chill">Chill prep item</option>
+          </select>
+        </label>
+        <label>Or create a new checklist
+          <input id="templateCustomSection" placeholder="e.g. Weekly cleaning">
+        </label>
+        <label>Task description
+          <input id="templateTaskName" placeholder="e.g. Clean lobby windows">
+        </label>
+        <label class="check"><input type="checkbox" id="templatePhotoRequired"> Require a photo</label>
+        <button id="addTemplateTaskBtn" type="button">Add permanent task</button>
+        <button id="loadAreaChecklistsBtn" class="ghost" type="button">Load DQ area checklists</button>
+        <div class="schedule-box">
+          <h4>Copy master checklist to one store</h4>
+          <p class="hint">This creates a store-only copy. After copying, edits for that store will not change the company master or other stores.</p>
+          <label>Copy selected checklist to
+            <select id="copyChecklistLocation"></select>
+          </label>
+          <button id="copyChecklistBtn" class="ghost" type="button">Copy checklist to location</button>
+        </div>
+        <div id="templateTaskList"></div>
+        <div class="schedule-box">
+          <h4>Checklist schedule</h4>
+          <p class="hint">Set when a checklist appears. Use the store override only when one location needs a different day.</p>
+          <label>Checklist
+            <select id="scheduleSection"></select>
+          </label>
+          <label>Apply to
+            <select id="scheduleLocation"></select>
+          </label>
+          <div id="scheduleDays" class="location-checks"></div>
+          <button id="saveScheduleBtn" type="button">Save checklist schedule</button>
+        </div>
       </article>
 
-      <article class="card form-card" id="addUserCard">
+      <article class="card form-card collapsible-card" id="noticeAdminCard">
+        <h3>Post an important notice</h3>
+        <p class="hint">Notices show a badge until each user opens them.</p>
+        <label>Title
+          <input id="noticeTitle" placeholder="e.g. New cleaning procedure">
+        </label>
+        <label>Message
+          <textarea id="noticeMessage" placeholder="Type the communication here"></textarea>
+        </label>
+        <label>Attachment or photo
+          <input id="noticeFile" type="file">
+        </label>
+        <label>Or paste shared link
+          <input id="noticeLink" type="url" placeholder="https://drive.google.com/...">
+        </label>
+        <button id="postNoticeBtn" type="button">Post notice</button>
+      </article>
+
+      <article class="card form-card collapsible-card" id="alertRulesCard">
+        <h3>Alert rules</h3>
+        <p class="hint">Set email/text alerts for task lists or temperature logs that are not completed by a set time.</p>
+        <input id="alertRuleId" type="hidden">
+        <label>Rule name
+          <input id="alertRuleName" placeholder="e.g. Opening checklist overdue">
+        </label>
+        <label>Alert type
+          <select id="alertRuleType">
+            <option value="task">Task list</option>
+            <option value="temperature">Temperature log</option>
+          </select>
+        </label>
+        <label>List to watch
+          <select id="alertRuleTarget"></select>
+        </label>
+        <label>Due by
+          <input id="alertRuleTime" type="time" value="13:00">
+        </label>
+        <label>Location
+          <select id="alertRuleLocation"></select>
+        </label>
+        <div>
+          <b>Notify roles</b>
+          <div id="alertRuleRoles" class="location-checks"></div>
+        </div>
+        <div>
+          <b>Send by</b>
+          <div class="location-checks">
+            <label class="location-check"><input type="checkbox" id="alertChannelEmail" checked> Email</label>
+            <label class="location-check"><input type="checkbox" id="alertChannelSms"> Text message</label>
+          </div>
+          <p class="hint">Text messages require phone numbers for users and Twilio setup in Netlify. Email requires an email provider key.</p>
+        </div>
+        <label class="check"><input type="checkbox" id="alertRuleActive" checked> Rule is active</label>
+        <div class="row-actions">
+          <button id="saveAlertRuleBtn" type="button">Save alert rule</button>
+          <button id="cancelAlertRuleBtn" class="ghost" type="button">Cancel edit</button>
+          <button id="previewAlertsBtn" class="ghost" type="button">Preview overdue alerts now</button>
+        </div>
+        <div id="alertRuleList"></div>
+        <div id="alertPreviewList" class="hint"></div>
+      </article>
+
+      <article class="card form-card collapsible-card" id="addUserCard">
         <h3>Add an employee or manager</h3>
         <label>Name
           <input id="newUserName" placeholder="e.g. Jordan Smith">
         </label>
-        <label>Email invite
+        <label>Email
           <input id="newUserEmail" type="email" placeholder="employee@example.com">
+        </label>
+        <label>Temporary password
+          <input id="newUserPassword" type="text" placeholder="Temporary password">
         </label>
         <label>Role
           <select id="newUserRole">
             <option>Employee</option>
             <option>Manager</option>
             <option>Area Manager</option>
+            <option>Maintenance Tech</option>
             <option>Director of Operations</option>
             <option>Owner</option>
           </select>
@@ -303,20 +829,40 @@
         <label>Home location
           <select id="newUserLocation"></select>
         </label>
+        <div id="newUserLocationsWrap">
+          <b>Attached locations</b>
+          <p class="hint">For Area Managers, Director of Operations, and Owner-level users.</p>
+          <div id="newUserLocations" class="location-checks"></div>
+        </div>
         <button id="addUserBtn">Add user</button>
       </article>
 
-      <h3 id="usersTitle">Users</h3>
-      <div id="userList"></div>
+      <article class="card form-card collapsible-card" id="importUsersCard">
+        <h3>Import users from Excel</h3>
+        <p class="hint">Upload an .xlsx or .csv file with columns for Name, Email, Temporary Password, Role, Home Location, and Attached Locations.</p>
+        <label>User spreadsheet
+          <input id="userImportFile" type="file" accept=".xlsx,.xls,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+        </label>
+        <div class="row-actions import-actions">
+          <button id="importUsersBtn" type="button">Import users</button>
+          <a class="button-link ghost" href="assets/user-import-template.csv" download>Download template</a>
+        </div>
+        <div id="userImportResult" class="hint"></div>
+      </article>
 
-      <h3>Locations missing today's checklist</h3>
-      <article class="card">
+      <article class="card collapsible-card" id="usersCard">
+        <h3 id="usersTitle">Users</h3>
+        <div id="userList"></div>
+      </article>
+
+      <article class="card collapsible-card">
+        <h3>Locations missing today's checklist</h3>
         <p class="hint">For now this is the notification list. When email/text service is connected, these are the stores that would notify Area Managers and the Director of Operations.</p>
         <div id="overdueList"></div>
       </article>
 
-      <h3>Today's team progress</h3>
-      <article class="card team">
+      <article class="card team collapsible-card">
+        <h3>Today's team progress</h3>
         <span class="avatar" id="teamAvatar">--</span>
         <div>
           <b id="teamName">Current user</b>
@@ -327,11 +873,45 @@
     </section>
   </main>
 
+  <aside class="ops-sidebar">
+    <div class="side-brand">
+      <img class="app-logo" src="assets/his-management.png" alt="HIS Management Group Inc logo">
+      <div>
+        <b>HIS OPS</b>
+        <span>Daily operations</span>
+      </div>
+    </div>
+    <button data-view="homeView" class="active" id="sideHomeNav"><span class="nav-icon">▦</span><span>Dashboard</span></button>
+    <button data-view="taskListsView"><span class="nav-icon">✓</span><span>Task Lists</span></button>
+    <button data-view="tempLogsView"><span class="nav-icon">◒</span><span>Temp Logs</span></button>
+    <button data-view="maintenanceView"><span class="nav-icon">🔧</span><span>Maintenance</span></button>
+    <button data-view="fpcView"><span class="nav-icon">★</span><span>FPC</span></button>
+    <button data-view="storeDocsView"><span class="nav-icon">📄</span><span>Documents</span></button>
+    <button data-view="resourcesView"><span class="nav-icon">🔗</span><span>Resources</span></button>
+    <button data-view="smallwaresView"><span class="nav-icon">🧺</span><span>Smallwares</span></button>
+    <button data-view="historyView"><span class="nav-icon">▤</span><span>Reports</span></button>
+    <button data-view="locationsView"><span class="nav-icon">⌖</span><span>Locations</span></button>
+    <button data-view="manageView" id="sideManageNav"><span class="nav-icon">⚙</span><span>Manage</span></button>
+    <button data-view="calendarView"><span class="nav-icon">📅</span><span>Calendar</span></button>
+    <div class="side-user">
+      <b id="sideUserName">Current user</b>
+      <span id="sideUserRole">role</span>
+    </div>
+  </aside>
+
   <nav>
+    <button data-view="tempLogsView">◒<span>Temps</span></button>
+    <button data-view="maintenanceView">🔧<span>Maint.</span></button>
+    <button data-view="fpcView">★<span>FPC</span></button>
+    <button data-view="storeDocsView">📄<span>Docs</span></button>
+    <button data-view="resourcesView">🔗<span>Links</span></button>
+    <button data-view="smallwaresView">🧺<span>Items</span></button>
+    <button data-view="locationsView">⌖<span>Locations</span></button>
     <button data-view="homeView" class="active" id="homeNav">⌂<span>Home</span></button>
-    <button data-view="todayView">✓<span>Today</span></button>
+    <button data-view="taskListsView">✓<span>Tasks</span></button>
     <button data-view="historyView">▤<span>History</span></button>
     <button data-view="manageView" id="manageNav">＋<span>Manage</span></button>
+    <button data-view="calendarView">📅<span>Calendar</span></button>
   </nav>
 
   <dialog id="tempDialog">
@@ -390,6 +970,7 @@
           <option>Employee</option>
           <option>Manager</option>
           <option>Area Manager</option>
+          <option>Maintenance Tech</option>
           <option>Director of Operations</option>
           <option>Owner</option>
         </select>
@@ -402,7 +983,168 @@
         <p class="hint">For Area Managers, Director of Operations, and Owner-level users.</p>
         <div id="editUserLocations" class="location-checks"></div>
       </div>
+      <label>Set temporary password
+        <input id="editUserPassword" type="text" placeholder="Leave blank to keep current password">
+      </label>
       <button id="saveUserEditBtn" value="default">Save user</button>
+    </form>
+  </dialog>
+
+  <dialog id="passwordDialog">
+    <form method="dialog">
+      <div class="modal-head">
+        <h3>Change password</h3>
+        <button value="cancel" class="x">×</button>
+      </div>
+      <label>New password
+        <input id="selfPassword" type="password" placeholder="New password">
+      </label>
+      <label>Confirm password
+        <input id="selfPasswordConfirm" type="password" placeholder="Confirm password">
+      </label>
+      <button id="saveSelfPasswordBtn" value="default">Save password</button>
+    </form>
+  </dialog>
+
+  <dialog id="pmDialog">
+    <form method="dialog">
+      <div class="modal-head">
+        <h3 id="editPmTitle">Edit PM task</h3>
+        <button value="cancel" class="x">×</button>
+      </div>
+      <input id="editPmId" type="hidden">
+      <label>Status
+        <select id="editPmStatus"></select>
+      </label>
+      <label>Task
+        <input id="editPmTask">
+      </label>
+      <label>Frequency
+        <select id="editPmFrequency"></select>
+      </label>
+      <label>Next due
+        <input id="editPmNextDue" type="date">
+      </label>
+      <label>Assigned to
+        <input id="editPmAssignedTo">
+      </label>
+      <label>Instructions / checklist
+        <textarea id="editPmInstructions"></textarea>
+      </label>
+      <label>Notes / completion comments
+        <textarea id="editPmNotes"></textarea>
+      </label>
+      <button id="completePmBtn" class="ghost" value="default">Mark complete</button>
+      <button id="savePmEditBtn" value="default">Save PM task</button>
+    </form>
+  </dialog>
+
+  <dialog id="fpcItemDialog">
+    <form method="dialog">
+      <div class="modal-head">
+        <h3>Edit FPC item</h3>
+        <button value="cancel" class="x">Ã—</button>
+      </div>
+      <input id="editFpcRecordId" type="hidden">
+      <input id="editFpcItemId" type="hidden">
+      <label>Status
+        <select id="editFpcStatus">
+          <option>Open</option>
+          <option>In Progress</option>
+          <option>Completed</option>
+        </select>
+      </label>
+      <label>Priority
+        <select id="editFpcPriority">
+          <option>Medium</option>
+          <option>High</option>
+          <option>Low</option>
+        </select>
+      </label>
+      <label>Item needing attention
+        <textarea id="editFpcDescription"></textarea>
+      </label>
+      <label>Assigned to
+        <input id="editFpcAssignedTo">
+      </label>
+      <label>Target date
+        <input id="editFpcTargetDate" type="date">
+      </label>
+      <div id="editFpcPhotoCurrent" class="fpc-photo-current"></div>
+      <label>Add or replace photo
+        <input id="editFpcPhoto" type="file" accept="image/*" capture="environment">
+      </label>
+      <label>Or paste replacement photo/shared link
+        <input id="editFpcPhotoLink" type="url" placeholder="https://drive.google.com/...">
+      </label>
+      <button id="saveFpcEditBtn" value="default">Save FPC item</button>
+    </form>
+  </dialog>
+
+  <dialog id="equipmentDialog">
+    <form method="dialog">
+      <div class="modal-head">
+        <h3 id="editEquipmentTitle">Edit equipment</h3>
+        <button value="cancel" class="x">×</button>
+      </div>
+      <input id="editEquipmentId" type="hidden">
+      <label>Equipment name
+        <input id="editEquipmentName">
+      </label>
+      <label>Equipment type
+        <select id="editEquipmentType"></select>
+      </label>
+      <label>Manufacturer
+        <input id="editEquipmentManufacturer">
+      </label>
+      <label>Model
+        <input id="editEquipmentModel">
+      </label>
+      <label>Serial number
+        <input id="editEquipmentSerial">
+      </label>
+      <label>Notes
+        <textarea id="editEquipmentNotes"></textarea>
+      </label>
+      <button id="saveEquipmentEditBtn" value="default">Save equipment</button>
+    </form>
+  </dialog>
+
+  <dialog id="vendorDialog">
+    <form method="dialog">
+      <div class="modal-head">
+        <h3 id="editVendorTitle">Vendor</h3>
+        <button value="cancel" class="x">×</button>
+      </div>
+      <input id="editVendorId" type="hidden">
+      <label>Vendor name
+        <input id="editVendorName">
+      </label>
+      <label>Category
+        <input id="editVendorCategory">
+      </label>
+      <label>Service area
+        <input id="editVendorServiceArea">
+      </label>
+      <label>Contact name
+        <input id="editVendorContact">
+      </label>
+      <label>Phone
+        <input id="editVendorPhone">
+      </label>
+      <label>Email
+        <input id="editVendorEmail" type="email">
+      </label>
+      <label>Preferred
+        <select id="editVendorPreferred">
+          <option>Yes</option>
+          <option>No</option>
+        </select>
+      </label>
+      <label>Notes
+        <textarea id="editVendorNotes"></textarea>
+      </label>
+      <button id="saveVendorBtn" value="default">Save vendor</button>
     </form>
   </dialog>
 
@@ -458,7 +1200,13 @@
   </dialog>
 
   <div id="toast"></div>
-  <script src="auth.js"></script>
-  <script src="app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="auth.js?v=password-login-2026-07-16"></script>
+  <script src="app.js?v=password-login-2026-07-16"></script>
+  <script>
+    if ('serviceWorker' in navigator && location.protocol === 'https:') {
+      window.addEventListener('load', () => navigator.serviceWorker.register('/service-worker.js'));
+    }
+  </script>
 </body>
 </html>
