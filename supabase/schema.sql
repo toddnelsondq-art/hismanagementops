@@ -3,7 +3,19 @@
 
 create extension if not exists pgcrypto;
 
+create table if not exists public.tenants (
+  id text primary key,
+  name text not null,
+  app_name text not null default 'Operations Hub',
+  subtitle text not null default 'Daily operations',
+  logo_url text not null default 'assets/his-management.png',
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.locations (
+  tenant_id text not null default 'his-management' references public.tenants(id),
   id text primary key,
   name text not null,
   active boolean not null default true,
@@ -11,6 +23,7 @@ create table if not exists public.locations (
 );
 
 create table if not exists public.app_users (
+  tenant_id text not null default 'his-management' references public.tenants(id),
   id text primary key,
   auth_user_id uuid unique,
   email text unique,
@@ -26,6 +39,7 @@ create table if not exists public.app_users (
 );
 
 create table if not exists public.invites (
+  tenant_id text not null default 'his-management' references public.tenants(id),
   id uuid primary key default gen_random_uuid(),
   email text not null,
   name text not null,
@@ -40,6 +54,7 @@ create table if not exists public.invites (
 );
 
 create table if not exists public.days (
+  tenant_id text not null default 'his-management' references public.tenants(id),
   location_id text not null references public.locations(id),
   date text not null,
   payload jsonb not null,
@@ -48,10 +63,37 @@ create table if not exists public.days (
 );
 
 create table if not exists public.maintenance_data (
+  tenant_id text not null default 'his-management' references public.tenants(id),
   key text primary key,
   payload jsonb not null,
   updated_at timestamptz not null default now()
 );
+
+insert into public.tenants(id, name, app_name, subtitle, logo_url)
+values ('his-management', 'HIS Management Group Inc', 'HIS OPS', 'Daily operations', 'assets/his-management.png')
+on conflict (id) do update set
+  name = excluded.name,
+  app_name = excluded.app_name,
+  subtitle = excluded.subtitle,
+  logo_url = excluded.logo_url,
+  updated_at = now();
+
+alter table public.locations add column if not exists tenant_id text not null default 'his-management';
+alter table public.app_users add column if not exists tenant_id text not null default 'his-management';
+alter table public.invites add column if not exists tenant_id text not null default 'his-management';
+alter table public.days add column if not exists tenant_id text not null default 'his-management';
+alter table public.maintenance_data add column if not exists tenant_id text not null default 'his-management';
+
+alter table public.days drop constraint if exists days_pkey;
+alter table public.days add primary key (tenant_id, location_id, date);
+
+alter table public.maintenance_data drop constraint if exists maintenance_data_pkey;
+alter table public.maintenance_data add primary key (tenant_id, key);
+
+create unique index if not exists locations_tenant_id_id_key on public.locations(tenant_id, id);
+create unique index if not exists app_users_tenant_id_id_key on public.app_users(tenant_id, id);
+create unique index if not exists days_tenant_id_location_id_date_key on public.days(tenant_id, location_id, date);
+create unique index if not exists maintenance_data_tenant_id_key_key on public.maintenance_data(tenant_id, key);
 
 insert into public.locations(id, name)
 select 'store-' || lpad(i::text, 2, '0'), 'Store ' || i
@@ -74,3 +116,19 @@ on conflict (id) do nothing;
 insert into storage.buckets(id, name, public)
 values ('dailyops-uploads', 'dailyops-uploads', true)
 on conflict (id) do nothing;
+
+-- Allow signed-in app users to upload/read files in the app storage bucket.
+-- Needed for direct browser-to-Supabase document uploads.
+drop policy if exists "Authenticated users can upload dailyops files" on storage.objects;
+create policy "Authenticated users can upload dailyops files"
+on storage.objects
+for insert
+to authenticated
+with check (bucket_id = 'dailyops-uploads');
+
+drop policy if exists "Authenticated users can read dailyops files" on storage.objects;
+create policy "Authenticated users can read dailyops files"
+on storage.objects
+for select
+to authenticated
+using (bucket_id = 'dailyops-uploads');

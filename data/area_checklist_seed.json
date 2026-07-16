@@ -1,0 +1,3722 @@
+{
+  "taskTemplates": [
+    {
+      "id": "area-chill-opening-wash-hands",
+      "name": "Wash hands",
+      "section": "Chill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-opening-tongs-ladles-spoons-knives-cutting-boards",
+      "name": "Tongs, ladles, spoons, knives, cutting boards",
+      "section": "Chill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-opening-check-temperatures-and-rotate-food-fifo",
+      "name": "Check temperatures & rotate food (FIFO)",
+      "section": "Chill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-opening-stock-all-toppings-juices-and-other-ingredients",
+      "name": "Stock all toppings, juices and other ingredients",
+      "section": "Chill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-opening-fresh-sanitized-water-and-clean-towels",
+      "name": "Fresh sanitized water & clean towels",
+      "section": "Chill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-opening-prepare-back-ups-throughout-chill-area",
+      "name": "Prepare back-ups throughout Chill area",
+      "section": "Chill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-opening-empty-trash-set-up-with-fresh-liners",
+      "name": "Empty trash, set up with fresh liners",
+      "section": "Chill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-opening-blender-bowls-and-lids",
+      "name": "Blender bowls and lids",
+      "section": "Chill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-opening-yogurt",
+      "name": "Yogurt",
+      "section": "Chill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-opening-refrigerated-prep-table-blender-motors",
+      "name": "Refrigerated Prep Table/Blender motors",
+      "section": "Chill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-opening-powders",
+      "name": "Powders",
+      "section": "Chill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-opening-ss-mix-pumps-and-freezers-check-overrun",
+      "name": "SS mix pumps & freezers, check overrun",
+      "section": "Chill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-opening-cups-lids-straws-napkins-sample-cups-stocked",
+      "name": "Cups, lids, straws, napkins, sample cups stocked",
+      "section": "Chill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-opening-arctic-rush-and-pumps",
+      "name": "Arctic Rush™ & pumps",
+      "section": "Chill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-opening-prepare-back-ups-throughout-oj-area",
+      "name": "Prepare back-ups throughout OJ area",
+      "section": "Chill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-opening-all-warmers-and-pumps",
+      "name": "All warmers & pumps",
+      "section": "Chill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-opening-stock-dq-toppings-blizzard-ingredients",
+      "name": "Stock DQ Toppings Blizzard ingredients",
+      "section": "Chill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-mid-shift-wash-hands-at-least-once-an-hour",
+      "name": "Wash hands at least once an hour",
+      "section": "Chill Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-mid-shift-clean-and-sanitize-as-you-go",
+      "name": "Clean & sanitize as you go",
+      "section": "Chill Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-mid-shift-check-temperatures-overrun-and-rotate-food-fifo",
+      "name": "Check temperatures, overrun & rotate food (FIFO)",
+      "section": "Chill Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-mid-shift-restock-all-toppings-juices-and-other-ingredients",
+      "name": "Restock all toppings, juices and other ingredients",
+      "section": "Chill Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-mid-shift-change-sanitized-water-and-rinse-towels-hourly",
+      "name": "Change sanitized water & rinse towels hourly",
+      "section": "Chill Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-mid-shift-resotck-back-ups-through-out-chill-area",
+      "name": "Resotck back-ups through out Chill area",
+      "section": "Chill Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-mid-shift-empty-trash-set-up-with-fresh-liners",
+      "name": "Empty trash, set up with fresh liners",
+      "section": "Chill Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-mid-shift-check-mix-bags-hourly",
+      "name": "Check mix bags hourly",
+      "section": "Chill Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-mid-shift-sweep-and-spot-mop-chill-area",
+      "name": "Sweep & spot mop Chill area",
+      "section": "Chill Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-mid-shift-ss-mix-pumps-and-freezers-check-overrun",
+      "name": "SS mix pumps & freezers, check overrun",
+      "section": "Chill Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-mid-shift-clean-and-sanitize-blender-bowls-and-lids",
+      "name": "Clean and sanitize blender bowls and lids",
+      "section": "Chill Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-mid-shift-arctic-rush-and-pumps",
+      "name": "Arctic Rush & pumps",
+      "section": "Chill Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-mid-shift-all-warmers-and-pumps",
+      "name": "All warmers & pumps",
+      "section": "Chill Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-mid-shift-mechanical-cold-pans-blend-center-blender-motors",
+      "name": "Mechanical cold pans/blend Center/blender motors",
+      "section": "Chill Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-mid-shift-checkc-chili-warmer-water-level",
+      "name": "Checkc chili warmer water level",
+      "section": "Chill Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-wash-hands-at-least-once-an-hour",
+      "name": "Wash hands at least once an hour",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-tongs-ladles-spoons-knives-cutting-boards",
+      "name": "Tongs, ladles, spoons, knives, cutting boards",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-check-temperatures-and-rotate-food-fifo",
+      "name": "Check temperatures & rotate food (FIFO)",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-stock-all-toppings-juices-and-other-ingredients",
+      "name": "Stock all toppings, juices and other ingredients",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-change-sanitized-water-and-rinse-towels-hourly",
+      "name": "Change sanitized water & rinse towels hourly",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-prepare-back-ups-throughout-chill-area",
+      "name": "Prepare back-ups throughout Chill area",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-empty-trash-set-up-with-fresh-liners",
+      "name": "Empty trash, set up with fresh liners",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-blender-bowls-and-lids",
+      "name": "Blender bowls and lids",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-yogurt",
+      "name": "Yogurt",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-ss-mix-pumps-and-freezers-1-at-30-min-before-close",
+      "name": "SS mix pumps & freezers ( 1 at 30 min. before close)",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-powders",
+      "name": "Powders",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-arctic-rush-and-pumps",
+      "name": "Arctic Rush & pumps",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-cups-lids-straws-napkins-sample-cups-stocked",
+      "name": "Cups, lids, straws, napkins, sample cups stocked",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-all-warmers-and-pumps",
+      "name": "All warmers & pumps",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-prepare-back-ups-throughout-oj-area",
+      "name": "Prepare back-ups throughout OJ area",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-mechanical-cold-pans-blend-center-blender-motors",
+      "name": "Mechanical cold pans/blend Center/blender motors",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-stock-dq-toppings-blizzard-ingredients",
+      "name": "Stock DQ Toppings Blizzard ingredients",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-clean-sanitize-and-restock-chill-area",
+      "name": "Clean, Sanitize & Restock Chill Area:",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-wash-hands",
+      "name": "Wash hands",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-clean-and-sanitize-as-you-go",
+      "name": "Clean & sanitize as you go",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-rotate-food-fifo-and-cool-cover-and-store-properly",
+      "name": "Rotate Food (FIFO) & cool, cover & store properly",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-clean-and-sanitize-tongs-ladles-spoons-knives-boards",
+      "name": "Clean & sanitize tongs, ladles, spoons, knives, boards",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-empty-sanitized-water-and-rinse-towels",
+      "name": "Empty sanitized water & rinse towels",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-restock-cones-toppings-ingredients-syrups-and-mixes",
+      "name": "Restock cones, toppings, ingredients, syrups & mixes",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-restock-cups-lids-spoons-straws-napkins",
+      "name": "Restock cups, lids, spoons, straws, napkins",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-shut-down-clean-and-sanitize-all-equipment",
+      "name": "Shut Down, Clean & Sanitize All Equipment:",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-restock-treat-dishes-bowls-lids",
+      "name": "Restock treat dishes, bowls, lids",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-cool-down-cover-store-food-properly-per-food-code",
+      "name": "Cool down/cover/store food properly per food code",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-cover-refrigerate-put-away-all-food-items",
+      "name": "Cover, refrigerate, put-away all food items",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-finish-waste-sheet",
+      "name": "Finish waste sheet",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-complete-daily-and-weekly-cleaning-duties",
+      "name": "Complete daily and weekly cleaning duties",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-final-sweep-and-mop-of-chill-area",
+      "name": "Final sweep & mop of Chill area",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-turn-off-all-equipment",
+      "name": "Turn off all equipment",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-empty-water-fro-shili-warmer",
+      "name": "Empty water fro shili warmer",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-finish-cleaning-all-equipment",
+      "name": "Finish cleaning all equipment",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-all-remiaingin-dishes-to-sink-area-for-washing",
+      "name": "All remiaingin dishes to sink area for washing",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-chill-closing-empty-trahs-set-up-with-fresh-liners",
+      "name": "Empty trahs, set up with fresh liners",
+      "section": "Chill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-opening-wash-hands",
+      "name": "Wash hands",
+      "section": "Grill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-opening-stock-utensils-tongs-spatulas-knives-scrapers",
+      "name": "Stock utensils: tongs, spatulas, knives, scrapers",
+      "section": "Grill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-opening-check-temperatures-and-rotate-food-fifo",
+      "name": "Check temperatures & rotate food (FIFO)",
+      "section": "Grill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-opening-stock-prep-table-sandwich-station",
+      "name": "Stock prep table/sandwich station",
+      "section": "Grill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-opening-fresh-sanitized-water-and-clean-towels",
+      "name": "Fresh sanitized water & clean towels",
+      "section": "Grill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-opening-stock-under-counter-cooler",
+      "name": "Stock under counter cooler",
+      "section": "Grill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-opening-complete-temp-logs",
+      "name": "Complete Temp Logs",
+      "section": "Grill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-opening-stock-spot-freezers",
+      "name": "Stock spot freezers",
+      "section": "Grill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-opening-stock-all-packaging",
+      "name": "Stock all packaging",
+      "section": "Grill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-opening-grills-char-550o-650of-288-343-c",
+      "name": "Grills: Char 550o/650oF (288°/343°C)",
+      "section": "Grill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-opening-stock-bread-toast-buns-as-needed",
+      "name": "Stock bread/toast buns as needed",
+      "section": "Grill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-opening-fryers-fries-350of-177-c-other-365of-185-c",
+      "name": "Fryers: Fries 350oF (177°C) Other 365oF (185°C)",
+      "section": "Grill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-opening-exhaust-hoods-heated-holding-unit-warmers",
+      "name": "Exhaust Hoods/Heated Holding Unit/Warmers",
+      "section": "Grill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-opening-toaster-warming-units-fry-dumpstand",
+      "name": "Toaster/Warming Units/Fry Dumpstand",
+      "section": "Grill Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-mid-shift-wash-hands-at-least-once-an-hour",
+      "name": "Wash hands at least once an hour",
+      "section": "Grill Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-mid-shift-change-out-all-pans-on-prep-table-sandwich-station",
+      "name": "Change out all pans on prep table/sandwich station",
+      "section": "Grill Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-mid-shift-change-gloves-as-needed-wash-hands-between-changes",
+      "name": "Change gloves as needed - wash hands between changes",
+      "section": "Grill Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-mid-shift-re-stock-all-packaging",
+      "name": "Re-stock all packaging",
+      "section": "Grill Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-mid-shift-complete-temp-logs-and-rotate-food-fifo",
+      "name": "Complete Temp Logs and rotate food (FIFO)",
+      "section": "Grill Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-mid-shift-re-stock-spot-freezers",
+      "name": "Re-stock spot freezers",
+      "section": "Grill Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-empty-trash-set-up-with-fresh-liners",
+      "name": "Empty trash, set up with fresh liners",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-stock-bread-toast-buns",
+      "name": "Stock bread/toast buns",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-check-usage-charts-cook-less-more-often",
+      "name": "Check usage charts/cook less more often",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-check-fill-water-pans-on-char-grill",
+      "name": "Check/Fill water pans on char grill",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-check-thaw-list-and-stock-as-needed",
+      "name": "Check Thaw List and stock as needed",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-check-fill-water-in-warmers",
+      "name": "Check/Fill water in warmers",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-count-and-post-waste",
+      "name": "Count and post waste",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-filter-fryers",
+      "name": "Filter Fryers",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-sweep-and-mop-grill-area-floors",
+      "name": "Sweep and mop Grill area floors",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-wash-hands-at-least-once-an-hour",
+      "name": "Wash hands at least once an hour",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-clean-and-sanitize-as-you-go",
+      "name": "Clean & sanitize as you go",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-check-temperatures-and-rotate-food-fifo",
+      "name": "Check temperatures & rotate food (FIFO)",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-rotate-condiment-pans-and-re-stock-prep-table",
+      "name": "Rotate condiment pans and re-stock prep table",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-re-stock-all-packaging",
+      "name": "Re-stock all packaging",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-move-spot-freezer-items-to-walk-in-freezer",
+      "name": "Move spot freezer items to walk in freezer",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-clean-half-of-char-and-flat-grill-and-clean-rotate-filters",
+      "name": "Clean half of char & flat grill and clean / rotate filters",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-clean-area-around-dumpstand-and-pre-close-half-of-unit",
+      "name": "Clean area around dumpstand & pre-close half of unit",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-clean-boost-ovens-inside-outside-vents",
+      "name": "Clean boost ovens: inside/outside/vents",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-clean-half-of-dual-heated-unit-begin-washing-dishes",
+      "name": "Clean half of dual heated unit/Begin washing dishes",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-sweep-walkins-mop-walk-in-cooler",
+      "name": "Sweep walkins/Mop walk in cooler",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-cool-down-cover-store-food-properly",
+      "name": "Cool down/cover/store food properly",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-all-trash-to-back-door-area",
+      "name": "All trash to back door area",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-empty-sanitized-water-and-rinse-towels",
+      "name": "Empty sanitized water & rinse towels",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-clean-all-stainless-steel",
+      "name": "Clean all stainless steel",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-clean-walls-around-all-work-areas",
+      "name": "Clean walls around all work areas",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-shut-down-clean-and-sanitize-all-equipment",
+      "name": "Shut Down, Clean & Sanitize All Equipment:",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-sweep-deck-brush-and-mop-grill-area-floor",
+      "name": "Sweep, deck brush, and mop Grill area floor",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-turn-off-all-equipment",
+      "name": "Turn OFF all equipment",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-rinse-brooms-dustpans-mops-clean-buckets",
+      "name": "Rinse brooms/dustpans/mops/clean buckets",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-finish-cleaning-all-equipment-hoods",
+      "name": "Finish cleaning all equipment/hoods",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-discard-all-left-over-products",
+      "name": "Discard all left over products",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-all-remaining-dishes-to-sink-area-for-washing",
+      "name": "All remaining dishes to sink area for washing",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-count-and-post-remaining-waste",
+      "name": "Count and post remaining waste",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-grill-closing-empty-trash-clean-cans-and-set-up-with-fresh-liners",
+      "name": "Empty trash/clean cans & set up with fresh liners",
+      "section": "Grill Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-opening-wash-hands",
+      "name": "Wash hands",
+      "section": "Cakes Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-opening-record-cake-inventory-in-freezers",
+      "name": "Record cake inventory in freezers",
+      "section": "Cakes Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-opening-fresh-sanitized-water-and-clean-towels",
+      "name": "Fresh sanitized water & clean towels",
+      "section": "Cakes Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-opening-determine-usage-levels-for-the-day",
+      "name": "Determine usage levels for the day",
+      "section": "Cakes Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-opening-stock-cake-display-and-decorate-back-up-cakes",
+      "name": "Stock cake display and decorate back-up cakes",
+      "section": "Cakes Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-opening-turn-on-cone-dip-warmer-120-f-49-c",
+      "name": "Turn on cone dip warmer 120°F (49°C)",
+      "section": "Cakes Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-opening-prepare-special-order-cakes",
+      "name": "Prepare special order cakes",
+      "section": "Cakes Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-opening-setup-projector-snapshot-airbrush",
+      "name": "Setup: projector/snapshot/airbrush",
+      "section": "Cakes Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-opening-track-sales-production-in-cake-log",
+      "name": "Track sales/production in Cake Log",
+      "section": "Cakes Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-opening-place-forms-in-freezer",
+      "name": "Place forms in freezer",
+      "section": "Cakes Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-opening-stock-all-packaging-boards-boxes-domes-labels",
+      "name": "Stock all packaging: boards/boxes/domes/labels",
+      "section": "Cakes Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-opening-stock-utensils-spatulas-flower-nails-bags-tips-comb",
+      "name": "Stock utensils: spatulas/flower nails/bags/tips/comb",
+      "section": "Cakes Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-opening-stock-edible-images-decopacs-cold-fudge",
+      "name": "Stock: edible images/DecoPacs/cold fudge",
+      "section": "Cakes Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-opening-prepare-decorating-bags",
+      "name": "Prepare decorating bags",
+      "section": "Cakes Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-mid-shift-wash-hands-at-least-once-an-hour",
+      "name": "Wash hands at least once an hour",
+      "section": "Cakes Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-mid-shift-provide-inventory-order-to-manager",
+      "name": "Provide inventory order to manager",
+      "section": "Cakes Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-mid-shift-calibrate-thermometers-and-scales",
+      "name": "Calibrate thermometers and scales",
+      "section": "Cakes Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-mid-shift-update-cake-pop-materials",
+      "name": "Update cake POP materials",
+      "section": "Cakes Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-mid-shift-change-sanitized-water-and-rinse-towels-hourly",
+      "name": "Change sanitized water & rinse towels hourly",
+      "section": "Cakes Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-mid-shift-stock-and-make-novelties-as-needed",
+      "name": "Stock & make novelties as needed",
+      "section": "Cakes Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-mid-shift-check-log-equipment-temperatures",
+      "name": "Check/Log Equipment temperatures",
+      "section": "Cakes Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-mid-shift-complete-maintenance-schedules",
+      "name": "Complete Maintenance schedules",
+      "section": "Cakes Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-mid-shift-clean-all-cake-utensils",
+      "name": "Clean all cake utensils",
+      "section": "Cakes Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-mid-shift-clean-counters-walls-floors-behind-equipment",
+      "name": "Clean: counters/walls/floors/behind equipment",
+      "section": "Cakes Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-mid-shift-empty-reline-garbage-containers",
+      "name": "Empty/reline garbage containers",
+      "section": "Cakes Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-closing-store-frosting-and-cold-fudge-in-cooler",
+      "name": "Store frosting & cold fudge in cooler",
+      "section": "Cakes Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-closing-clean-and-store-all-utensils-fudge-pumps-dip-warmer",
+      "name": "Clean & store all utensils/fudge pumps/dip warmer",
+      "section": "Cakes Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-closing-empty-sanitized-water-and-rinse-towels",
+      "name": "Empty sanitized water & rinse towels",
+      "section": "Cakes Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-closing-clean-all-surfaces-countertops",
+      "name": "Clean all surfaces/countertops",
+      "section": "Cakes Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-closing-empty-trash-set-up-with-fresh-liners",
+      "name": "Empty trash, set up with fresh liners",
+      "section": "Cakes Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-closing-mop-mix-cooler-floor",
+      "name": "Mop mix cooler floor",
+      "section": "Cakes Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-closing-sweep-mop-cake-area-floor",
+      "name": "Sweep/mop cake area floor",
+      "section": "Cakes Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-cakes-closing-turn-off-projector-airbrush-snapshot-dip-warmer",
+      "name": "Turn OFF: projector/airbrush/snapshot/dip warmer",
+      "section": "Cakes Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-opening-turn-on-lights-lobby-restrooms-dining-room",
+      "name": "Turn on lights: lobby/restrooms/dining room",
+      "section": "Service Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-opening-stock-paper-and-soap-supplies",
+      "name": "Stock paper and soap supplies",
+      "section": "Service Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-opening-set-up-organize-dining-room-seating",
+      "name": "Set up/organize dining room seating",
+      "section": "Service Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-opening-check-trash-and-replace-trash-liner-if-necessary",
+      "name": "Check trash and replace trash liner if necessary",
+      "section": "Service Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-opening-setup-stock-condiment-stations",
+      "name": "Setup/stock condiment stations",
+      "section": "Service Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-opening-setup-stock-beverage-stations",
+      "name": "Setup/stock beverage stations",
+      "section": "Service Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-opening-clean-parking-lot",
+      "name": "Clean parking lot",
+      "section": "Service Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-opening-clean-windows-and-doors-inside-and-out",
+      "name": "Clean windows & doors inside and out",
+      "section": "Service Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-opening-verify-sound-system-and-tv-s-are-turned-on",
+      "name": "Verify sound system and TV's are turned on",
+      "section": "Service Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-opening-hose-down-sidewalks",
+      "name": "Hose down sidewalks",
+      "section": "Service Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-opening-verify-landscaping-is-neat-and-clean",
+      "name": "Verify landscaping is neat and clean",
+      "section": "Service Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-opening-stock-cups-spoons-napkins-condiments-bags-ice",
+      "name": "Stock: cups/spoons/napkins/condiments/bags/ice",
+      "section": "Service Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-opening-verify-readerboard-message-is-current",
+      "name": "Verify readerboard message is current",
+      "section": "Service Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-opening-prepare-beverages-coffee-iced-tea",
+      "name": "Prepare beverages: coffee, iced tea",
+      "section": "Service Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-opening-verify-register-drawers-and-sign-on",
+      "name": "Verify register drawers and sign on.",
+      "section": "Service Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-opening-setup-sanitized-water-and-clean-towels",
+      "name": "Setup sanitized water and clean towels",
+      "section": "Service Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-opening-spot-sweep-and-mop-if-necessary",
+      "name": "Spot sweep and mop, if necessary",
+      "section": "Service Opening",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-mid-shift-wipe-down-tables-seating-walls",
+      "name": "Wipe down tables/seating/walls",
+      "section": "Service Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-mid-shift-stock-paper-towels-and-soap-supplies",
+      "name": "Stock paper towels and soap supplies",
+      "section": "Service Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-mid-shift-sweep-mop-floors-and-baseboards",
+      "name": "Sweep/mop floors & baseboards",
+      "section": "Service Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-mid-shift-check-trash-and-replace-trash-liner-if-necessary",
+      "name": "Check trash and replace trash liner if necessary",
+      "section": "Service Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-mid-shift-clean-stock-condiment-station",
+      "name": "Clean/stock condiment station",
+      "section": "Service Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-mid-shift-clean-sanitize-toilets-urinals-sink-counter-mirror",
+      "name": "Clean/Sanitize: toilets/urinals/sink/counter/mirror",
+      "section": "Service Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-mid-shift-clean-stock-beverage-station",
+      "name": "Clean/stock beverage station",
+      "section": "Service Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-mid-shift-clean-sanitize-baby-changing-station-napkin-disposal-box",
+      "name": "Clean/Sanitize baby changing station/napkin disposal box",
+      "section": "Service Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-mid-shift-clean-windows-window-ledges-doors",
+      "name": "Clean windows/window ledges/doors",
+      "section": "Service Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-mid-shift-clean-organize-display-freezer",
+      "name": "Clean/organize display freezer",
+      "section": "Service Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-mid-shift-clean-parking-lot",
+      "name": "Clean parking lot",
+      "section": "Service Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-mid-shift-front-counter-and-drive-thru-area",
+      "name": "Front Counter & Drive Thru Area",
+      "section": "Service Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-mid-shift-stock-cups-spoons-napkins-condiments-bags-ice",
+      "name": "Stock: cups/spoons/napkins/condiments/bags/ice",
+      "section": "Service Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-mid-shift-verify-landscaping-is-neat-and-clean",
+      "name": "Verify landscaping is neat and clean",
+      "section": "Service Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-mid-shift-clean-sanitize-countertops-and-equipment",
+      "name": "Clean/sanitize countertops and equipment",
+      "section": "Service Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-mid-shift-verify-dumpster-lid-and-doors-are-closed",
+      "name": "Verify dumpster lid and doors are closed",
+      "section": "Service Mid-shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-closing-clean-tables-and-seating",
+      "name": "Clean: tables and seating",
+      "section": "Service Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-closing-stock-paper-and-soap-supplies",
+      "name": "Stock paper and soap supplies",
+      "section": "Service Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-closing-empty-and-clean-garbage-containers",
+      "name": "Empty and clean garbage containers",
+      "section": "Service Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-closing-tear-down-and-clean-sanitize-beverage-station",
+      "name": "Tear down and clean/sanitize beverage station",
+      "section": "Service Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-closing-clean-sanitize-toilets-urinals-sink-counter-mirror",
+      "name": "Clean/sanitize: toilets/urinals/sink/counter/mirror",
+      "section": "Service Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-closing-clean-and-fill-salt-and-pepper-shakers-table-tents",
+      "name": "Clean and fill salt & pepper shakers/table tents",
+      "section": "Service Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-closing-clean-snaitize-baby-changing-station",
+      "name": "Clean/snaitize baby changing station",
+      "section": "Service Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-closing-verify-sound-system-and-tv-s-are-turned-off",
+      "name": "Verify sound system and TV's are turned off",
+      "section": "Service Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-closing-clean-sanitize-baby-changing-station",
+      "name": "Clean/sanitize baby changing station",
+      "section": "Service Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-closing-stock-back-up-napkins-cups-lids-ice",
+      "name": "Stock back-up napkins/cups/lids/ice",
+      "section": "Service Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-closing-turn-off-clean-hot-beverage-station",
+      "name": "Turn off/clean hot beverage station",
+      "section": "Service Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-closing-sanitize-and-line-delivery-trays",
+      "name": "Sanitize and line delivery trays",
+      "section": "Service Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-closing-clean-all-walls-in-dining-room-restrooms-lobby",
+      "name": "Clean all walls in dining room/restrooms/lobby",
+      "section": "Service Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-closing-sweep-mop-floor-in-dining-room-restrooms-lobby",
+      "name": "Sweep/mop floor in dining room/restrooms/lobby",
+      "section": "Service Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-closing-empty-sanitized-water-and-towels",
+      "name": "Empty sanitized water and towels",
+      "section": "Service Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-closing-rinse-dustpan-mop-bucket",
+      "name": "Rinse dustpan/mop/bucket",
+      "section": "Service Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-closing-cool-down-cover-store-food-properly-per-food-code",
+      "name": "Cool down/cover/store food properly per food code",
+      "section": "Service Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-service-closing-turn-off-lights",
+      "name": "Turn Off Lights",
+      "section": "Service Closing",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-gandc-day-shift-salad-bases",
+      "name": "SALAD BASES",
+      "section": "Prep To G&C Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-gandc-day-shift-salad-blanks",
+      "name": "SALAD BLANKS",
+      "section": "Prep To G&C Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-gandc-day-shift-side-salads",
+      "name": "SIDE SALADS",
+      "section": "Prep To G&C Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-gandc-day-shift-cole-slaw",
+      "name": "COLE SLAW",
+      "section": "Prep To G&C Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-gandc-day-shift-diced-onion",
+      "name": "DICED ONION",
+      "section": "Prep To G&C Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-gandc-day-shift-tomatoes-sliced",
+      "name": "TOMATOES SLICED",
+      "section": "Prep To G&C Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-gandc-day-shift-tomatoes-diced",
+      "name": "TOMATOES DICED",
+      "section": "Prep To G&C Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-gandc-day-shift-leaf-lettuce",
+      "name": "LEAF LETTUCE",
+      "section": "Prep To G&C Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-gandc-day-shift-gravy",
+      "name": "GRAVY",
+      "section": "Prep To G&C Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-gandc-day-shift-chili",
+      "name": "CHILI",
+      "section": "Prep To G&C Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-gandc-day-shift-bbq",
+      "name": "BBQ",
+      "section": "Prep To G&C Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-gandc-day-shift-mushrooms",
+      "name": "MUSHROOMS",
+      "section": "Prep To G&C Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-gandc-day-shift-burger-buns",
+      "name": "BURGER BUNS",
+      "section": "Prep To G&C Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-gandc-day-shift-grillburger-buns",
+      "name": "GRILLBURGER BUNS",
+      "section": "Prep To G&C Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-gandc-day-shift-texas-toast",
+      "name": "TEXAS TOAST",
+      "section": "Prep To G&C Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-gandc-day-shift-bacon-reg-spicy",
+      "name": "BACON: REG/SPICY",
+      "section": "Prep To G&C Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-gandc-day-shift-chicken-quesadilla",
+      "name": "CHICKEN QUESADILLA",
+      "section": "Prep To G&C Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-gandc-day-shift-veggie-quesadilla",
+      "name": "VEGGIE QUESADILLA",
+      "section": "Prep To G&C Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-gandc-day-shift-kids-quesadilla",
+      "name": "KIDS QUESADILLA",
+      "section": "Prep To G&C Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-day-shift-salad-bases",
+      "name": "SALAD BASES",
+      "section": "Prep To Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-day-shift-salad-blanks",
+      "name": "SALAD BLANKS",
+      "section": "Prep To Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-day-shift-side-salads",
+      "name": "SIDE SALADS",
+      "section": "Prep To Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-day-shift-cole-slaw",
+      "name": "COLE SLAW",
+      "section": "Prep To Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-day-shift-diced-onion",
+      "name": "DICED ONION",
+      "section": "Prep To Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-day-shift-tomatoes-sliced",
+      "name": "TOMATOES SLICED",
+      "section": "Prep To Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-day-shift-tomatoes-diced",
+      "name": "TOMATOES DICED",
+      "section": "Prep To Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-day-shift-leaf-lettuce",
+      "name": "LEAF LETTUCE",
+      "section": "Prep To Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-day-shift-gravy",
+      "name": "GRAVY",
+      "section": "Prep To Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-day-shift-wild-buffalo-sauce",
+      "name": "WILD BUFFALO SAUCE",
+      "section": "Prep To Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-day-shift-hickory-bbq-sauce",
+      "name": "HICKORY BBQ SAUCE",
+      "section": "Prep To Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-day-shift-chili",
+      "name": "CHILI",
+      "section": "Prep To Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-day-shift-bbq",
+      "name": "BBQ",
+      "section": "Prep To Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-day-shift-mushrooms",
+      "name": "MUSHROOMS",
+      "section": "Prep To Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-day-shift-burger-buns",
+      "name": "BURGER BUNS",
+      "section": "Prep To Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-day-shift-grillburger-buns",
+      "name": "GRILLBURGER BUNS",
+      "section": "Prep To Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-day-shift-texas-toast",
+      "name": "TEXAS TOAST",
+      "section": "Prep To Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "area-prep-to-day-shift-bacon-reg-spicy",
+      "name": "BACON: REG/SPICY",
+      "section": "Prep To Day Shift",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "daily"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-exterior-weather-permitting-monday-deck-brush-and-or-power-wash-areas-of-parking-lot-to-remove-oil-build-up-stains-and-gum-us",
+      "name": "Exterior - Weather permitting: Deck brush and/or power wash areas of parking lot to remove oil build up, stains, and gum (use scraper for gun).",
+      "section": "Weekly Cleaning - Monday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Monday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-exterior-weather-permitting-tuesday-clean-building-walls-awnings-doors-door-frames-and-door-thresholds",
+      "name": "Exterior - Weather permitting: Clean building walls, awnings, doors, door frames, and door thresholds.",
+      "section": "Weekly Cleaning - Tuesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Tuesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-exterior-weather-permitting-wednesday-clean-landscaping-free-of-trash-leaves-and-weeds-check-adjacent-areas",
+      "name": "Exterior - Weather permitting: Clean landscaping free of trash, leaves, and weeds. Check adjacent areas.",
+      "section": "Weekly Cleaning - Wednesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Wednesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-exterior-weather-permitting-thursday-detail-clean-outside-patio-seating-tables-and-umbrellas-including-newspaper-vending-and-pl",
+      "name": "Exterior - Weather permitting: Detail clean outside patio seating, tables and umbrellas, including newspaper vending and playground.",
+      "section": "Weekly Cleaning - Thursday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Thursday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-exterior-weather-permitting-friday-wipe-down-drive-thru-menu-board-preview-board-speaker-post-and-other-outdoor-pop-materials",
+      "name": "Exterior - Weather permitting: Wipe down drive-thru menu board, preview board, speaker post, and other outdoor POP materials.",
+      "section": "Weekly Cleaning - Friday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Friday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-exterior-weather-permitting-monday-deck-brush-and-or-power-wash-drive-thru-pad-patio-area-and-side-walks-to-remove-built-up-d",
+      "name": "Exterior - Weather permitting: Deck brush and/or power wash drive thru pad, patio area, and side walks to remove built up dirt, grease, stains, or gum (use scraper for gum).",
+      "section": "Weekly Cleaning - Monday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Monday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-exterior-weather-permitting-tuesday-clean-all-ledges-corners-soffits-fascia-and-drain-spouts-around-building",
+      "name": "Exterior - Weather permitting: Clean all ledges, corners, soffits, fascia, and drain spouts around building.",
+      "section": "Weekly Cleaning - Tuesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Tuesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-exterior-weather-permitting-wednesday-clean-all-exterior-windows-including-doors-and-drive-thru-windows",
+      "name": "Exterior - Weather permitting: Clean all exterior windows. Including doors and drive-thru windows.",
+      "section": "Weekly Cleaning - Wednesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Wednesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-exterior-weather-permitting-thursday-detail-clean-all-exterior-trash-cans-inside-out",
+      "name": "Exterior - Weather permitting: Detail clean all exterior trash cans (inside/out).",
+      "section": "Weekly Cleaning - Thursday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Thursday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-exterior-weather-permitting-friday-pick-up-and-clean-patio-area",
+      "name": "Exterior - Weather permitting: Pick up and clean patio area.",
+      "section": "Weekly Cleaning - Friday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Friday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-exterior-weather-permitting-monday-clean-dumpster-area-including-gate-and-inside-corral-deck-wash-or-power-wash-concrete-slab",
+      "name": "Exterior - Weather permitting: Clean dumpster area, including gate and inside corral. Deck wash or power wash concrete slab.",
+      "section": "Weekly Cleaning - Monday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Monday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-exterior-weather-permitting-tuesday-clean-light-covers-or-shields-insects",
+      "name": "Exterior - Weather permitting: Clean light covers or shields (insects).",
+      "section": "Weekly Cleaning - Tuesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Tuesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-exterior-weather-permitting-wednesday-clean-all-exterior-signs-and-reader-boards-as-needed",
+      "name": "Exterior - Weather permitting: Clean all exterior signs and reader boards as needed.",
+      "section": "Weekly Cleaning - Wednesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Wednesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-exterior-weather-permitting-thursday-pick-up-deck-brush-and-organize-back-of-building-area-enclosure",
+      "name": "Exterior - Weather permitting: Pick up, deck brush and organize back of building area (enclosure).",
+      "section": "Weekly Cleaning - Thursday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Thursday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-customer-service-and-dining-area-monday-detail-clean-all-legs-of-tables-and-chairs-in-dining-room-including-high-chairs-check-unde",
+      "name": "Customer Service & Dining Area: Detail clean all legs of tables and chairs in dining room (including high chairs). Check under tables for gum.",
+      "section": "Weekly Cleaning - Monday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Monday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-customer-service-and-dining-area-tuesday-clean-all-ceiling-tiles-and-grid-system-in-customer-service-and-dining-areas",
+      "name": "Customer Service & Dining Area: Clean all ceiling tiles and grid system in customer service and dining areas.",
+      "section": "Weekly Cleaning - Tuesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Tuesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-customer-service-and-dining-area-wednesday-completely-clean-all-shelves-and-inventory-and-organize-under-the-beverage-condiment-areas",
+      "name": "Customer Service & Dining Area: Completely clean all shelves and inventory and organize under the beverage/ condiment areas in lobby.",
+      "section": "Weekly Cleaning - Wednesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Wednesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-customer-service-and-dining-area-thursday-wipe-down-face-of-front-counter-cash-registers-vdu-s-and-credit-card-equipment",
+      "name": "Customer Service & Dining Area: Wipe down face of front counter, cash registers, VDU's and credit card equipment.",
+      "section": "Weekly Cleaning - Thursday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Thursday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-customer-service-and-dining-area-friday-clean-out-water-milk-display-bin-if-applicable",
+      "name": "Customer Service & Dining Area: Clean out water/milk display bin if applicable.",
+      "section": "Weekly Cleaning - Friday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Friday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-customer-service-and-dining-area-saturday-finish-items-not-completed-during-the-week",
+      "name": "Customer Service & Dining Area: Finish items not completed during the week.",
+      "section": "Weekly Cleaning - Saturday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Saturday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-customer-service-and-dining-area-monday-clean-all-baseboards-in-customer-service-and-dining-areas-include-vestibule",
+      "name": "Customer Service & Dining Area: Clean all baseboards in customer service and dining areas (include vestibule).",
+      "section": "Weekly Cleaning - Monday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Monday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-customer-service-and-dining-area-tuesday-clean-all-light-covers-in-the-customer-service-and-dining-areas-include-vestibule",
+      "name": "Customer Service & Dining Area: Clean all light covers in the customer service and dining areas (include vestibule).",
+      "section": "Weekly Cleaning - Tuesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Tuesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-customer-service-and-dining-area-wednesday-wipe-down-all-tile-walls-in-customer-service-and-dining-areas",
+      "name": "Customer Service & Dining Area: Wipe down all tile walls in customer service and dining areas.",
+      "section": "Weekly Cleaning - Wednesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Wednesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-customer-service-and-dining-area-thursday-wipe-out-cake-display-case-and-merchandising-materials",
+      "name": "Customer Service & Dining Area: Wipe out cake display case and merchandising materials.",
+      "section": "Weekly Cleaning - Thursday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Thursday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-customer-service-and-dining-area-friday-clean-napkin-and-straw-dispensers",
+      "name": "Customer Service & Dining Area: Clean napkin and straw dispensers.",
+      "section": "Weekly Cleaning - Friday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Friday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-customer-service-and-dining-area-sunday-wipe-down-clean-menu-board-panels-and-trim",
+      "name": "Customer Service & Dining Area: Wipe down/clean menu board panels and trim.",
+      "section": "Weekly Cleaning - Sunday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Sunday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-customer-service-and-dining-area-monday-change-out-or-thoroughly-clean-floor-mats-runners-and-or-rugs",
+      "name": "Customer Service & Dining Area: Change out or thoroughly clean floor mats, runners and/or rugs.",
+      "section": "Weekly Cleaning - Monday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Monday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-customer-service-and-dining-area-tuesday-clean-all-ventilation-ducts-free-of-dust-build-up-in-customer-service-and-dining-areas",
+      "name": "Customer Service & Dining Area: Clean all ventilation ducts free of dust build-up in customer service and dining areas.",
+      "section": "Weekly Cleaning - Tuesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Tuesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-customer-service-and-dining-area-wednesday-clean-interior-windows-and-wipe-down-all-window-sills-in-customer-service-and-dining-areas",
+      "name": "Customer Service & Dining Area: Clean interior windows and wipe down all window sills in customer service and dining areas.",
+      "section": "Weekly Cleaning - Wednesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Wednesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-customer-service-and-dining-area-thursday-dust-all-pictures-and-wall-art-in-the-dining-room",
+      "name": "Customer Service & Dining Area: Dust all pictures and wall art in the dining room.",
+      "section": "Weekly Cleaning - Thursday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Thursday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-customer-service-and-dining-area-sunday-detail-clean-all-highchairs-and-booster-seats",
+      "name": "Customer Service & Dining Area: Detail clean all highchairs and booster seats.",
+      "section": "Weekly Cleaning - Sunday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Sunday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-customer-service-and-dining-area-monday-completely-clean-the-customer-queue-rail-including-decorative-plates-on-floor",
+      "name": "Customer Service & Dining Area: Completely clean the customer queue rail, including decorative plates on floor.",
+      "section": "Weekly Cleaning - Monday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Monday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-customer-service-and-dining-area-tuesday-dust-awnings-in-dining-room-if-applicable",
+      "name": "Customer Service & Dining Area: Dust awnings in dining room if applicable.",
+      "section": "Weekly Cleaning - Tuesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Tuesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-customer-service-and-dining-area-wednesday-detail-clean-all-customer-service-and-dining-areas-trash-receptacles-inside-out",
+      "name": "Customer Service & Dining Area: Detail clean all customer service and dining areas trash receptacles (inside/out).",
+      "section": "Weekly Cleaning - Wednesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Wednesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-customer-service-and-dining-area-thursday-clean-all-light-fixtures-and-covers-in-the-dinging-room-entryway-and-restrooms-including-i",
+      "name": "Customer Service & Dining Area: Clean all light fixtures and covers in the dinging room, entryway and restrooms, including insects.",
+      "section": "Weekly Cleaning - Thursday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Thursday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-customer-service-and-dining-area-friday-clean-all-gaps-in-booth-cushons",
+      "name": "Customer Service & Dining Area: Clean all gaps in booth cushons.",
+      "section": "Weekly Cleaning - Friday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Friday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-customer-service-and-dining-area-sunday-clean-tent-numbers",
+      "name": "Customer Service & Dining Area: Clean tent numbers",
+      "section": "Weekly Cleaning - Sunday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Sunday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-restroom-monday-clean-door-s-door-frames-and-thresholds-includes-hallway-if-applicable",
+      "name": "Restroom: Clean door(s), door frames, and thresholds (includes hallway - if applicable).",
+      "section": "Weekly Cleaning - Monday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Monday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-restroom-tuesday-detail-clean-all-trash-receptacles-inside-out",
+      "name": "Restroom: Detail clean all trash receptacles (inside/out).",
+      "section": "Weekly Cleaning - Tuesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Tuesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-restroom-wednesday-wipe-down-all-ceiling-tiles-and-grids",
+      "name": "Restroom: Wipe down all ceiling tiles and grids.",
+      "section": "Weekly Cleaning - Wednesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Wednesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-restroom-friday-polish-all-metal-chrome-brass-and-fixtures-toilet-urinal-and-sink",
+      "name": "Restroom: Polish all metal chrome, brass, and fixtures (toilet, urinal, and sink).",
+      "section": "Weekly Cleaning - Friday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Friday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-restroom-monday-clean-all-baseboards-corners-edges",
+      "name": "Restroom: Clean all baseboards (corners/edges).",
+      "section": "Weekly Cleaning - Monday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Monday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-restroom-tuesday-clean-all-walls-and-partitions-top-to-bottom",
+      "name": "Restroom: Clean all walls and partitions (top to bottom).",
+      "section": "Weekly Cleaning - Tuesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Tuesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-restroom-wednesday-clean-all-ceiling-and-wall-vents-insure-free-of-dust-build-up",
+      "name": "Restroom: Clean all ceiling and wall vents (insure free of dust build-up).",
+      "section": "Weekly Cleaning - Wednesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Wednesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-restroom-thursday-detail-clean-changing-table-if-applicable",
+      "name": "Restroom: Detail clean changing table (if applicable).",
+      "section": "Weekly Cleaning - Thursday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Thursday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-chill-area-and-drive-thru-monday-pull-out-all-equipment-in-chill-prep-area-and-clean-behind-including-walls-and-baseboards",
+      "name": "Chill Area & Drive Thru: Pull out all equipment in chill prep area and clean behind (including walls and baseboards).",
+      "section": "Weekly Cleaning - Monday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Monday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-chill-area-and-drive-thru-tuesday-wipe-down-all-tile-walls-in-chill-prep-area",
+      "name": "Chill Area & Drive Thru: Wipe down all tile walls in chill prep area.",
+      "section": "Weekly Cleaning - Tuesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Tuesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-chill-area-and-drive-thru-wednesday-clean-all-ceiling-tiles-and-grid-system-in-chill-and-dt-areas",
+      "name": "Chill Area & Drive Thru: Clean all ceiling tiles and grid system in chill and DT areas.",
+      "section": "Weekly Cleaning - Wednesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Wednesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-chill-area-and-drive-thru-thursday-detail-clean-entire-arctic-rush-machine-and-flavor-dispensers",
+      "name": "Chill Area & Drive Thru: Detail clean entire Arctic Rush machine and flavor dispensers.",
+      "section": "Weekly Cleaning - Thursday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Thursday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-chill-area-and-drive-thru-friday-take-apart-and-wash-rinse-and-sanitize-all-fudge-choc-and-misc-pumps-and-holders-in-s-s-ar",
+      "name": "Chill Area & Drive Thru: Take apart and wash, rinse and sanitize all fudge, choc, and misc. pumps and holders in S.S. area.",
+      "section": "Weekly Cleaning - Friday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Friday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-chill-area-and-drive-thru-saturday-finish-all-items-not-completed-during-the-week",
+      "name": "Chill Area & Drive Thru: Finish all items not completed during the week.",
+      "section": "Weekly Cleaning - Saturday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Saturday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-chill-area-and-drive-thru-sunday-defrost-topping-cabinet-and-other-chill-area-freezers-refrigerators-overnight",
+      "name": "Chill Area & Drive Thru: Defrost topping cabinet and other chill area freezers/ refrigerators overnight.",
+      "section": "Weekly Cleaning - Sunday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Sunday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-chill-area-and-drive-thru-monday-clean-top-and-sides-of-soft-serve-machines",
+      "name": "Chill Area & Drive Thru: Clean top and sides of soft serve machines.",
+      "section": "Weekly Cleaning - Monday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Monday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-chill-area-and-drive-thru-tuesday-detail-clean-all-trash-receptacles-inside-out",
+      "name": "Chill Area & Drive Thru: Detail clean all trash receptacles (inside/out).",
+      "section": "Weekly Cleaning - Tuesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Tuesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-chill-area-and-drive-thru-wednesday-clean-all-light-covers-in-the-chill-and-dt-areas",
+      "name": "Chill Area & Drive Thru: Clean all light covers in the chill and DT areas.",
+      "section": "Weekly Cleaning - Wednesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Wednesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-chill-area-and-drive-thru-thursday-detail-clean-milk-dispenser",
+      "name": "Chill Area & Drive Thru: Detail clean milk dispenser.",
+      "section": "Weekly Cleaning - Thursday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Thursday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-chill-area-and-drive-thru-friday-detail-clean-all-cone-and-cup-racks",
+      "name": "Chill Area & Drive Thru: Detail clean all cone and cup racks.",
+      "section": "Weekly Cleaning - Friday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Friday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-chill-area-and-drive-thru-sunday-clean-all-condensers-on-all-refrigerated-equipment-blast-freezer-topping-cabinet-and-other",
+      "name": "Chill Area & Drive Thru: Clean all condensers on all refrigerated equipment. (blast freezer, topping cabinet and other misc. refrigerators).",
+      "section": "Weekly Cleaning - Sunday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Sunday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-chill-area-and-drive-thru-monday-clean-all-casters-and-legs-on-all-soft-serve-machines",
+      "name": "Chill Area & Drive Thru: Clean all casters and legs on all soft serve machines.",
+      "section": "Weekly Cleaning - Monday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Monday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-chill-area-and-drive-thru-tuesday-clean-and-reorganize-shelves-under-front-counter-and-drive-thru",
+      "name": "Chill Area & Drive Thru: Clean and reorganize shelves under front counter and drive thru.",
+      "section": "Weekly Cleaning - Tuesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Tuesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-chill-area-and-drive-thru-wednesday-clean-all-ventilation-ducts-free-of-dust-build-up-in-chill-and-dt-areas",
+      "name": "Chill Area & Drive Thru: Clean all ventilation ducts free of dust build-up in chill and DT areas.",
+      "section": "Weekly Cleaning - Wednesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Wednesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-chill-area-and-drive-thru-thursday-detail-clean-all-dip-stand-sinks",
+      "name": "Chill Area & Drive Thru: Detail clean all dip stand sinks.",
+      "section": "Weekly Cleaning - Thursday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Thursday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-chill-area-and-drive-thru-friday-empty-wash-rinse-and-sanitize-all-blizzard-nut-and-malt-powder-dispensers",
+      "name": "Chill Area & Drive Thru: Empty, wash, rinse and sanitize all Blizzard, nut, & malt powder dispensers.",
+      "section": "Weekly Cleaning - Friday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Friday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-chill-area-and-drive-thru-monday-clean-all-baseboards-in-chill-prep-area",
+      "name": "Chill Area & Drive Thru: Clean all baseboards in chill prep area.",
+      "section": "Weekly Cleaning - Monday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Monday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-chill-area-and-drive-thru-tuesday-milk-stone-all-soft-serve-machines",
+      "name": "Chill Area & Drive Thru: Milk stone all soft serve machines.",
+      "section": "Weekly Cleaning - Tuesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Tuesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-chill-area-and-drive-thru-wednesday-detail-clean-and-organize-front-counter-and-drive-thru-shelving",
+      "name": "Chill Area & Drive Thru: Detail clean and organize front counter and drive thru shelving.",
+      "section": "Weekly Cleaning - Wednesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Wednesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-chill-area-and-drive-thru-thursday-detail-clean-waffle-cone-machine",
+      "name": "Chill Area & Drive Thru: Detail clean waffle cone machine.",
+      "section": "Weekly Cleaning - Thursday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Thursday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-chill-area-and-drive-thru-friday-empty-wash-rinse-and-sanitize-all-topping-wells",
+      "name": "Chill Area & Drive Thru: Empty, wash, rinse and sanitize all topping wells.",
+      "section": "Weekly Cleaning - Friday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Friday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-chill-area-and-drive-thru-monday-wipe-out-and-clean-inside-and-exterior-of-all-defrosted-freezers-refrigerators",
+      "name": "Chill Area & Drive Thru: Wipe out and clean inside and exterior of all defrosted freezers/ refrigerators.",
+      "section": "Weekly Cleaning - Monday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Monday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-chill-area-and-drive-thru-tuesday-clean-all-vdu-s-in-chill-prep-and-dt-areas",
+      "name": "Chill Area & Drive Thru: Clean all VDU’s in chill prep & DT areas.",
+      "section": "Weekly Cleaning - Tuesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Tuesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-chill-area-and-drive-thru-wednesday-wash-rinse-sanitize-all-oj-powder-and-juice-containers",
+      "name": "Chill Area & Drive Thru: Wash, rinse, sanitize all OJ powder and juice containers.",
+      "section": "Weekly Cleaning - Wednesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Wednesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-chill-area-and-drive-thru-thursday-clean-all-gaskets-on-all-refrigerator-doors",
+      "name": "Chill Area & Drive Thru: Clean all gaskets on all refrigerator doors.",
+      "section": "Weekly Cleaning - Thursday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Thursday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-chill-area-and-drive-thru-friday-detail-clean-oj-blender-motors",
+      "name": "Chill Area & Drive Thru: Detail Clean OJ blender motors.",
+      "section": "Weekly Cleaning - Friday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Friday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-food-prep-area-and-back-of-house-monday-pull-out-all-equipment-in-food-prep-and-boh-areas-and-clean-behind-including-walls-and-bas",
+      "name": "Food Prep Area & Back of House: Pull out all equipment in food prep and BOH areas and clean behind (including walls and baseboards).",
+      "section": "Weekly Cleaning - Monday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Monday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-food-prep-area-and-back-of-house-tuesday-sweep-and-brush-off-walk-in-freezer-floor-walls-ceiling-and-selves-organize-walk-in-freeze",
+      "name": "Food Prep Area & Back of House: Sweep and brush off walk-in freezer floor, walls, ceiling & selves. Organize walk-in freezer.",
+      "section": "Weekly Cleaning - Tuesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Tuesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-food-prep-area-and-back-of-house-wednesday-detail-clean-grill-pull-everything-apart-and-thoroughly-clean-including-grill-drip-pans",
+      "name": "Food Prep Area & Back of House: Detail clean grill (pull everything apart and thoroughly clean including grill drip pans).",
+      "section": "Weekly Cleaning - Wednesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Wednesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-food-prep-area-and-back-of-house-thursday-clean-all-ceiling-tiles-and-grid-system-in-grill-and-boh-areas",
+      "name": "Food Prep Area & Back of House: Clean all ceiling tiles and grid system in grill and BOH areas.",
+      "section": "Weekly Cleaning - Thursday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Thursday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-food-prep-area-and-back-of-house-friday-wipe-down-and-clean-all-syrup-lines-shelves-carbonators-and-pumps",
+      "name": "Food Prep Area & Back of House: Wipe down and clean all syrup lines, shelves, carbonators and pumps.",
+      "section": "Weekly Cleaning - Friday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Friday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-food-prep-area-and-back-of-house-saturday-finish-all-items-not-completed-during-the-week",
+      "name": "Food Prep Area & Back of House: Finish all items not completed during the week.",
+      "section": "Weekly Cleaning - Saturday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Saturday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-food-prep-area-and-back-of-house-sunday-defrost-spot-merchandisers-counter-refrigerators-and-freezers",
+      "name": "Food Prep Area & Back of House: Defrost spot merchandisers, counter refrigerators and freezers.",
+      "section": "Weekly Cleaning - Sunday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Sunday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-food-prep-area-and-back-of-house-monday-clean-all-legs-and-casters-on-all-grill-equipment",
+      "name": "Food Prep Area & Back of House: Clean all legs and casters on all grill equipment.",
+      "section": "Weekly Cleaning - Monday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Monday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-food-prep-area-and-back-of-house-tuesday-wipe-down-all-walls-ceiling-and-shelving-of-walk-in-cooler-clean-floors-and-base-boards-or",
+      "name": "Food Prep Area & Back of House: Wipe down all walls, ceiling, and shelving of walk-in cooler. Clean floors and base boards. Organize walk-in cooler.",
+      "section": "Weekly Cleaning - Tuesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Tuesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-food-prep-area-and-back-of-house-wednesday-boil-out-fryers-and-completely-clean-exterior-of-fryers-as-well-as-interior-casing-this-in",
+      "name": "Food Prep Area & Back of House: Boil out fryers and completely clean exterior of fryers as well as interior casing this includes transfer and filter system.",
+      "section": "Weekly Cleaning - Wednesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Wednesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-food-prep-area-and-back-of-house-thursday-clean-all-light-covers-in-the-grill-and-boh-areas",
+      "name": "Food Prep Area & Back of House: Clean all light covers in the grill and BOH areas.",
+      "section": "Weekly Cleaning - Thursday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Thursday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-food-prep-area-and-back-of-house-friday-detail-clean-all-hand-sinks-mop-bucket-sink-prep-sink-3-compartment-sink-and-grease-trap-i",
+      "name": "Food Prep Area & Back of House: Detail clean all hand sinks, mop bucket sink, prep sink, 3- compartment sink and grease trap if applicable.",
+      "section": "Weekly Cleaning - Friday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Friday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-food-prep-area-and-back-of-house-monday-clean-all-baseboards-in-the-grill-area-and-boh",
+      "name": "Food Prep Area & Back of House: Clean all baseboards in the grill area and BOH.",
+      "section": "Weekly Cleaning - Monday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Monday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-food-prep-area-and-back-of-house-tuesday-take-off-air-filter-from-the-boosting-oven-and-clean",
+      "name": "Food Prep Area & Back of House: Take off air filter from the boosting oven and clean.",
+      "section": "Weekly Cleaning - Tuesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Tuesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-food-prep-area-and-back-of-house-wednesday-clean-inside-and-out-all-food-warmers-including-warmer-drawers-duke-holding-units-and-prod",
+      "name": "Food Prep Area & Back of House: Clean inside and out all food warmers including warmer drawers, Duke holding units, and product dispensers.",
+      "section": "Weekly Cleaning - Wednesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Wednesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-food-prep-area-and-back-of-house-thursday-clean-all-ventilation-ducts-free-of-dust-build-up-in-grill-and-boh-areas",
+      "name": "Food Prep Area & Back of House: Clean all ventilation ducts free of dust build-up in grill and BOH areas.",
+      "section": "Weekly Cleaning - Thursday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Thursday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-food-prep-area-and-back-of-house-friday-clean-all-shelving-units-and-dry-racks-includes-under-counter-storage",
+      "name": "Food Prep Area & Back of House: Clean all shelving units and dry racks (includes under counter storage).",
+      "section": "Weekly Cleaning - Friday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Friday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-food-prep-area-and-back-of-house-monday-wipe-out-and-clean-inside-and-exterior-of-all-defrosted-freezers-refrigerators",
+      "name": "Food Prep Area & Back of House: Wipe out and clean inside and exterior of all defrosted freezers, refrigerators.",
+      "section": "Weekly Cleaning - Monday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Monday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-food-prep-area-and-back-of-house-tuesday-clean-backdoor-including-the-door-frame-and-threshold",
+      "name": "Food Prep Area & Back of House: Clean backdoor (including the door frame and threshold).",
+      "section": "Weekly Cleaning - Tuesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Tuesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-food-prep-area-and-back-of-house-wednesday-sweep-and-mop-walk-in-coolers",
+      "name": "Food Prep Area & Back of House: Sweep and mop walk-in coolers.",
+      "section": "Weekly Cleaning - Wednesday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Wednesday"
+      ],
+      "locationSchedules": {}
+    },
+    {
+      "id": "weekly-food-prep-area-and-back-of-house-thursday-clean-hood-vents",
+      "name": "Food Prep Area & Back of House: Clean hood vents",
+      "section": "Weekly Cleaning - Thursday",
+      "photo": false,
+      "active": true,
+      "scheduleDays": [
+        "Thursday"
+      ],
+      "locationSchedules": {}
+    }
+  ]
+}
