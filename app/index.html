@@ -752,6 +752,18 @@
         <label>Message
           <textarea id="noticeMessage" placeholder="Type the communication here"></textarea>
         </label>
+        <div>
+          <b>Show this notice to</b>
+          <p class="hint">Leave all checked for a company-wide notice, or choose only the roles that should see it.</p>
+          <div id="noticeTargetRoles" class="location-checks">
+            <label class="location-check"><input type="checkbox" value="Employee" checked> Employees</label>
+            <label class="location-check"><input type="checkbox" value="Manager" checked> Managers</label>
+            <label class="location-check"><input type="checkbox" value="Area Manager" checked> Area Managers</label>
+            <label class="location-check"><input type="checkbox" value="Maintenance Tech" checked> Maintenance Techs</label>
+            <label class="location-check"><input type="checkbox" value="Director of Operations" checked> Director of Operations</label>
+            <label class="location-check"><input type="checkbox" value="Owner" checked> Owner</label>
+          </div>
+        </div>
         <label>Attachment or photo
           <input id="noticeFile" type="file">
         </label>

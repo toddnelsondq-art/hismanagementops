@@ -1078,8 +1078,10 @@ async function deleteChecklistSection(section, actor, locationId = 'all') {
 async function readNotices(actor = null) {
   const notices = await readMaintenanceKey('notices', []);
   const actorId = actor?.id || '';
+  const actorRole = actor?.role || '';
   return notices
     .filter(notice => notice.active !== false)
+    .filter(notice => !Array.isArray(notice.targetRoles) || !notice.targetRoles.length || notice.targetRoles.includes(actorRole))
     .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
     .map(notice => ({
       ...notice,
@@ -1102,6 +1104,7 @@ async function saveNotice(payload, actor) {
     message,
     attachmentUrl,
     attachmentName: payload.attachment?.name || payload.attachmentName || '',
+    targetRoles: Array.isArray(payload.targetRoles) && payload.targetRoles.length ? payload.targetRoles : [],
     createdBy: actor?.name || payload.createdBy || 'Manager',
     createdAt: new Date().toISOString(),
     readBy: [],

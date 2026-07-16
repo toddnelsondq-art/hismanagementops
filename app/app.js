@@ -1951,6 +1951,7 @@ function renderNotices() {
       <div class="notice-head">
         <div>
           <h3>${escapeHtml(notice.title)}</h3>
+          ${notice.targetRoles?.length ? `<p class="hint">Visible to: ${notice.targetRoles.map(escapeHtml).join(', ')}</p>` : ''}
           <p class="hint">${escapeHtml(notice.createdBy || 'Manager')} · ${notice.createdAt ? new Date(notice.createdAt).toLocaleString() : ''}</p>
         </div>
         ${notice.unread ? '<span class="status">New</span>' : ''}
@@ -2363,16 +2364,19 @@ async function postNotice() {
   const title = $('#noticeTitle').value.trim();
   const message = $('#noticeMessage').value.trim();
   if (!title || !message) return toast('Enter a notice title and message');
+  const targetRoles = [...document.querySelectorAll('#noticeTargetRoles input:checked')].map(input => input.value);
+  if (!targetRoles.length) return toast('Choose at least one role for this notice');
   const file = $('#noticeFile').files[0];
   const attachmentUrl = $('#noticeLink')?.value.trim() || '';
   const attachment = file ? { name: file.name, dataUrl: await fileToDataUrl(file) } : null;
   try {
     notices = (await api('/api/notice', {
       method: 'POST',
-      body: JSON.stringify({ title, message, attachment, attachmentUrl, attachmentName: attachmentUrl ? 'Shared link' : '' })
+      body: JSON.stringify({ title, message, targetRoles, attachment, attachmentUrl, attachmentName: attachmentUrl ? 'Shared link' : '' })
     })).notices;
     $('#noticeTitle').value = '';
     $('#noticeMessage').value = '';
+    document.querySelectorAll('#noticeTargetRoles input').forEach(input => { input.checked = true; });
     $('#noticeFile').value = '';
     if ($('#noticeLink')) $('#noticeLink').value = '';
     render();
