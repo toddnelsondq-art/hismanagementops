@@ -3,7 +3,7 @@
   functions = "netlify/functions"
 
 [functions]
-  included_files = ["data/maintenance_seed.json"]
+  included_files = ["data/maintenance_seed.json", "data/area_checklist_seed.json"]
 
 [[redirects]]
   from = "/api/*"
