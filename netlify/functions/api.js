@@ -1259,25 +1259,12 @@ async function sendAlertMessages(alert, recipients, dryRun = true) {
       let skipped = false;
       let reason = '';
       let status = '';
-      if (!dryRun && process.env.RESEND_API_KEY && process.env.ALERT_EMAIL_FROM) {
-        if (recipient.email) {
-          const response = await fetch('https://api.resend.com/emails', {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ from: process.env.ALERT_EMAIL_FROM, to: recipient.email, subject: 'HIS OPS overdue alert', text })
-          });
-          delivered = response.ok;
-          status = String(response.status);
-          if (!response.ok) reason = `Email provider returned ${response.status}`;
-        } else {
-          delivered = false;
-          skipped = true;
-          reason = 'No email address';
-        }
-      } else if (!dryRun) {
-        delivered = false;
-        skipped = true;
-        reason = recipient.email ? 'Email provider is not configured' : 'No email address';
+      if (!dryRun) {
+        const emailResult = await sendEmailMessage({ to: recipient.email, subject: 'HIS OPS overdue alert', text });
+        delivered = Boolean(emailResult.delivered);
+        skipped = Boolean(emailResult.skipped);
+        status = emailResult.status ? String(emailResult.status) : '';
+        reason = emailResult.reason || '';
       }
       sent.push({ userId: recipient.id, userName: recipient.name, channel: 'email', to: recipient.email, dryRun, delivered, skipped, status, reason });
     }
@@ -1291,6 +1278,52 @@ async function sendAlertMessages(alert, recipients, dryRun = true) {
 
 function twilioIsReady() {
   return Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM_NUMBER);
+}
+
+function emailProviderIsReady() {
+  return Boolean(
+    (process.env.MAILGUN_API_KEY && process.env.MAILGUN_DOMAIN && (process.env.MAILGUN_FROM_EMAIL || process.env.ALERT_EMAIL_FROM)) ||
+    (process.env.RESEND_API_KEY && process.env.ALERT_EMAIL_FROM)
+  );
+}
+
+async function sendEmailMessage({ to, subject, text }) {
+  if (!to) return { skipped: true, reason: 'No email address' };
+  if (process.env.MAILGUN_API_KEY && process.env.MAILGUN_DOMAIN) {
+    const from = process.env.MAILGUN_FROM_EMAIL || process.env.ALERT_EMAIL_FROM || `HIS OPS <mailgun@${process.env.MAILGUN_DOMAIN}>`;
+    const baseUrl = process.env.MAILGUN_BASE_URL || 'https://api.mailgun.net';
+    const body = new URLSearchParams({ from, to, subject, text });
+    const response = await fetch(`${baseUrl.replace(/\/$/, '')}/v3/${process.env.MAILGUN_DOMAIN}/messages`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${Buffer.from(`api:${process.env.MAILGUN_API_KEY}`).toString('base64')}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body
+    });
+    let detail = '';
+    if (!response.ok) {
+      try {
+        const payload = await response.json();
+        detail = payload.message || response.statusText || '';
+      } catch {
+        detail = response.statusText || '';
+      }
+    }
+    return { delivered: response.ok, status: response.status, provider: 'mailgun', reason: detail };
+  }
+  if (process.env.RESEND_API_KEY && process.env.ALERT_EMAIL_FROM) {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ from: process.env.ALERT_EMAIL_FROM, to, subject, text })
+    });
+    return { delivered: response.ok, status: response.status, provider: 'resend', reason: response.ok ? '' : `Email provider returned ${response.status}` };
+  }
+  return { skipped: true, reason: 'Email provider is not configured' };
 }
 
 async function sendTwilioSms(to, text) {
@@ -1349,25 +1382,9 @@ async function sendAssignmentEmail(task = {}, kind = 'task') {
   ].filter(Boolean).join('\n');
   const result = { delivered: false, assigneeId: task.assigneeId, notify: task.assignmentNotify, sentAt: new Date().toISOString() };
   if (channels.includes('email')) {
-    if (task.assigneeEmail && process.env.RESEND_API_KEY && process.env.ALERT_EMAIL_FROM) {
-      const response = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          from: process.env.ALERT_EMAIL_FROM,
-          to: task.assigneeEmail,
-          subject: `HIS OPS assignment: ${title}`,
-          text
-        })
-      });
-      result.email = { delivered: response.ok, status: response.status, to: task.assigneeEmail };
-      result.delivered = result.delivered || response.ok;
-    } else {
-      result.email = { skipped: true, reason: task.assigneeEmail ? 'Email provider is not configured' : 'No email address' };
-    }
+    result.email = await sendEmailMessage({ to: task.assigneeEmail, subject: `HIS OPS assignment: ${title}`, text });
+    result.email.to = task.assigneeEmail;
+    result.delivered = result.delivered || Boolean(result.email.delivered);
   }
   if (channels.includes('sms')) {
     const smsText = [`HIS OPS ${kind} assigned`, location ? `Location: ${location}` : '', `Task: ${title}`, due ? `Due: ${due}` : '', 'Sign in for details.'].filter(Boolean).join('\n').slice(0, 1500);
@@ -1397,7 +1414,7 @@ async function sendAssignmentEmail(task = {}, kind = 'task') {
 
 async function sendWeeklyAssignmentDigest(query = {}) {
   if (query.secret !== process.env.ALERT_CRON_SECRET) throw Object.assign(new Error('Invalid digest secret'), { statusCode: 403 });
-  const emailReady = Boolean(process.env.RESEND_API_KEY && process.env.ALERT_EMAIL_FROM);
+  const emailReady = emailProviderIsReady();
   const [workOrders, pmSchedule, fpcRecords] = await Promise.all([
     readMaintenanceKey('workOrders', []),
     readMaintenanceKey('pmSchedule', []),
@@ -1428,12 +1445,7 @@ async function sendWeeklyAssignmentDigest(query = {}) {
     const itemResult = { to: group.email || group.phone, count: group.labels.length };
     if (channels.includes('email')) {
       if (group.email && emailReady) {
-        const response = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ from: process.env.ALERT_EMAIL_FROM, to: group.email, subject: 'HIS OPS weekly assignment digest', text })
-        });
-        itemResult.email = { delivered: response.ok, status: response.status };
+        itemResult.email = await sendEmailMessage({ to: group.email, subject: 'HIS OPS weekly assignment digest', text });
       } else {
         itemResult.email = { skipped: true, reason: group.email ? 'Email provider is not configured' : 'No email address' };
       }
