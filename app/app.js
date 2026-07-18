@@ -137,6 +137,7 @@ let dashboardMetrics = {
 let taskTemplates = baseTasks.map(task => ({ ...task, section: 'Opening', active: true }));
 let notices = [];
 let alertSettings = { rules: [], logs: [] };
+let notificationLogs = [];
 let calendarEvents = { events: [] };
 let calendarLocationFilter = localStorage.getItem('calendar-location-filter') || 'all';
 let maintenancePriorityOrder = [];
@@ -459,6 +460,7 @@ async function loadState() {
     taskTemplates = state.taskTemplates?.length ? state.taskTemplates : taskTemplates;
     notices = state.notices || [];
     alertSettings = state.alertSettings || alertSettings;
+    notificationLogs = state.notificationLogs || notificationLogs;
     calendarEvents = state.calendarEvents || calendarEvents;
     users = state.users?.length ? state.users : users;
     locations = state.locations?.length ? state.locations : locations;
@@ -1122,6 +1124,7 @@ function render() {
   renderHistory();
   renderTaskTemplates();
   renderAlertRules();
+  renderNotificationLogs();
   renderNotices();
   renderDashboardAlerts(visibleLocations);
   renderMaintenance();
@@ -2092,6 +2095,31 @@ function renderAlertRules() {
   `).join('') : '<p class="hint">No alert rules yet.</p>';
 }
 
+function notificationStatus(log = {}) {
+  if (log.delivered) return 'Sent';
+  if (log.skipped) return 'Skipped';
+  return 'Failed';
+}
+
+function renderNotificationLogs() {
+  if (!$('#notificationLogsCard')) return;
+  const canView = canUseManage();
+  $('#notificationLogsCard').style.display = canView ? '' : 'none';
+  if (!canView) return;
+  const logs = (notificationLogs || []).slice(0, 100);
+  $('#notificationLogList').innerHTML = logs.length ? logs.map(log => `
+    <article class="card maintenance-row compact">
+      <div>
+        <b>${escapeHtml(notificationStatus(log))} · ${escapeHtml(log.channel || 'notification')} · ${escapeHtml(log.type || 'Alert')}</b>
+        <p>${escapeHtml(log.title || log.subject || log.detail || 'Notification')} ${log.locationName ? `· ${escapeHtml(log.locationName)}` : ''}</p>
+        <p class="hint">${log.createdAt ? new Date(log.createdAt).toLocaleString() : ''} · To: ${escapeHtml(log.recipientName || '')}${log.to ? ` (${escapeHtml(log.to)})` : ''}</p>
+        ${log.reason ? `<p class="hint">Reason: ${escapeHtml(log.reason)}</p>` : ''}
+      </div>
+      <span class="pill">${escapeHtml(notificationStatus(log))}</span>
+    </article>
+  `).join('') : '<p class="hint">No notification attempts logged yet.</p>';
+}
+
 function renderUsers() {
   const actor = currentUser();
   const visibleLocations = locations.filter(location => isFullAccess(actor) || userLocationIds(actor).includes(location.id));
@@ -2579,6 +2607,17 @@ async function previewAlerts() {
     toast('Alert preview complete');
   } catch (error) {
     toast(`Alert preview failed: ${error.message}`);
+  }
+}
+
+async function refreshNotificationLogs() {
+  try {
+    const result = await api('/api/notification-logs');
+    notificationLogs = result.logs || [];
+    renderNotificationLogs();
+    toast('Notification logs refreshed');
+  } catch (error) {
+    toast(`Notification logs did not load: ${error.message}`);
   }
 }
 
@@ -3964,6 +4003,7 @@ $('#cancelCalendarEventBtn').onclick = resetCalendarEventForm;
 $('#saveAlertRuleBtn').onclick = saveAlertRule;
 $('#cancelAlertRuleBtn').onclick = resetAlertRuleForm;
 $('#previewAlertsBtn').onclick = previewAlerts;
+$('#refreshNotificationLogsBtn').onclick = refreshNotificationLogs;
 $('#saveFpcInspectionBtn').onclick = saveFpcInspection;
 $('#saveFpcItemBtn').onclick = saveFpcItem;
 $('#saveFpcEditBtn').onclick = saveFpcEdit;

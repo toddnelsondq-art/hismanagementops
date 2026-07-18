@@ -950,6 +950,40 @@ async function writeMaintenanceKey(key, payload) {
   });
 }
 
+async function readNotificationLogs(actor = null) {
+  const logs = await readMaintenanceKey('notificationLogs', []);
+  const list = Array.isArray(logs) ? logs : [];
+  if (AUTH_REQUIRED && !canManage(actor)) return [];
+  if (!AUTH_REQUIRED || isFullAccess(actor)) return list.slice(0, 500);
+  const allowed = userLocationIds(actor);
+  return list.filter(log => log.locationId && allowed.includes(log.locationId)).slice(0, 500);
+}
+
+async function appendNotificationLogs(entries = []) {
+  const cleanEntries = entries.filter(Boolean).map(entry => ({
+    id: entry.id || `NOTIFY-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    createdAt: entry.createdAt || new Date().toISOString(),
+    type: entry.type || 'Notification',
+    channel: entry.channel || '',
+    title: entry.title || '',
+    detail: entry.detail || '',
+    locationId: entry.locationId || '',
+    locationName: entry.locationName || '',
+    recipientId: entry.recipientId || '',
+    recipientName: entry.recipientName || '',
+    to: entry.to || '',
+    delivered: Boolean(entry.delivered),
+    skipped: Boolean(entry.skipped),
+    status: entry.status || '',
+    reason: entry.reason || ''
+  }));
+  if (!cleanEntries.length) return [];
+  const current = await readMaintenanceKey('notificationLogs', []);
+  const next = [...cleanEntries, ...(Array.isArray(current) ? current : [])].slice(0, 500);
+  await writeMaintenanceKey('notificationLogs', next);
+  return next;
+}
+
 function normalizeTaskTemplate(task = {}) {
   const name = String(task.name || '').trim();
   if (!name) throw Object.assign(new Error('Task name is required'), { statusCode: 400 });
@@ -1220,31 +1254,36 @@ async function sendAlertMessages(alert, recipients, dryRun = true) {
   const sent = [];
   const text = `${alert.locationName}: ${alert.ruleName} is overdue. ${alert.detail}`;
   for (const recipient of recipients) {
-    if ((alert.channels || []).includes('email') && recipient.email) {
+    if ((alert.channels || []).includes('email')) {
       let delivered = dryRun;
+      let skipped = false;
+      let reason = '';
+      let status = '';
       if (!dryRun && process.env.RESEND_API_KEY && process.env.ALERT_EMAIL_FROM) {
-        await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ from: process.env.ALERT_EMAIL_FROM, to: recipient.email, subject: 'HIS OPS overdue alert', text })
-        });
-        delivered = true;
+        if (recipient.email) {
+          const response = await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ from: process.env.ALERT_EMAIL_FROM, to: recipient.email, subject: 'HIS OPS overdue alert', text })
+          });
+          delivered = response.ok;
+          status = String(response.status);
+          if (!response.ok) reason = `Email provider returned ${response.status}`;
+        } else {
+          delivered = false;
+          skipped = true;
+          reason = 'No email address';
+        }
+      } else if (!dryRun) {
+        delivered = false;
+        skipped = true;
+        reason = recipient.email ? 'Email provider is not configured' : 'No email address';
       }
-      sent.push({ userId: recipient.id, channel: 'email', to: recipient.email, dryRun, delivered });
+      sent.push({ userId: recipient.id, userName: recipient.name, channel: 'email', to: recipient.email, dryRun, delivered, skipped, status, reason });
     }
-    if ((alert.channels || []).includes('sms') && recipient.phone) {
-      let delivered = dryRun;
-      const twilioReady = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM_NUMBER;
-      if (!dryRun && twilioReady) {
-        const body = new URLSearchParams({ To: recipient.phone, From: process.env.TWILIO_FROM_NUMBER, Body: text });
-        await fetch(`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`, {
-          method: 'POST',
-          headers: { Authorization: `Basic ${Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString('base64')}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-          body
-        });
-        delivered = true;
-      }
-      sent.push({ userId: recipient.id, channel: 'sms', to: recipient.phone, dryRun, delivered });
+    if ((alert.channels || []).includes('sms')) {
+      const sms = dryRun ? { delivered: true } : await sendTwilioSms(recipient.phone, text);
+      sent.push({ userId: recipient.id, userName: recipient.name, channel: 'sms', to: recipient.phone, dryRun, delivered: Boolean(sms.delivered), skipped: Boolean(sms.skipped), status: sms.status ? String(sms.status) : '', reason: sms.reason || '' });
     }
   }
   return sent;
@@ -1266,7 +1305,16 @@ async function sendTwilioSms(to, text) {
     },
     body
   });
-  return { delivered: response.ok, status: response.status };
+  let detail = '';
+  if (!response.ok) {
+    try {
+      const payload = await response.json();
+      detail = payload.message || payload.more_info || '';
+    } catch {
+      detail = response.statusText || '';
+    }
+  }
+  return { delivered: response.ok, status: response.status, reason: detail };
 }
 
 function assignmentChannels(value = 'none', cadence = 'immediate') {
@@ -1326,6 +1374,24 @@ async function sendAssignmentEmail(task = {}, kind = 'task') {
     result.sms = await sendTwilioSms(task.assigneePhone, smsText);
     result.delivered = result.delivered || Boolean(result.sms?.delivered);
   }
+  await appendNotificationLogs(channels.map(channel => {
+    const channelResult = result[channel] || {};
+    return {
+      type: `${kind} assignment`,
+      channel,
+      title,
+      detail: due ? `Due/target date: ${due}` : '',
+      locationId: task.locationId || task['Location ID'] || '',
+      locationName: location,
+      recipientId: task.assigneeId,
+      recipientName: task.assigneeName || task['Assigned To'] || '',
+      to: channel === 'email' ? task.assigneeEmail : task.assigneePhone,
+      delivered: Boolean(channelResult.delivered),
+      skipped: Boolean(channelResult.skipped),
+      status: channelResult.status ? String(channelResult.status) : '',
+      reason: channelResult.reason || ''
+    };
+  }));
   return result;
 }
 
@@ -1378,6 +1444,21 @@ async function sendWeeklyAssignmentDigest(query = {}) {
     }
     itemResult.delivered = Boolean(itemResult.email?.delivered || itemResult.sms?.delivered);
     sent.push(itemResult);
+    await appendNotificationLogs(channels.map(channel => {
+      const channelResult = itemResult[channel] || {};
+      return {
+        type: 'Weekly assignment digest',
+        channel,
+        title: `${group.labels.length} open assigned item${group.labels.length === 1 ? '' : 's'}`,
+        detail: group.labels.slice(0, 3).join(' | '),
+        recipientName: group.name,
+        to: channel === 'email' ? group.email : group.phone,
+        delivered: Boolean(channelResult.delivered),
+        skipped: Boolean(channelResult.skipped),
+        status: channelResult.status ? String(channelResult.status) : '',
+        reason: channelResult.reason || ''
+      };
+    }));
   }
   return { sent };
 }
@@ -1426,6 +1507,23 @@ async function checkAlerts(query = {}, actor = null) {
     const latest = await readAlertSettings();
     latest.logs = [...(latest.logs || []), ...deliveredAlerts.map(alert => ({ ...alert, checkedAt: new Date().toISOString(), dryRun }))].slice(-500);
     await saveAlertSettings(latest);
+  }
+  if (!dryRun && alerts.length) {
+    await appendNotificationLogs(alerts.flatMap(alert => (alert.sent || []).map(entry => ({
+      type: alert.type === 'temperature' ? 'Temperature alert' : 'Checklist alert',
+      channel: entry.channel,
+      title: alert.ruleName,
+      detail: alert.detail,
+      locationId: alert.locationId,
+      locationName: alert.locationName,
+      recipientId: entry.userId,
+      recipientName: entry.userName,
+      to: entry.to,
+      delivered: entry.delivered,
+      skipped: entry.skipped,
+      status: entry.status,
+      reason: entry.reason
+    }))));
   }
   return { dryRun, date, alerts };
 }
@@ -2099,13 +2197,14 @@ exports.handler = async event => {
       const date = query.date;
       const locationId = query.locationId || DEFAULT_LOCATION_ID;
       const historyScope = query.historyScope || 'location';
-      const [day, history, overdue, taskTemplates, notices, alertSettings, calendarEvents, users, locations] = await Promise.all([
+      const [day, history, overdue, taskTemplates, notices, alertSettings, notificationLogs, calendarEvents, users, locations] = await Promise.all([
         readDay(locationId, date),
         readHistory(historyScope === 'all' ? null : locationId),
         readOverdue(date),
         readTaskTemplates().catch(() => DEFAULT_TASK_TEMPLATES),
         readNotices(actor).catch(() => []),
         readAlertSettings().catch(() => ({ rules: [], logs: [] })),
+        readNotificationLogs(actor).catch(() => []),
         calendarState(actor).catch(() => ({ events: [] })),
         readUsers(),
         readLocations()
@@ -2118,6 +2217,7 @@ exports.handler = async event => {
         taskTemplates,
         notices,
         alertSettings,
+        notificationLogs,
         calendarEvents,
         users,
         locations
@@ -2130,6 +2230,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/dashboard') return json(200, await dashboardSummary(actor, query.range || 'day', query.locationId || 'all'));
     if (method === 'GET' && apiPath === '/maintenance/state') return json(200, await maintenanceState(query.locationId || 'all'));
     if (method === 'GET' && apiPath === '/notices') return json(200, { notices: await readNotices(actor) });
+    if (method === 'GET' && apiPath === '/notification-logs') return json(200, { logs: await readNotificationLogs(actor) });
     if (method === 'GET' && apiPath === '/calendar/state') return json(200, await calendarState(actor));
     if (method === 'GET' && apiPath === '/alerts/state') return json(200, await readAlertSettings());
     if (method === 'GET' && apiPath === '/alerts/check') return json(200, await checkAlerts(query, actor));
