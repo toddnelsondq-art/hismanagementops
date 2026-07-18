@@ -795,6 +795,7 @@ function assignmentPayload(prefix) {
     assigneeId: type === 'internal' ? assigneeId : '',
     assigneeName: type === 'internal' ? (user?.name || '') : '',
     assigneeEmail: type === 'internal' ? (user?.email || '') : '',
+    assigneePhone: type === 'internal' ? (user?.phone || user?.mobile_phone || user?.mobile || '') : '',
     vendorId: type === 'vendor' ? vendorId : '',
     vendorName: type === 'vendor' ? (vendor?.['Vendor Name'] || '') : '',
     assignmentNotify: type === 'internal' ? notify : 'none',
@@ -3495,6 +3496,7 @@ $('#savePhotoBtn').onclick = async () => {
 $('#addUserBtn').onclick = async () => {
   const name = $('#newUserName').value.trim();
   const email = $('#newUserEmail').value.trim();
+  const phone = $('#newUserPhone').value.trim();
   const temporaryPassword = $('#newUserPassword').value.trim();
   if (!name) return toast('Enter a user name');
   if (window.dailyOpsAuth?.enabled && !email) return toast('Enter an email for hosted login');
@@ -3508,9 +3510,10 @@ $('#addUserBtn').onclick = async () => {
   if (!allowedAssignableRoles().includes(role)) return toast('You do not have access to create that role');
   if (!isFullAccess() && locationIds.some(savedLocation => !userLocationIds().includes(savedLocation))) return toast('You can only add users to your locations');
   try {
-    await saveUser({ name, email, temporaryPassword, role, locationId, locationIds, invitedBy: currentUser().name });
+    await saveUser({ name, email, phone, temporaryPassword, role, locationId, locationIds, invitedBy: currentUser().name });
     $('#newUserName').value = '';
     $('#newUserEmail').value = '';
+    $('#newUserPhone').value = '';
     $('#newUserPassword').value = '';
     $('#newUserRole').value = 'Employee';
     renderNewUserLocationChecks();
@@ -3533,6 +3536,7 @@ function openUserDialog(id) {
   $('#editUserId').value = user.id;
   $('#editUserName').value = user.name;
   $('#editUserEmail').value = user.email || '';
+  $('#editUserPhone').value = user.phone || '';
   $('#editUserPassword').value = '';
   $('#editUserRole').innerHTML = roles.map(role => `<option ${user.role === role ? 'selected' : ''}>${role}</option>`).join('');
   if (!roles.includes(user.role)) $('#editUserRole').innerHTML += `<option selected>${escapeHtml(user.role)}</option>`;
@@ -3552,6 +3556,7 @@ $('#saveUserEditBtn').onclick = async () => {
   if (!existing || !canEditUser(existing)) return toast('You do not have access to edit this user');
   const name = $('#editUserName').value.trim();
   const email = $('#editUserEmail').value.trim();
+  const phone = $('#editUserPhone').value.trim();
   const role = $('#editUserRole').value;
   const selected = [...document.querySelectorAll('#editUserLocations input:checked')].map(input => input.value);
   const locationId = $('#editUserLocation').value;
@@ -3564,6 +3569,7 @@ $('#saveUserEditBtn').onclick = async () => {
       id,
       name,
       email,
+      phone,
       role,
       locationId,
       locationIds: locationsToSave
@@ -3738,13 +3744,14 @@ async function importMaintenanceWorkbook() {
 function importedUserFromRow(row) {
   const name = rowValue(row, ['Name', 'Employee Name', 'User Name', 'Full Name']);
   const email = rowValue(row, ['Email', 'Email Address', 'User Email']);
+  const phone = rowValue(row, ['Phone', 'Phone Number', 'Mobile', 'Mobile Phone', 'Cell']);
   const temporaryPassword = rowValue(row, ['Temporary Password', 'Password', 'Temp Password']);
   const role = normalizeRole(rowValue(row, ['Role', 'Access Level']) || 'Employee');
   const homeLocationValue = rowValue(row, ['Home Location', 'Location', 'Store', 'Store Location', 'Location ID']);
   const attachedValue = rowValue(row, ['Attached Locations', 'Location IDs', 'Locations', 'Assigned Locations', 'Stores']);
   const locationId = findLocationId(homeLocationValue) || currentLocationId;
   const locationIds = roleUsesMultipleLocations(role) ? importedLocationIds(attachedValue, locationId) : [locationId];
-  return { name, email, temporaryPassword, role, locationId, locationIds, invitedBy: currentUser().name };
+  return { name, email, phone, temporaryPassword, role, locationId, locationIds, invitedBy: currentUser().name };
 }
 
 async function importUsersFromFile() {

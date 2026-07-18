@@ -663,6 +663,7 @@ async function saveUser(user) {
       id,
       auth_user_id: user.authUserId || undefined,
       email: user.email || null,
+      phone: user.phone || null,
       name: user.name,
       role: user.role || 'Employee',
       location_id: locationId,
@@ -798,6 +799,7 @@ async function createUserLogin(payload) {
     id: payload.email ? safeName(payload.email) : undefined,
     authUserId,
     email: payload.email,
+    phone: payload.phone,
     name: payload.name,
     role: payload.role || 'Employee',
     locationId,
@@ -1248,10 +1250,44 @@ async function sendAlertMessages(alert, recipients, dryRun = true) {
   return sent;
 }
 
+function twilioIsReady() {
+  return Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM_NUMBER);
+}
+
+async function sendTwilioSms(to, text) {
+  if (!to) return { skipped: true, reason: 'No phone number' };
+  if (!twilioIsReady()) return { skipped: true, reason: 'Twilio is not configured' };
+  const body = new URLSearchParams({ To: to, From: process.env.TWILIO_FROM_NUMBER, Body: text });
+  const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString('base64')}`,
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body
+  });
+  return { delivered: response.ok, status: response.status };
+}
+
+function assignmentChannels(value = 'none', cadence = 'immediate') {
+  const normalized = String(value || 'none').toLowerCase();
+  if (cadence === 'immediate') {
+    if (normalized === 'immediate' || normalized === 'immediate-email') return ['email'];
+    if (normalized === 'immediate-sms') return ['sms'];
+    if (normalized === 'immediate-both') return ['email', 'sms'];
+  }
+  if (cadence === 'weekly') {
+    if (normalized === 'weekly' || normalized === 'weekly-email') return ['email'];
+    if (normalized === 'weekly-sms') return ['sms'];
+    if (normalized === 'weekly-both') return ['email', 'sms'];
+  }
+  return [];
+}
+
 async function sendAssignmentEmail(task = {}, kind = 'task') {
-  if (task.assignmentType !== 'internal' || task.assignmentNotify !== 'immediate' || !task.assigneeEmail) return { skipped: true };
-  if (task.assignmentEmail?.assigneeId === task.assigneeId && task.assignmentEmail?.delivered) return task.assignmentEmail;
-  if (!process.env.RESEND_API_KEY || !process.env.ALERT_EMAIL_FROM) return { skipped: true, reason: 'Email provider is not configured' };
+  const channels = assignmentChannels(task.assignmentNotify, 'immediate');
+  if (task.assignmentType !== 'internal' || channels.length === 0) return { skipped: true };
+  if (task.assignmentEmail?.assigneeId === task.assigneeId && task.assignmentEmail?.notify === task.assignmentNotify && task.assignmentEmail?.delivered) return task.assignmentEmail;
   const location = task.locationName || task['Location Name'] || '';
   const title = task.title || task.description || task.Task || task['Issue Description'] || kind;
   const due = task.targetDate || task['Target Date'] || task['Next Due'] || '';
@@ -1263,25 +1299,39 @@ async function sendAssignmentEmail(task = {}, kind = 'task') {
     '',
     'Please sign in to HIS OPS to review the details.'
   ].filter(Boolean).join('\n');
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      from: process.env.ALERT_EMAIL_FROM,
-      to: task.assigneeEmail,
-      subject: `HIS OPS assignment: ${title}`,
-      text
-    })
-  });
-  return { delivered: response.ok, status: response.status, assigneeId: task.assigneeId, sentAt: new Date().toISOString() };
+  const result = { delivered: false, assigneeId: task.assigneeId, notify: task.assignmentNotify, sentAt: new Date().toISOString() };
+  if (channels.includes('email')) {
+    if (task.assigneeEmail && process.env.RESEND_API_KEY && process.env.ALERT_EMAIL_FROM) {
+      const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          from: process.env.ALERT_EMAIL_FROM,
+          to: task.assigneeEmail,
+          subject: `HIS OPS assignment: ${title}`,
+          text
+        })
+      });
+      result.email = { delivered: response.ok, status: response.status, to: task.assigneeEmail };
+      result.delivered = result.delivered || response.ok;
+    } else {
+      result.email = { skipped: true, reason: task.assigneeEmail ? 'Email provider is not configured' : 'No email address' };
+    }
+  }
+  if (channels.includes('sms')) {
+    const smsText = [`HIS OPS ${kind} assigned`, location ? `Location: ${location}` : '', `Task: ${title}`, due ? `Due: ${due}` : '', 'Sign in for details.'].filter(Boolean).join('\n').slice(0, 1500);
+    result.sms = await sendTwilioSms(task.assigneePhone, smsText);
+    result.delivered = result.delivered || Boolean(result.sms?.delivered);
+  }
+  return result;
 }
 
 async function sendWeeklyAssignmentDigest(query = {}) {
   if (query.secret !== process.env.ALERT_CRON_SECRET) throw Object.assign(new Error('Invalid digest secret'), { statusCode: 403 });
-  if (!process.env.RESEND_API_KEY || !process.env.ALERT_EMAIL_FROM) return { sent: [], skipped: 'Email provider is not configured' };
+  const emailReady = Boolean(process.env.RESEND_API_KEY && process.env.ALERT_EMAIL_FROM);
   const [workOrders, pmSchedule, fpcRecords] = await Promise.all([
     readMaintenanceKey('workOrders', []),
     readMaintenanceKey('pmSchedule', []),
@@ -1289,28 +1339,45 @@ async function sendWeeklyAssignmentDigest(query = {}) {
   ]);
   const assigned = [];
   workOrders
-    .filter(order => order.assignmentType === 'internal' && order.assignmentNotify === 'weekly' && order.assigneeEmail && !['Completed', 'Cancelled', 'Canceled'].includes(order.Status))
-    .forEach(order => assigned.push({ email: order.assigneeEmail, name: order.assigneeName || order['Assigned To'] || '', label: `Work order ${order['Work Order ID']}: ${order['Issue Description'] || order.Category || 'Work order'} (${order['Location Name'] || ''})` }));
+    .filter(order => order.assignmentType === 'internal' && assignmentChannels(order.assignmentNotify, 'weekly').length && !['Completed', 'Cancelled', 'Canceled'].includes(order.Status))
+    .forEach(order => assigned.push({ email: order.assigneeEmail, phone: order.assigneePhone, channels: assignmentChannels(order.assignmentNotify, 'weekly'), name: order.assigneeName || order['Assigned To'] || '', label: `Work order ${order['Work Order ID']}: ${order['Issue Description'] || order.Category || 'Work order'} (${order['Location Name'] || ''})` }));
   pmSchedule
-    .filter(pm => pm.assignmentType === 'internal' && pm.assignmentNotify === 'weekly' && pm.assigneeEmail && pm.Status !== 'Completed')
-    .forEach(pm => assigned.push({ email: pm.assigneeEmail, name: pm.assigneeName || pm['Assigned To'] || '', label: `PM ${pm['PM ID']}: ${pm.Task || 'PM task'} (${pm['Location Name'] || ''})` }));
+    .filter(pm => pm.assignmentType === 'internal' && assignmentChannels(pm.assignmentNotify, 'weekly').length && pm.Status !== 'Completed')
+    .forEach(pm => assigned.push({ email: pm.assigneeEmail, phone: pm.assigneePhone, channels: assignmentChannels(pm.assignmentNotify, 'weekly'), name: pm.assigneeName || pm['Assigned To'] || '', label: `PM ${pm['PM ID']}: ${pm.Task || 'PM task'} (${pm['Location Name'] || ''})` }));
   fpcRecords.forEach(record => (record.items || [])
-    .filter(item => item.assignmentType === 'internal' && item.assignmentNotify === 'weekly' && item.assigneeEmail && item.status !== 'Completed')
-    .forEach(item => assigned.push({ email: item.assigneeEmail, name: item.assigneeName || item.assignedTo || '', label: `FPC: ${item.description || 'Repair item'} (${record.locationName || ''})` })));
+    .filter(item => item.assignmentType === 'internal' && assignmentChannels(item.assignmentNotify, 'weekly').length && item.status !== 'Completed')
+    .forEach(item => assigned.push({ email: item.assigneeEmail, phone: item.assigneePhone, channels: assignmentChannels(item.assignmentNotify, 'weekly'), name: item.assigneeName || item.assignedTo || '', label: `FPC: ${item.description || 'Repair item'} (${record.locationName || ''})` })));
   const grouped = assigned.reduce((map, item) => {
-    map[item.email] ??= { email: item.email, name: item.name, labels: [] };
-    map[item.email].labels.push(item.label);
+    const key = item.email || item.phone;
+    if (!key) return map;
+    map[key] ??= { email: item.email, phone: item.phone, name: item.name, labels: [], channels: new Set() };
+    item.channels.forEach(channel => map[key].channels.add(channel));
+    map[key].labels.push(item.label);
     return map;
   }, {});
   const sent = [];
   for (const group of Object.values(grouped)) {
     const text = [`${group.name || 'Hello'},`, '', 'Here are your current HIS OPS assigned items:', '', ...group.labels.map(label => `- ${label}`), '', 'Please sign in to HIS OPS to review details.'].join('\n');
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: process.env.ALERT_EMAIL_FROM, to: group.email, subject: 'HIS OPS weekly assignment digest', text })
-    });
-    sent.push({ to: group.email, count: group.labels.length, delivered: response.ok, status: response.status });
+    const channels = Array.from(group.channels);
+    const itemResult = { to: group.email || group.phone, count: group.labels.length };
+    if (channels.includes('email')) {
+      if (group.email && emailReady) {
+        const response = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ from: process.env.ALERT_EMAIL_FROM, to: group.email, subject: 'HIS OPS weekly assignment digest', text })
+        });
+        itemResult.email = { delivered: response.ok, status: response.status };
+      } else {
+        itemResult.email = { skipped: true, reason: group.email ? 'Email provider is not configured' : 'No email address' };
+      }
+    }
+    if (channels.includes('sms')) {
+      const smsText = `HIS OPS weekly assignments: ${group.labels.length} open item(s). ${group.labels.slice(0, 2).join(' | ')}${group.labels.length > 2 ? ' | More in HIS OPS.' : ''}`.slice(0, 1500);
+      itemResult.sms = await sendTwilioSms(group.phone, smsText);
+    }
+    itemResult.delivered = Boolean(itemResult.email?.delivered || itemResult.sms?.delivered);
+    sent.push(itemResult);
   }
   return { sent };
 }
@@ -1433,6 +1500,7 @@ async function saveFpcItem(payload, actor) {
     assigneeId: payload.assigneeId || '',
     assigneeName: payload.assigneeName || '',
     assigneeEmail: payload.assigneeEmail || '',
+    assigneePhone: payload.assigneePhone || '',
     vendorId: payload.vendorId || '',
     vendorName: payload.vendorName || '',
     assignmentNotify: payload.assignmentNotify || 'none',
@@ -1458,7 +1526,7 @@ async function updateFpcItem(payload, actor) {
   const record = records.find(entry => entry.id === payload.recordId);
   const item = record?.items?.find(entry => entry.id === payload.itemId);
   if (!item) throw Object.assign(new Error('FPC item not found'), { statusCode: 404 });
-  ['description', 'priority', 'status', 'assignedTo', 'assignmentType', 'assigneeId', 'assigneeName', 'assigneeEmail', 'vendorId', 'vendorName', 'assignmentNotify', 'targetDate', 'photoUrl', 'photoName'].forEach(key => {
+  ['description', 'priority', 'status', 'assignedTo', 'assignmentType', 'assigneeId', 'assigneeName', 'assigneeEmail', 'assigneePhone', 'vendorId', 'vendorName', 'assignmentNotify', 'targetDate', 'photoUrl', 'photoName'].forEach(key => {
     if (payload[key] !== undefined) item[key] = payload[key];
   });
   item.assignmentEmail = await sendAssignmentEmail({ ...item, locationName: record.locationName }, 'FPC repair item');
@@ -1769,6 +1837,7 @@ async function writeWorkOrder(payload) {
     assigneeId: payload.assigneeId || '',
     assigneeName: payload.assigneeName || '',
     assigneeEmail: payload.assigneeEmail || '',
+    assigneePhone: payload.assigneePhone || '',
     'Vendor ID': payload.vendorId,
     vendorId: payload.vendorId || '',
     vendorName: payload.vendorName || '',
@@ -1804,6 +1873,7 @@ async function updateWorkOrder(payload) {
     assigneeId: 'assigneeId',
     assigneeName: 'assigneeName',
     assigneeEmail: 'assigneeEmail',
+    assigneePhone: 'assigneePhone',
     vendorId: 'Vendor ID',
     vendorName: 'vendorName',
     assignmentNotify: 'assignmentNotify',
@@ -1887,6 +1957,7 @@ async function writePmTask(payload) {
     assigneeId: payload.assigneeId || '',
     assigneeName: payload.assigneeName || '',
     assigneeEmail: payload.assigneeEmail || '',
+    assigneePhone: payload.assigneePhone || '',
     vendorId: payload.vendorId || '',
     vendorName: payload.vendorName || '',
     assignmentNotify: payload.assignmentNotify || 'none',
@@ -1916,6 +1987,7 @@ async function updatePmTask(payload) {
     assigneeId: 'assigneeId',
     assigneeName: 'assigneeName',
     assigneeEmail: 'assigneeEmail',
+    assigneePhone: 'assigneePhone',
     vendorId: 'vendorId',
     vendorName: 'vendorName',
     assignmentNotify: 'assignmentNotify',

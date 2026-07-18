@@ -27,6 +27,7 @@ create table if not exists public.app_users (
   id text primary key,
   auth_user_id uuid unique,
   email text unique,
+  phone text,
   name text not null,
   role text not null default 'Employee',
   location_id text not null default 'store-01' references public.locations(id),

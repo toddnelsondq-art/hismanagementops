@@ -194,11 +194,15 @@
         <label>Vendor
           <select id="woVendor"></select>
         </label>
-        <label>Internal email notification
+        <label>Internal notification
           <select id="woAssignmentNotify">
-            <option value="none">Do not email yet</option>
-            <option value="immediate">Email when assigned</option>
-            <option value="weekly">Include in weekly digest</option>
+            <option value="none">Do not notify yet</option>
+            <option value="immediate-email">Email when assigned</option>
+            <option value="immediate-sms">Text when assigned</option>
+            <option value="immediate-both">Email + text when assigned</option>
+            <option value="weekly-email">Weekly email digest</option>
+            <option value="weekly-sms">Weekly text digest</option>
+            <option value="weekly-both">Weekly email + text digest</option>
           </select>
         </label>
         <label>Issue description
@@ -284,11 +288,15 @@
         <label>Vendor
           <select id="pmVendor"></select>
         </label>
-        <label>Internal email notification
+        <label>Internal notification
           <select id="pmAssignmentNotify">
-            <option value="none">Do not email yet</option>
-            <option value="immediate">Email when assigned</option>
-            <option value="weekly">Include in weekly digest</option>
+            <option value="none">Do not notify yet</option>
+            <option value="immediate-email">Email when assigned</option>
+            <option value="immediate-sms">Text when assigned</option>
+            <option value="immediate-both">Email + text when assigned</option>
+            <option value="weekly-email">Weekly email digest</option>
+            <option value="weekly-sms">Weekly text digest</option>
+            <option value="weekly-both">Weekly email + text digest</option>
           </select>
         </label>
         <label>Instructions / Checklist
@@ -512,11 +520,15 @@
         <label>Vendor
           <select id="fpcVendor"></select>
         </label>
-        <label>Internal email notification
+        <label>Internal notification
           <select id="fpcAssignmentNotify">
-            <option value="none">Do not email yet</option>
-            <option value="immediate">Email when assigned</option>
-            <option value="weekly">Include in weekly digest</option>
+            <option value="none">Do not notify yet</option>
+            <option value="immediate-email">Email when assigned</option>
+            <option value="immediate-sms">Text when assigned</option>
+            <option value="immediate-both">Email + text when assigned</option>
+            <option value="weekly-email">Weekly email digest</option>
+            <option value="weekly-sms">Weekly text digest</option>
+            <option value="weekly-both">Weekly email + text digest</option>
           </select>
         </label>
         <label>Target date
@@ -876,6 +888,9 @@
         <label>Email
           <input id="newUserEmail" type="email" placeholder="employee@example.com">
         </label>
+        <label>Phone for text alerts
+          <input id="newUserPhone" type="tel" placeholder="+15551234567">
+        </label>
         <label>Temporary password
           <input id="newUserPassword" type="text" placeholder="Temporary password">
         </label>
@@ -1028,6 +1043,9 @@
       <label>Email
         <input id="editUserEmail" type="email">
       </label>
+      <label>Phone for text alerts
+        <input id="editUserPhone" type="tel" placeholder="+15551234567">
+      </label>
       <label>Role
         <select id="editUserRole">
           <option>Employee</option>
@@ -1101,11 +1119,15 @@
       <label>Vendor
         <select id="editPmVendor"></select>
       </label>
-      <label>Internal email notification
+      <label>Internal notification
         <select id="editPmAssignmentNotify">
-          <option value="none">Do not email yet</option>
-          <option value="immediate">Email when assigned</option>
-          <option value="weekly">Include in weekly digest</option>
+          <option value="none">Do not notify yet</option>
+          <option value="immediate-email">Email when assigned</option>
+          <option value="immediate-sms">Text when assigned</option>
+          <option value="immediate-both">Email + text when assigned</option>
+          <option value="weekly-email">Weekly email digest</option>
+          <option value="weekly-sms">Weekly text digest</option>
+          <option value="weekly-both">Weekly email + text digest</option>
         </select>
       </label>
       <label>Instructions / checklist
@@ -1157,11 +1179,15 @@
       <label>Vendor
         <select id="editFpcVendor"></select>
       </label>
-      <label>Internal email notification
+      <label>Internal notification
         <select id="editFpcAssignmentNotify">
-          <option value="none">Do not email yet</option>
-          <option value="immediate">Email when assigned</option>
-          <option value="weekly">Include in weekly digest</option>
+          <option value="none">Do not notify yet</option>
+          <option value="immediate-email">Email when assigned</option>
+          <option value="immediate-sms">Text when assigned</option>
+          <option value="immediate-both">Email + text when assigned</option>
+          <option value="weekly-email">Weekly email digest</option>
+          <option value="weekly-sms">Weekly text digest</option>
+          <option value="weekly-both">Weekly email + text digest</option>
         </select>
       </label>
       <label>Target date
@@ -1272,11 +1298,15 @@
       <label>Vendor
         <select id="editWoVendor"></select>
       </label>
-      <label>Internal email notification
+      <label>Internal notification
         <select id="editWoAssignmentNotify">
-          <option value="none">Do not email yet</option>
-          <option value="immediate">Email when assigned</option>
-          <option value="weekly">Include in weekly digest</option>
+          <option value="none">Do not notify yet</option>
+          <option value="immediate-email">Email when assigned</option>
+          <option value="immediate-sms">Text when assigned</option>
+          <option value="immediate-both">Email + text when assigned</option>
+          <option value="weekly-email">Weekly email digest</option>
+          <option value="weekly-sms">Weekly text digest</option>
+          <option value="weekly-both">Weekly email + text digest</option>
         </select>
       </label>
       <label>Issue / comments
@@ -1321,3 +1351,4 @@
   </script>
 </body>
 </html>
+
