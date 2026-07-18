@@ -1248,6 +1248,73 @@ async function sendAlertMessages(alert, recipients, dryRun = true) {
   return sent;
 }
 
+async function sendAssignmentEmail(task = {}, kind = 'task') {
+  if (task.assignmentType !== 'internal' || task.assignmentNotify !== 'immediate' || !task.assigneeEmail) return { skipped: true };
+  if (task.assignmentEmail?.assigneeId === task.assigneeId && task.assignmentEmail?.delivered) return task.assignmentEmail;
+  if (!process.env.RESEND_API_KEY || !process.env.ALERT_EMAIL_FROM) return { skipped: true, reason: 'Email provider is not configured' };
+  const location = task.locationName || task['Location Name'] || '';
+  const title = task.title || task.description || task.Task || task['Issue Description'] || kind;
+  const due = task.targetDate || task['Target Date'] || task['Next Due'] || '';
+  const text = [
+    `You have been assigned a HIS OPS ${kind}.`,
+    location ? `Location: ${location}` : '',
+    `Task: ${title}`,
+    due ? `Due/target date: ${due}` : '',
+    '',
+    'Please sign in to HIS OPS to review the details.'
+  ].filter(Boolean).join('\n');
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      from: process.env.ALERT_EMAIL_FROM,
+      to: task.assigneeEmail,
+      subject: `HIS OPS assignment: ${title}`,
+      text
+    })
+  });
+  return { delivered: response.ok, status: response.status, assigneeId: task.assigneeId, sentAt: new Date().toISOString() };
+}
+
+async function sendWeeklyAssignmentDigest(query = {}) {
+  if (query.secret !== process.env.ALERT_CRON_SECRET) throw Object.assign(new Error('Invalid digest secret'), { statusCode: 403 });
+  if (!process.env.RESEND_API_KEY || !process.env.ALERT_EMAIL_FROM) return { sent: [], skipped: 'Email provider is not configured' };
+  const [workOrders, pmSchedule, fpcRecords] = await Promise.all([
+    readMaintenanceKey('workOrders', []),
+    readMaintenanceKey('pmSchedule', []),
+    readFpcRecords()
+  ]);
+  const assigned = [];
+  workOrders
+    .filter(order => order.assignmentType === 'internal' && order.assignmentNotify === 'weekly' && order.assigneeEmail && !['Completed', 'Cancelled', 'Canceled'].includes(order.Status))
+    .forEach(order => assigned.push({ email: order.assigneeEmail, name: order.assigneeName || order['Assigned To'] || '', label: `Work order ${order['Work Order ID']}: ${order['Issue Description'] || order.Category || 'Work order'} (${order['Location Name'] || ''})` }));
+  pmSchedule
+    .filter(pm => pm.assignmentType === 'internal' && pm.assignmentNotify === 'weekly' && pm.assigneeEmail && pm.Status !== 'Completed')
+    .forEach(pm => assigned.push({ email: pm.assigneeEmail, name: pm.assigneeName || pm['Assigned To'] || '', label: `PM ${pm['PM ID']}: ${pm.Task || 'PM task'} (${pm['Location Name'] || ''})` }));
+  fpcRecords.forEach(record => (record.items || [])
+    .filter(item => item.assignmentType === 'internal' && item.assignmentNotify === 'weekly' && item.assigneeEmail && item.status !== 'Completed')
+    .forEach(item => assigned.push({ email: item.assigneeEmail, name: item.assigneeName || item.assignedTo || '', label: `FPC: ${item.description || 'Repair item'} (${record.locationName || ''})` })));
+  const grouped = assigned.reduce((map, item) => {
+    map[item.email] ??= { email: item.email, name: item.name, labels: [] };
+    map[item.email].labels.push(item.label);
+    return map;
+  }, {});
+  const sent = [];
+  for (const group of Object.values(grouped)) {
+    const text = [`${group.name || 'Hello'},`, '', 'Here are your current HIS OPS assigned items:', '', ...group.labels.map(label => `- ${label}`), '', 'Please sign in to HIS OPS to review details.'].join('\n');
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: process.env.ALERT_EMAIL_FROM, to: group.email, subject: 'HIS OPS weekly assignment digest', text })
+    });
+    sent.push({ to: group.email, count: group.labels.length, delivered: response.ok, status: response.status });
+  }
+  return { sent };
+}
+
 async function checkAlerts(query = {}, actor = null) {
   if (AUTH_REQUIRED && actor && !isFullAccess(actor)) throw Object.assign(new Error('Only Director of Operations and Owner can preview alerts'), { statusCode: 403 });
   const dryRun = query.dryRun !== 'false';
@@ -1362,6 +1429,13 @@ async function saveFpcItem(payload, actor) {
     priority: payload.priority || 'Medium',
     status: payload.status || 'Open',
     assignedTo: payload.assignedTo || '',
+    assignmentType: payload.assignmentType || '',
+    assigneeId: payload.assigneeId || '',
+    assigneeName: payload.assigneeName || '',
+    assigneeEmail: payload.assigneeEmail || '',
+    vendorId: payload.vendorId || '',
+    vendorName: payload.vendorName || '',
+    assignmentNotify: payload.assignmentNotify || 'none',
     targetDate: payload.targetDate || '',
     photoUrl: payload.photoUrl || '',
     photoName: payload.photoName || '',
@@ -1373,6 +1447,7 @@ async function saveFpcItem(payload, actor) {
   const existing = record.items.findIndex(entry => entry.id === item.id);
   if (existing >= 0) record.items[existing] = { ...record.items[existing], ...item, comments: record.items[existing].comments || [] };
   else record.items.unshift(item);
+  item.assignmentEmail = await sendAssignmentEmail({ ...item, locationName: record.locationName || payload.locationName }, 'FPC repair item');
   await writeMaintenanceKey('fpcRecords', records);
   return fpcState();
 }
@@ -1383,9 +1458,10 @@ async function updateFpcItem(payload, actor) {
   const record = records.find(entry => entry.id === payload.recordId);
   const item = record?.items?.find(entry => entry.id === payload.itemId);
   if (!item) throw Object.assign(new Error('FPC item not found'), { statusCode: 404 });
-  ['description', 'priority', 'status', 'assignedTo', 'targetDate', 'photoUrl', 'photoName'].forEach(key => {
+  ['description', 'priority', 'status', 'assignedTo', 'assignmentType', 'assigneeId', 'assigneeName', 'assigneeEmail', 'vendorId', 'vendorName', 'assignmentNotify', 'targetDate', 'photoUrl', 'photoName'].forEach(key => {
     if (payload[key] !== undefined) item[key] = payload[key];
   });
+  item.assignmentEmail = await sendAssignmentEmail({ ...item, locationName: record.locationName }, 'FPC repair item');
   item.updatedAt = new Date().toISOString();
   await writeMaintenanceKey('fpcRecords', records);
   return fpcState();
@@ -1689,7 +1765,14 @@ async function writeWorkOrder(payload) {
     Priority: payload.priority || 'Medium',
     Status: payload.status || 'New',
     'Assigned To': payload.assignedTo,
+    assignmentType: payload.assignmentType || '',
+    assigneeId: payload.assigneeId || '',
+    assigneeName: payload.assigneeName || '',
+    assigneeEmail: payload.assigneeEmail || '',
     'Vendor ID': payload.vendorId,
+    vendorId: payload.vendorId || '',
+    vendorName: payload.vendorName || '',
+    assignmentNotify: payload.assignmentNotify || 'none',
     'Issue Description': payload.issueDescription,
     'Photo Link': payload.photoLink,
     'Manual Link': payload.manualLink,
@@ -1705,6 +1788,7 @@ async function writeWorkOrder(payload) {
     'Last Updated': today()
   };
   workOrders.push(item);
+  item.assignmentEmail = await sendAssignmentEmail({ ...item, title: item['Issue Description'], locationName: item['Location Name'] }, 'work order');
   await writeMaintenanceKey('workOrders', workOrders);
   return item;
 }
@@ -1716,7 +1800,13 @@ async function updateWorkOrder(payload) {
   const mapping = {
     status: 'Status',
     assignedTo: 'Assigned To',
+    assignmentType: 'assignmentType',
+    assigneeId: 'assigneeId',
+    assigneeName: 'assigneeName',
+    assigneeEmail: 'assigneeEmail',
     vendorId: 'Vendor ID',
+    vendorName: 'vendorName',
+    assignmentNotify: 'assignmentNotify',
     targetDate: 'Target Date',
     dateCompleted: 'Date Completed',
     laborHours: 'Labor Hours',
@@ -1732,8 +1822,10 @@ async function updateWorkOrder(payload) {
   for (const [source, destination] of Object.entries(mapping)) {
     if (payload[source] !== undefined && payload[source] !== null && payload[source] !== '') row[destination] = payload[source];
   }
+  if (payload.vendorId !== undefined) row.vendorId = payload.vendorId;
   row['Total Cost'] = Number(row['Parts Cost'] || 0) + Number(row['Vendor Cost'] || 0);
   row['Last Updated'] = today();
+  row.assignmentEmail = await sendAssignmentEmail({ ...row, title: row['Issue Description'], locationName: row['Location Name'] }, 'work order');
   await writeMaintenanceKey('workOrders', workOrders);
   return row;
 }
@@ -1791,6 +1883,13 @@ async function writePmTask(payload) {
     Frequency: payload.frequency,
     'Next Due': payload.nextDue,
     'Assigned To': payload.assignedTo,
+    assignmentType: payload.assignmentType || '',
+    assigneeId: payload.assigneeId || '',
+    assigneeName: payload.assigneeName || '',
+    assigneeEmail: payload.assigneeEmail || '',
+    vendorId: payload.vendorId || '',
+    vendorName: payload.vendorName || '',
+    assignmentNotify: payload.assignmentNotify || 'none',
     Status: payload.status || 'Due',
     'Instructions / Checklist': payload.instructions,
     'Manual Link': payload.manualLink,
@@ -1799,6 +1898,7 @@ async function writePmTask(payload) {
     Notes: payload.notes
   };
   pmSchedule.push(item);
+  item.assignmentEmail = await sendAssignmentEmail({ ...item, title: item.Task, locationName: item['Location Name'] }, 'PM task');
   await writeMaintenanceKey('pmSchedule', pmSchedule);
   return item;
 }
@@ -1812,6 +1912,13 @@ async function updatePmTask(payload) {
     frequency: 'Frequency',
     nextDue: 'Next Due',
     assignedTo: 'Assigned To',
+    assignmentType: 'assignmentType',
+    assigneeId: 'assigneeId',
+    assigneeName: 'assigneeName',
+    assigneeEmail: 'assigneeEmail',
+    vendorId: 'vendorId',
+    vendorName: 'vendorName',
+    assignmentNotify: 'assignmentNotify',
     status: 'Status',
     instructions: 'Instructions / Checklist',
     manualLink: 'Manual Link',
@@ -1825,6 +1932,7 @@ async function updatePmTask(payload) {
     row['Date Completed'] = payload.completedDate || today();
     if (!payload.nextDue) row['Next Due'] = '';
   }
+  row.assignmentEmail = await sendAssignmentEmail({ ...row, title: row.Task, locationName: row['Location Name'] }, 'PM task');
   await writeMaintenanceKey('pmSchedule', pmSchedule);
   return row;
 }
@@ -1908,6 +2016,9 @@ exports.handler = async event => {
 
     if (method === 'GET' && apiPath === '/alerts/check' && query.secret && query.secret === process.env.ALERT_CRON_SECRET) {
       return json(200, await checkAlerts(query, null));
+    }
+    if (method === 'GET' && apiPath === '/assignments/digest' && query.secret && query.secret === process.env.ALERT_CRON_SECRET) {
+      return json(200, await sendWeeklyAssignmentDigest(query));
     }
 
     const actor = AUTH_REQUIRED ? await currentProfile(event) : null;

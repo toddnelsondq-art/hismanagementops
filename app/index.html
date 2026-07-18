@@ -181,8 +181,25 @@
         <label>Priority
           <select id="woPriority"></select>
         </label>
+        <label>Assign to
+          <select id="woAssignmentType">
+            <option value="">Unassigned</option>
+            <option value="internal">Internal person</option>
+            <option value="vendor">Outside vendor</option>
+          </select>
+        </label>
+        <label>Internal person
+          <select id="woAssigneeUser"></select>
+        </label>
         <label>Vendor
           <select id="woVendor"></select>
+        </label>
+        <label>Internal email notification
+          <select id="woAssignmentNotify">
+            <option value="none">Do not email yet</option>
+            <option value="immediate">Email when assigned</option>
+            <option value="weekly">Include in weekly digest</option>
+          </select>
         </label>
         <label>Issue description
           <textarea id="woIssue" placeholder="Describe the issue, symptoms, and anything already checked."></textarea>
@@ -254,8 +271,25 @@
         <label>Next due
           <input id="pmNextDue" type="date">
         </label>
-        <label>Assigned to
-          <input id="pmAssignedTo" placeholder="e.g. Store Manager">
+        <label>Assign to
+          <select id="pmAssignmentType">
+            <option value="">Unassigned</option>
+            <option value="internal">Internal person</option>
+            <option value="vendor">Outside vendor</option>
+          </select>
+        </label>
+        <label>Internal person
+          <select id="pmAssigneeUser"></select>
+        </label>
+        <label>Vendor
+          <select id="pmVendor"></select>
+        </label>
+        <label>Internal email notification
+          <select id="pmAssignmentNotify">
+            <option value="none">Do not email yet</option>
+            <option value="immediate">Email when assigned</option>
+            <option value="weekly">Include in weekly digest</option>
+          </select>
         </label>
         <label>Instructions / Checklist
           <textarea id="pmInstructions"></textarea>
@@ -465,8 +499,25 @@
             <option>Low</option>
           </select>
         </label>
-        <label>Assigned to
-          <input id="fpcItemAssignedTo" placeholder="Manager, vendor, maintenance tech, etc.">
+        <label>Assign to
+          <select id="fpcAssignmentType">
+            <option value="">Unassigned</option>
+            <option value="internal">Internal person</option>
+            <option value="vendor">Outside vendor</option>
+          </select>
+        </label>
+        <label>Internal person
+          <select id="fpcAssigneeUser"></select>
+        </label>
+        <label>Vendor
+          <select id="fpcVendor"></select>
+        </label>
+        <label>Internal email notification
+          <select id="fpcAssignmentNotify">
+            <option value="none">Do not email yet</option>
+            <option value="immediate">Email when assigned</option>
+            <option value="weekly">Include in weekly digest</option>
+          </select>
         </label>
         <label>Target date
           <input id="fpcItemTargetDate" type="date">
@@ -1037,8 +1088,25 @@
       <label>Next due
         <input id="editPmNextDue" type="date">
       </label>
-      <label>Assigned to
-        <input id="editPmAssignedTo">
+      <label>Assign to
+        <select id="editPmAssignmentType">
+          <option value="">Unassigned</option>
+          <option value="internal">Internal person</option>
+          <option value="vendor">Outside vendor</option>
+        </select>
+      </label>
+      <label>Internal person
+        <select id="editPmAssigneeUser"></select>
+      </label>
+      <label>Vendor
+        <select id="editPmVendor"></select>
+      </label>
+      <label>Internal email notification
+        <select id="editPmAssignmentNotify">
+          <option value="none">Do not email yet</option>
+          <option value="immediate">Email when assigned</option>
+          <option value="weekly">Include in weekly digest</option>
+        </select>
       </label>
       <label>Instructions / checklist
         <textarea id="editPmInstructions"></textarea>
@@ -1076,8 +1144,25 @@
       <label>Item needing attention
         <textarea id="editFpcDescription"></textarea>
       </label>
-      <label>Assigned to
-        <input id="editFpcAssignedTo">
+      <label>Assign to
+        <select id="editFpcAssignmentType">
+          <option value="">Unassigned</option>
+          <option value="internal">Internal person</option>
+          <option value="vendor">Outside vendor</option>
+        </select>
+      </label>
+      <label>Internal person
+        <select id="editFpcAssigneeUser"></select>
+      </label>
+      <label>Vendor
+        <select id="editFpcVendor"></select>
+      </label>
+      <label>Internal email notification
+        <select id="editFpcAssignmentNotify">
+          <option value="none">Do not email yet</option>
+          <option value="immediate">Email when assigned</option>
+          <option value="weekly">Include in weekly digest</option>
+        </select>
       </label>
       <label>Target date
         <input id="editFpcTargetDate" type="date">
@@ -1174,11 +1259,25 @@
       <label>Priority
         <select id="editWoPriority"></select>
       </label>
-      <label>Assigned to
-        <input id="editWoAssignedTo">
+      <label>Assign to
+        <select id="editWoAssignmentType">
+          <option value="">Unassigned</option>
+          <option value="internal">Internal person</option>
+          <option value="vendor">Outside vendor</option>
+        </select>
+      </label>
+      <label>Internal person
+        <select id="editWoAssigneeUser"></select>
       </label>
       <label>Vendor
         <select id="editWoVendor"></select>
+      </label>
+      <label>Internal email notification
+        <select id="editWoAssignmentNotify">
+          <option value="none">Do not email yet</option>
+          <option value="immediate">Email when assigned</option>
+          <option value="weekly">Include in weekly digest</option>
+        </select>
       </label>
       <label>Issue / comments
         <textarea id="editWoIssue"></textarea>

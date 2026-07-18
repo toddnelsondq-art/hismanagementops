@@ -764,6 +764,51 @@ function locationName(locationId) {
   return locations.find(location => location.id === locationId)?.name || locationId || 'Unknown location';
 }
 
+function userOptionList(selectedId = '') {
+  return '<option value="">No internal person selected</option>' + users
+    .filter(user => user.active !== false && user.email)
+    .map(user => `<option value="${escapeHtml(user.id)}" ${user.id === selectedId ? 'selected' : ''}>${escapeHtml(user.name)} · ${escapeHtml(user.role || '')}</option>`)
+    .join('');
+}
+
+function vendorOptionList(selectedId = '') {
+  return '<option value="">No vendor selected</option>' + (maintenance.vendors || [])
+    .map(vendor => `<option value="${escapeHtml(vendor['Vendor ID'])}" ${vendor['Vendor ID'] === selectedId ? 'selected' : ''}>${escapeHtml(vendor['Vendor Name'])}</option>`)
+    .join('');
+}
+
+function assignmentName(entry = {}) {
+  if (entry.assignmentType === 'internal') return entry.assigneeName || entry['Assignee Name'] || entry.assignedTo || entry['Assigned To'] || 'Internal person';
+  if (entry.assignmentType === 'vendor') return entry.vendorName || entry['Vendor Name'] || maintenance.vendors.find(vendor => vendor['Vendor ID'] === (entry.vendorId || entry['Vendor ID']))?.['Vendor Name'] || 'Outside vendor';
+  return entry.assignedTo || entry['Assigned To'] || '';
+}
+
+function assignmentPayload(prefix) {
+  const type = $(`#${prefix}AssignmentType`)?.value || '';
+  const assigneeId = $(`#${prefix}AssigneeUser`)?.value || '';
+  const vendorId = $(`#${prefix}Vendor`)?.value || '';
+  const notify = $(`#${prefix}AssignmentNotify`)?.value || 'none';
+  const user = users.find(entry => entry.id === assigneeId);
+  const vendor = maintenance.vendors.find(entry => entry['Vendor ID'] === vendorId);
+  return {
+    assignmentType: type,
+    assigneeId: type === 'internal' ? assigneeId : '',
+    assigneeName: type === 'internal' ? (user?.name || '') : '',
+    assigneeEmail: type === 'internal' ? (user?.email || '') : '',
+    vendorId: type === 'vendor' ? vendorId : '',
+    vendorName: type === 'vendor' ? (vendor?.['Vendor Name'] || '') : '',
+    assignmentNotify: type === 'internal' ? notify : 'none',
+    assignedTo: type === 'internal' ? (user?.name || '') : type === 'vendor' ? (vendor?.['Vendor Name'] || '') : ''
+  };
+}
+
+function setAssignmentFields(prefix, entry = {}) {
+  if ($(`#${prefix}AssignmentType`)) $(`#${prefix}AssignmentType`).value = entry.assignmentType || (entry.assigneeId ? 'internal' : entry.vendorId || entry['Vendor ID'] ? 'vendor' : '');
+  if ($(`#${prefix}AssigneeUser`)) $(`#${prefix}AssigneeUser`).innerHTML = userOptionList(entry.assigneeId || '');
+  if ($(`#${prefix}Vendor`)) $(`#${prefix}Vendor`).innerHTML = vendorOptionList(entry.vendorId || entry['Vendor ID'] || '');
+  if ($(`#${prefix}AssignmentNotify`)) $(`#${prefix}AssignmentNotify`).value = entry.assignmentNotify || 'none';
+}
+
 function prettyDate(date) {
   return new Date(`${date}T12:00`).toLocaleDateString(undefined, {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
@@ -1481,11 +1526,13 @@ function renderMaintenance() {
   const list = maintenance.lists || {};
   $('#woCategory').innerHTML = (list.categories || []).map(value => `<option>${escapeHtml(value)}</option>`).join('');
   $('#woPriority').innerHTML = (list.priorities || []).map(value => `<option>${escapeHtml(value)}</option>`).join('');
-  $('#woVendor').innerHTML = '<option value="">No vendor selected</option>' + maintenance.vendors.map(vendor => `<option value="${vendor['Vendor ID']}">${escapeHtml(vendor['Vendor Name'])}</option>`).join('');
+  setAssignmentFields('wo', {});
   $('#woEquipment').innerHTML = '<option value="">No specific equipment</option>' + maintenance.equipment.map(item => `<option value="${item['Equipment ID']}">${escapeHtml(item['Equipment Name'])} · ${escapeHtml(item['Location Name'])}</option>`).join('');
   $('#eqType').innerHTML = (list.equipmentTypes || []).map(value => `<option>${escapeHtml(value)}</option>`).join('');
   $('#pmFrequency').innerHTML = (list.pmFrequencies || []).map(value => `<option>${escapeHtml(value)}</option>`).join('');
   $('#pmEquipment').innerHTML = '<option value="">No specific equipment</option>' + maintenance.equipment.map(item => `<option value="${item['Equipment ID']}">${escapeHtml(item['Equipment Name'])} · ${escapeHtml(item['Location Name'])}</option>`).join('');
+
+  setAssignmentFields('pm', {});
 
   const shownOrders = maintenanceFilter === 'emergency'
     ? emergency
@@ -1572,6 +1619,7 @@ function renderFpc() {
     ? records.map(record => `<option value="${record.id}">${escapeHtml(record.locationName || locationName(record.locationId))} · ${escapeHtml(record.inspectionDate || '')}</option>`).join('')
     : '<option value="">Create from selected location</option>';
 
+  setAssignmentFields('fpc', {});
   $('#fpcList').innerHTML = records.length ? records.map(record => `
     <details class="card fpc-record">
       <summary class="fpc-record-head">
@@ -1746,8 +1794,12 @@ function openWorkOrderDialog(workOrderId) {
   $('#editWoLocationId').value = order['Location ID'];
   $('#editWoStatus').innerHTML = (list.statuses || ['New', 'Assigned', 'In Progress', 'Completed']).map(value => `<option ${order.Status === value ? 'selected' : ''}>${escapeHtml(value)}</option>`).join('');
   $('#editWoPriority').innerHTML = (list.priorities || ['Emergency', 'High', 'Medium', 'Low']).map(value => `<option ${order.Priority === value ? 'selected' : ''}>${escapeHtml(value)}</option>`).join('');
-  $('#editWoVendor').innerHTML = '<option value="">No vendor selected</option>' + maintenance.vendors.map(vendor => `<option value="${vendor['Vendor ID']}" ${order['Vendor ID'] === vendor['Vendor ID'] ? 'selected' : ''}>${escapeHtml(vendor['Vendor Name'])}</option>`).join('');
-  $('#editWoAssignedTo').value = order['Assigned To'] || '';
+  setAssignmentFields('editWo', {
+    assignmentType: order.assignmentType,
+    assigneeId: order.assigneeId,
+    vendorId: order.vendorId || order['Vendor ID'],
+    assignmentNotify: order.assignmentNotify
+  });
   $('#editWoIssue').value = order['Issue Description'] || '';
   $('#editWoResolution').value = order['Resolution Notes'] || '';
   $('#editWoTargetDate').value = toDateInput(order['Target Date']);
@@ -1770,7 +1822,7 @@ function openPmDialog(pmId) {
   $('#editPmTask').value = pm.Task || '';
   $('#editPmFrequency').innerHTML = (list.pmFrequencies || ['Daily', 'Weekly', 'Monthly', 'Quarterly', 'Annual']).map(value => `<option ${pm.Frequency === value ? 'selected' : ''}>${escapeHtml(value)}</option>`).join('');
   $('#editPmNextDue').value = toDateInput(pm['Next Due']);
-  $('#editPmAssignedTo').value = pm['Assigned To'] || '';
+  setAssignmentFields('editPm', pm);
   $('#editPmInstructions').value = pm['Instructions / Checklist'] || '';
   $('#editPmNotes').value = pm.Notes || '';
   $('#pmDialog').showModal();
@@ -2573,14 +2625,13 @@ async function saveFpcItem() {
         locationName: locationName(locationId),
         description,
         priority: $('#fpcItemPriority').value,
-        assignedTo: $('#fpcItemAssignedTo').value.trim(),
+        ...assignmentPayload('fpc'),
         targetDate: $('#fpcItemTargetDate').value,
         photoUrl,
         photoName: photoFile?.name || (photoLink ? 'Shared photo link' : '')
       })
     });
     $('#fpcItemDescription').value = '';
-    $('#fpcItemAssignedTo').value = '';
     $('#fpcItemTargetDate').value = '';
     if ($('#fpcItemPhoto')) $('#fpcItemPhoto').value = '';
     if ($('#fpcItemPhotoLink')) $('#fpcItemPhotoLink').value = '';
@@ -2618,7 +2669,7 @@ function openFpcItemDialog(recordId, itemId) {
   $('#editFpcStatus').value = item.status || 'Open';
   $('#editFpcPriority').value = item.priority || 'Medium';
   $('#editFpcDescription').value = item.description || '';
-  $('#editFpcAssignedTo').value = item.assignedTo || '';
+  setAssignmentFields('editFpc', item);
   $('#editFpcTargetDate').value = toDateInput(item.targetDate);
   $('#editFpcPhoto').value = '';
   if ($('#editFpcPhotoLink')) $('#editFpcPhotoLink').value = '';
@@ -2645,7 +2696,7 @@ async function saveFpcEdit() {
         description,
         priority: $('#editFpcPriority').value,
         status: $('#editFpcStatus').value,
-        assignedTo: $('#editFpcAssignedTo').value.trim(),
+        ...assignmentPayload('editFpc'),
         targetDate: $('#editFpcTargetDate').value,
         ...(photoUrl ? { photoUrl, photoName: photoFile?.name || (photoLink ? 'Shared photo link' : '') } : {})
       })
@@ -3191,7 +3242,7 @@ $('#createWorkOrderBtn').onclick = async () => {
     equipmentId,
     equipmentName: equipment['Equipment Name'],
     priority: $('#woPriority').value,
-    vendorId: $('#woVendor').value,
+    ...assignmentPayload('wo'),
     issueDescription,
     targetDate: $('#woTargetDate').value,
     photoLink: await uploadMaintenanceFile('#woPhoto', 'work-order-photo'),
@@ -3249,7 +3300,7 @@ $('#addPmBtn').onclick = async () => {
     task,
     frequency: $('#pmFrequency').value,
     nextDue: $('#pmNextDue').value,
-    assignedTo: $('#pmAssignedTo').value.trim(),
+    ...assignmentPayload('pm'),
     instructions: $('#pmInstructions').value.trim(),
     photoLink: await uploadMaintenanceFile('#pmPhoto', 'pm-photo'),
     manualLink: await uploadMaintenanceFile('#pmManual', 'pm-manual')
@@ -3257,7 +3308,7 @@ $('#addPmBtn').onclick = async () => {
   try {
     const saved = await api('/api/maintenance/pm', { method: 'POST', body: JSON.stringify(payload) });
     maintenance = saved.state;
-    ['#pmTask', '#pmNextDue', '#pmAssignedTo', '#pmInstructions', '#pmPhoto', '#pmManual'].forEach(selector => $(selector).value = '');
+    ['#pmTask', '#pmNextDue', '#pmInstructions', '#pmPhoto', '#pmManual'].forEach(selector => $(selector).value = '');
     renderMaintenance();
     toast(`Added ${saved.pmTask['PM ID']}`);
   } catch (error) {
@@ -3271,8 +3322,7 @@ $('#saveWorkOrderBtn').onclick = async () => {
     locationId: $('#editWoLocationId').value,
     status: $('#editWoStatus').value,
     priority: $('#editWoPriority').value,
-    assignedTo: $('#editWoAssignedTo').value.trim(),
-    vendorId: $('#editWoVendor').value,
+    ...assignmentPayload('editWo'),
     issueDescription: $('#editWoIssue').value.trim(),
     resolutionNotes: $('#editWoResolution').value.trim(),
     targetDate: $('#editWoTargetDate').value,
@@ -3327,7 +3377,7 @@ $('#savePmEditBtn').onclick = async () => {
         task,
         frequency: $('#editPmFrequency').value,
         nextDue: $('#editPmNextDue').value,
-        assignedTo: $('#editPmAssignedTo').value.trim(),
+        ...assignmentPayload('editPm'),
         instructions: $('#editPmInstructions').value.trim(),
         notes: $('#editPmNotes').value.trim()
       })
