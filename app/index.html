@@ -53,6 +53,13 @@
             <p>Work orders, equipment, PM tasks, vendors, and location follow-up.</p>
           </div>
         </button>
+        <button class="hub-tile" data-section-view="trainingView">
+          <span class="icon">🎓</span>
+          <div>
+            <b>Food Safety Training</b>
+            <p>Practice employee and manager food-safety questions with explanations and score review.</p>
+          </div>
+        </button>
       </div>
       <article class="card dashboard-controls">
         <label>Time period
@@ -147,6 +154,22 @@
         </div>
         <div id="dashboardProgressBars" class="progress-bars"></div>
       </article>
+    </section>
+
+    <section id="trainingView" class="view">
+      <div class="date">
+        <div>
+          <p>TRAINING CENTER</p>
+          <h2>Food Safety Practice</h2>
+        </div>
+        <span class="status">Independent study aid</span>
+      </div>
+      <article class="card training-disclaimer">
+        <b>Prepare with practice, then verify local requirements.</b>
+        <p>This independent study tool uses original questions based primarily on the FDA Food Code. It is not affiliated with or endorsed by ServSafe or the National Restaurant Association, and it does not contain actual exam questions. State and local rules may differ.</p>
+        <p class="hint">Reference basis: <a href="https://www.fda.gov/food/fda-food-code/food-code-2022" target="_blank" rel="noopener">2022 FDA Food Code</a>. Review the bank whenever applicable state or local rules change.</p>
+      </article>
+      <div id="foodSafetyQuizApp" aria-live="polite"></div>
     </section>
 
     <section id="maintenanceView" class="view">
@@ -975,6 +998,7 @@
     <button data-view="fpcView"><span class="nav-icon">★</span><span>FPC</span></button>
     <button data-view="storeDocsView"><span class="nav-icon">📄</span><span>Documents</span></button>
     <button data-view="resourcesView"><span class="nav-icon">🔗</span><span>Resources</span></button>
+    <button data-view="trainingView"><span class="nav-icon">🎓</span><span>Training</span></button>
     <button data-view="smallwaresView"><span class="nav-icon">🧺</span><span>Smallwares</span></button>
     <button data-view="historyView"><span class="nav-icon">▤</span><span>Reports</span></button>
     <button data-view="locationsView"><span class="nav-icon">⌖</span><span>Locations</span></button>
@@ -992,6 +1016,7 @@
     <button data-view="fpcView">★<span>FPC</span></button>
     <button data-view="storeDocsView">📄<span>Docs</span></button>
     <button data-view="resourcesView">🔗<span>Links</span></button>
+    <button data-view="trainingView">🎓<span>Training</span></button>
     <button data-view="smallwaresView">🧺<span>Items</span></button>
     <button data-view="locationsView">⌖<span>Locations</span></button>
     <button data-view="homeView" class="active" id="homeNav">⌂<span>Home</span></button>
@@ -1353,6 +1378,9 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="auth.js?v=password-login-2026-07-16"></script>
   <script src="app.js?v=password-login-2026-07-16"></script>
+  <script src="food-safety-questions.js?v=2026-07-28"></script>
+  <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
+  <script src="food-safety-quiz.js?v=2026-07-28-200"></script>
   <script>
     if ('serviceWorker' in navigator && location.protocol === 'https:') {
       window.addEventListener('load', () => navigator.serviceWorker.register('/service-worker.js'));

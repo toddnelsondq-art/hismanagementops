@@ -1,4 +1,4 @@
-const CACHE_NAME = 'his-ops-v3-password-login';
+const CACHE_NAME = 'his-ops-v5-food-safety-200';
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -7,6 +7,9 @@ const APP_SHELL = [
   '/his-theme.css',
   '/auth.js',
   '/app.js',
+  '/food-safety-questions.js',
+  '/food-safety-manager-expanded.js',
+  '/food-safety-quiz.js',
   '/manifest.webmanifest',
   '/assets/his-management.png',
   '/assets/pwa-icon-192.png',
