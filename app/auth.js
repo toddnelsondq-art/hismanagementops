@@ -39,7 +39,7 @@
     overlay = document.createElement('div');
     overlay.id = 'authOverlay';
     overlay.innerHTML = `
-      <div class="auth-card">
+      <form class="auth-card" id="authForm">
         <img class="auth-logo" src="${state.tenant.logoUrl}" alt="${state.tenant.name}">
         <h2>${state.tenant.appName || 'Operations Hub'}</h2>
         <p class="auth-subtitle">Daily checklists, temperatures, maintenance, and operations</p>
@@ -50,10 +50,10 @@
         <label>Password
           <input id="authPassword" type="password" placeholder="Password or temporary password" autocomplete="current-password">
         </label>
-        <button id="authPasswordBtn">Sign in</button>
+        <button id="authPasswordBtn" type="submit">Sign in</button>
         <p class="hint">Users can only join after they have been created by an authorized manager.</p>
         <p class="auth-version">Login mode: email + password</p>
-      </div>
+      </form>
     `;
     document.body.append(overlay);
     return overlay;
@@ -98,14 +98,33 @@
       const { data } = await client.auth.getSession();
       if (!data.session) {
         const overlay = makeOverlay();
-        overlay.querySelector('#authPasswordBtn').onclick = async () => {
+        const form = overlay.querySelector('#authForm');
+        const signInButton = overlay.querySelector('#authPasswordBtn');
+        form.onsubmit = async event => {
+          event.preventDefault();
+          if (signInButton.disabled) return;
           const email = overlay.querySelector('#authEmail').value.trim();
           const password = overlay.querySelector('#authPassword').value;
           if (!email || !password) return setMessage('Enter your email and password.');
-          const { error } = await client.auth.signInWithPassword({ email, password });
-          if (error) return setMessage(error.message);
-          window.location.reload();
+          signInButton.disabled = true;
+          signInButton.textContent = 'Signing in…';
+          setMessage('Signing in…');
+          try {
+            const { error } = await client.auth.signInWithPassword({ email, password });
+            if (error) {
+              setMessage(error.message);
+              signInButton.disabled = false;
+              signInButton.textContent = 'Sign in';
+              return;
+            }
+            window.location.reload();
+          } catch {
+            setMessage('Sign in could not be completed. Check your connection and try again.');
+            signInButton.disabled = false;
+            signInButton.textContent = 'Sign in';
+          }
         };
+        overlay.querySelector('#authEmail').focus();
         return new Promise(() => {});
       }
 
@@ -125,6 +144,7 @@
           message = payload.error || message;
         } catch {}
         const overlay = makeOverlay(message);
+        overlay.querySelector('#authPasswordBtn').type = 'button';
         overlay.querySelector('#authPasswordBtn').onclick = async () => {
           await client.auth.signOut();
           window.location.reload();
