@@ -6,6 +6,8 @@ create extension if not exists pgcrypto;
 create table if not exists public.locations (
   id text primary key,
   name text not null,
+  address text not null default '',
+  phone text not null default '',
   active boolean not null default true,
   updated_at timestamptz not null default now()
 );

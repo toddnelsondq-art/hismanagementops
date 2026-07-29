@@ -732,14 +732,14 @@
     <section id="locationsView" class="view">
       <div class="date">
         <div>
-          <p>LOCATION ADMIN</p>
-          <h2>Store locations</h2>
+          <p>LOCATION DIRECTORY</p>
+          <h2>Store contact information</h2>
         </div>
       </div>
 
       <article class="card form-card" id="importLocationsCard">
         <h3>Import locations from Excel</h3>
-        <p class="hint">Upload an .xlsx or .csv file with columns for Location ID and Location Name. This updates the store names used in reports, history, and alerts.</p>
+        <p class="hint">Upload an .xlsx or .csv file with columns for Location ID, Location Name, Address, and Phone Number.</p>
         <label>Location spreadsheet
           <input id="locationImportFile" type="file" accept=".xlsx,.xls,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
         </label>
@@ -751,7 +751,7 @@
       </article>
 
       <article class="card" id="locationAdminCard">
-        <p class="hint">Rename locations here one at a time if you only need a quick change.</p>
+        <p class="hint">Update each location’s name, street address, and public phone number.</p>
         <div id="locationList"></div>
       </article>
     </section>

@@ -300,10 +300,19 @@ function reconcileDaySchedule(payload, locationId, date, templates = DEFAULT_TAS
 }
 
 async function readLocations() {
-  const rows = await supabase(`/rest/v1/locations?${tenantQuery()}&active=eq.true&select=id,name&order=id.asc`);
+  let rows;
+  try {
+    rows = await supabase(`/rest/v1/locations?${tenantQuery()}&active=eq.true&select=id,name,address,phone&order=id.asc`);
+  } catch (error) {
+    // Keep older deployments working until add_location_contact_fields.sql is applied.
+    rows = (await supabase(`/rest/v1/locations?${tenantQuery()}&active=eq.true&select=id,name&order=id.asc`))
+      .map(location => ({ ...location, address: '', phone: '' }));
+  }
   return rows.length ? rows : Array.from({ length: 13 }, (_, index) => ({
     id: `store-${String(index + 1).padStart(2, '0')}`,
-    name: `Store ${index + 1}`
+    name: `Store ${index + 1}`,
+    address: '',
+    phone: ''
   }));
 }
 
@@ -774,12 +783,15 @@ async function createAuthUserWithPassword(payload, locationId, locationIds) {
 }
 
 async function saveLocation(location) {
+  const existing = (await readLocations()).find(entry => entry.id === location.id) || {};
   await supabase('/rest/v1/locations?on_conflict=tenant_id,id', {
     method: 'POST',
     headers: { Prefer: 'resolution=merge-duplicates' },
     body: JSON.stringify(withTenant({
       id: location.id,
       name: location.name,
+      address: String(location.address === undefined ? (existing.address || '') : (location.address || '')).trim(),
+      phone: String(location.phone === undefined ? (existing.phone || '') : (location.phone || '')).trim(),
       active: true,
       updated_at: new Date().toISOString()
     }))

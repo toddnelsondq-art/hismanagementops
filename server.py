@@ -53,6 +53,11 @@ def ensure_storage():
             )
             """
         )
+        location_columns = table_columns(connection, "locations")
+        if "address" not in location_columns:
+            connection.execute("ALTER TABLE locations ADD COLUMN address TEXT NOT NULL DEFAULT ''")
+        if "phone" not in location_columns:
+            connection.execute("ALTER TABLE locations ADD COLUMN phone TEXT NOT NULL DEFAULT ''")
         location_count = connection.execute("SELECT COUNT(*) FROM locations").fetchone()[0]
         if location_count == 0:
             connection.executemany(
@@ -204,24 +209,29 @@ def read_history(location_id=None):
 def read_locations():
     with sqlite3.connect(DB_PATH) as connection:
         rows = connection.execute(
-            "SELECT id, name FROM locations WHERE active = 1 ORDER BY id"
+            "SELECT id, name, address, phone FROM locations WHERE active = 1 ORDER BY id"
         ).fetchall()
-    return [{"id": row[0], "name": row[1]} for row in rows]
+    return [{"id": row[0], "name": row[1], "address": row[2] or "", "phone": row[3] or ""} for row in rows]
 
 
 def write_location(location):
     location_id = location["id"]
     name = location["name"].strip()
     with sqlite3.connect(DB_PATH) as connection:
+        existing = connection.execute(
+            "SELECT address, phone FROM locations WHERE id = ?", (location_id,)
+        ).fetchone() or ("", "")
+        address = str(existing[0] if "address" not in location else (location.get("address") or "")).strip()
+        phone = str(existing[1] if "phone" not in location else (location.get("phone") or "")).strip()
         connection.execute(
             """
             UPDATE locations
-            SET name = ?, updated_at = CURRENT_TIMESTAMP
+            SET name = ?, address = ?, phone = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
             """,
-            (name, location_id),
+            (name, address, phone, location_id),
         )
-    return {"id": location_id, "name": name}
+    return {"id": location_id, "name": name, "address": address, "phone": phone}
 
 
 def read_users():

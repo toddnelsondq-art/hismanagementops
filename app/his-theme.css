@@ -1311,12 +1311,35 @@ button.danger{
 .quiz-review-item p{margin-top:5px}
 .quiz-empty{text-align:center;padding:25px;color:var(--muted)}
 
+.location-directory-card{
+  display:grid;
+  gap:10px;
+  margin-top:12px;
+  padding:18px;
+  border:1px solid var(--line);
+  border-radius:15px;
+  background:#fff;
+}
+.location-directory-heading{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.location-directory-heading h3{font-size:20px;margin-top:2px}
+.location-address{color:var(--muted)}
+.location-phone{width:max-content;color:var(--green);font-size:18px;font-weight:800;text-decoration:none}
+.location-phone:hover{text-decoration:underline}
+.location-directory-edit{grid-template-columns:minmax(150px,1fr) minmax(240px,2fr) minmax(150px,1fr) auto;align-items:end}
+.location-directory-edit .location-directory-heading{grid-column:1/-1}
+.location-directory-edit label{font-weight:700}
+.location-directory-edit input{width:100%;margin-top:5px}
+.location-directory-edit button{margin-bottom:1px}
+
 @media(max-width:620px){
   .quiz-track-grid{grid-template-columns:1fr}
   .quiz-track-card{min-height:150px}
   .quiz-question{font-size:20px}
   .quiz-actions{flex-direction:column-reverse}
   .quiz-actions button{width:100%}
+  .location-directory-edit{grid-template-columns:1fr}
+  .location-directory-edit .location-directory-heading{grid-column:auto}
+  .location-directory-edit button{width:100%}
 }
 
 @media(min-width:900px){

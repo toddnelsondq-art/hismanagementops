@@ -18,6 +18,8 @@ create table if not exists public.locations (
   tenant_id text not null default 'his-management' references public.tenants(id),
   id text primary key,
   name text not null,
+  address text not null default '',
+  phone text not null default '',
   active boolean not null default true,
   updated_at timestamptz not null default now()
 );

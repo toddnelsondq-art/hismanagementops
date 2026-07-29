@@ -402,6 +402,10 @@ function canEditLocations(user = currentUser()) {
   return isFullAccess(user);
 }
 
+function canViewLocations(user = currentUser()) {
+  return user.role !== 'Employee' && !isMaintenanceTech(user);
+}
+
 function userLocationIds(user = currentUser()) {
   if (user.locationIds?.length) return user.locationIds;
   return [user.locationId || 'store-01'];
@@ -1866,7 +1870,7 @@ function applyRoleAccess(user) {
   const showHub = canUseHub(user);
   const showHistory = canUseHistory(user);
   const showManage = canUseManage(user);
-  const showLocations = canEditLocations(user);
+  const showLocations = canViewLocations(user);
   const tech = isMaintenanceTech(user);
   document.querySelectorAll('[data-view="homeView"]').forEach(button => button.style.display = showHub ? '' : 'none');
   document.querySelectorAll('[data-view="maintenanceView"]').forEach(button => button.style.display = showHub ? '' : 'none');
@@ -1892,13 +1896,26 @@ function applyRoleAccess(user) {
 
 function renderLocations() {
   const editable = canEditLocations();
-  $('#locationList').innerHTML = locations.map(location => `
-    <div class="location-row">
-      <b>${escapeHtml(location.id.replace('store-', 'Store '))}</b>
-      <input data-location-name="${location.id}" value="${escapeHtml(location.name)}" ${editable ? '' : 'disabled'}>
-      ${editable ? `<button data-location-save="${location.id}">Save</button>` : ''}
-    </div>
-  `).join('');
+  const visibleLocations = isFullAccess() ? locations : locations.filter(location => accessibleLocationIds().includes(location.id));
+  $('#importLocationsCard').style.display = editable ? '' : 'none';
+  $('#locationAdminCard').querySelector('.hint').textContent = editable
+    ? 'Update each location’s name, street address, and public phone number.'
+    : 'Contact details for your assigned locations.';
+  $('#locationList').innerHTML = visibleLocations.map(location => editable ? `
+    <article class="location-directory-card location-directory-edit">
+      <div class="location-directory-heading"><span class="status">${escapeHtml(location.id.replace('store-', 'Store '))}</span></div>
+      <label>Location name<input data-location-name="${escapeHtml(location.id)}" value="${escapeHtml(location.name)}"></label>
+      <label>Street address<input data-location-address="${escapeHtml(location.id)}" value="${escapeHtml(location.address || '')}" placeholder="123 Main Street, City, State ZIP"></label>
+      <label>Phone number<input data-location-phone="${escapeHtml(location.id)}" type="tel" value="${escapeHtml(location.phone || '')}" placeholder="(555) 555-0123"></label>
+      <button data-location-save="${escapeHtml(location.id)}" type="button">Save location</button>
+    </article>
+  ` : `
+    <article class="location-directory-card">
+      <div class="location-directory-heading"><div><p class="eyebrow">${escapeHtml(location.id.replace('store-', 'Store '))}</p><h3>${escapeHtml(location.name)}</h3></div></div>
+      <p class="location-address">${location.address ? escapeHtml(location.address) : 'Address not entered yet'}</p>
+      ${location.phone ? `<a class="location-phone" href="tel:${escapeHtml(String(location.phone).replace(/[^+\d]/g, ''))}">${escapeHtml(location.phone)}</a>` : '<p class="hint">Phone number not entered yet</p>'}
+    </article>
+  `).join('') || '<div class="empty">No assigned locations are available.</div>';
 }
 
 function renderOverdue() {
@@ -3848,10 +3865,13 @@ async function importUsersFromFile() {
 function importedLocationFromRow(row) {
   const idValue = rowValue(row, ['Location ID', 'Store ID', 'ID', 'Store Number', 'Store']);
   const name = rowValue(row, ['Location Name', 'Name', 'Store Name']);
+  const address = rowValue(row, ['Address', 'Street Address', 'Location Address']);
+  const phone = rowValue(row, ['Phone', 'Phone Number', 'Location Phone', 'Store Phone']);
   let id = findLocationId(idValue);
   if (!id && /^store-\d+$/i.test(idValue)) id = idValue.toLowerCase().replace(/store-(\d+)/, (_, number) => `store-${String(Number(number)).padStart(2, '0')}`);
   if (!id && /^\d+$/.test(idValue)) id = `store-${String(Number(idValue)).padStart(2, '0')}`;
-  return { id, name };
+  const existing = locations.find(location => location.id === id) || {};
+  return { id, name, address: address || existing.address || '', phone: phone || existing.phone || '' };
 }
 
 async function importLocationsFromFile() {
@@ -3936,7 +3956,7 @@ async function saveLocationRecord(location) {
     locations = (await api('/api/location', { method: 'POST', body: JSON.stringify(location) })).locations;
   } else {
     const existing = locations.find(entry => entry.id === location.id);
-    if (existing) existing.name = location.name;
+    if (existing) Object.assign(existing, location);
     else locations.push(location);
     const fallback = JSON.parse(localStorage.getItem('dailyops-v1') || '{}');
     fallback.locations = locations;
@@ -3946,8 +3966,10 @@ async function saveLocationRecord(location) {
 
 async function saveLocation(id) {
   const name = document.querySelector(`[data-location-name="${id}"]`).value.trim();
+  const address = document.querySelector(`[data-location-address="${id}"]`).value.trim();
+  const phone = document.querySelector(`[data-location-phone="${id}"]`).value.trim();
   if (!name) return toast('Enter a location name');
-  await saveLocationRecord({ id, name });
+  await saveLocationRecord({ id, name, address, phone });
   render();
   toast('Location saved');
 }

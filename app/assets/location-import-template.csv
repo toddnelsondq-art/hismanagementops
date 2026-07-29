@@ -1,4 +1,4 @@
-Location ID,Location Name
-store-01,DQ Store 1
-store-02,DQ Store 2
-store-03,DQ Store 3
+Location ID,Location Name,Address,Phone Number
+store-01,DQ Store 1,"123 Main Street, City, IL 60000",(555) 555-0101
+store-02,DQ Store 2,"456 Oak Avenue, City, IL 60000",(555) 555-0102
+store-03,DQ Store 3,"789 Market Road, City, IL 60000",(555) 555-0103
