@@ -1134,7 +1134,8 @@ button.danger{
   font-weight:900;
 }
 
-.auth-card input{
+.auth-card input,
+.auth-card select{
   width:100%;
   margin-top:10px;
   padding:22px 20px;
@@ -1151,6 +1152,8 @@ button.danger{
 }
 
 #authPasswordBtn,
+#kioskLoginBtn,
+#enrollBtn,
 .auth-secondary{
   display:block;
   width:min(654px,100%);
@@ -1161,7 +1164,9 @@ button.danger{
   font-weight:950;
 }
 
-#authPasswordBtn{
+#authPasswordBtn,
+#kioskLoginBtn,
+#enrollBtn{
   background:#e2253d;
   color:#fff;
 }
@@ -1172,10 +1177,7 @@ button.danger{
   color:#020617;
 }
 
-#authCreateBtn,
-.auth-secondary{
-  display:none;
-}
+.auth-text-button{display:block;margin:14px auto 0;border:0;background:transparent;color:#64748b;text-decoration:underline}
 
 .auth-card .hint{
   max-width:654px;
@@ -1217,10 +1219,15 @@ button.danger{
   .auth-card label,
   .auth-card input,
   #authPasswordBtn,
+  #kioskLoginBtn,
+  #enrollBtn,
   .auth-secondary{
     font-size:18px;
   }
 }
+
+.kiosk-code-result{margin:16px 0;padding:18px;border:2px dashed #28745f;border-radius:14px;background:#eef8f4;text-align:center}
+.kiosk-code{display:block;margin:8px 0;font-size:34px;letter-spacing:5px;color:#19352e}
 
 /* Food-safety training */
 .training-disclaimer{

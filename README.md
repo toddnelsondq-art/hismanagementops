@@ -50,6 +50,7 @@ The project now includes the first hosted backend path:
 - Netlify Functions answer the same `/api/...` routes the local Python server uses.
 - Supabase stores locations, users, daily records, maintenance data, and uploaded files.
 - Supabase Auth handles email/password login.
+- Enrolled store tablets let employees sign in with a four-digit PIN; management accounts continue to use email/password.
 
 ### 1. Create Supabase project
 
@@ -68,6 +69,8 @@ The schema creates:
 - `invites`
 - `days`
 - `maintenance_data`
+- `kiosk_devices`
+- `kiosk_enrollments`
 - public storage bucket `dailyops-uploads`
 
 ### 2. Deploy to Netlify
@@ -83,6 +86,7 @@ In Netlify:
    - `SUPABASE_ANON_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `SUPABASE_STORAGE_BUCKET`
+   - `KIOSK_TOKEN_SECRET` (a private random value of at least 32 characters)
 
 Netlify uses [`netlify.toml`](netlify.toml) to route `/api/*` to the hosted function.
 
@@ -109,5 +113,17 @@ When hosted auth is enabled:
 6. The user can only join with the role and location assignment saved by the manager.
 
 Users can sign out from the button in the app header, then sign back in with email/password.
+
+### Store tablet and employee PIN setup
+
+For an existing Supabase project, run [`supabase/add_kiosk_pin_login.sql`](supabase/add_kiosk_pin_login.sql) in the Supabase SQL Editor before deploying this version.
+
+1. Sign in with a Manager, Area Manager, Director, or Owner account.
+2. Open Manage and set a four-digit PIN while adding or editing an Employee.
+3. In **Store tablets & employee PINs**, choose the store, name the tablet, and generate a setup code.
+4. On the tablet's DQ OPS login screen, choose **Set up a store tablet** and enter the one-time code within 15 minutes.
+5. Employees can select their name and enter their PIN. Five failed attempts lock that employee's PIN for 15 minutes, and an employee session signs out after five minutes of inactivity.
+
+Managers can remove a lost or replaced tablet from the same Manage card. Employee PINs never grant management access and are stored only as salted password hashes.
 
 Locally, the Python server still works for quick testing. Hosted email/password login requires Netlify + Supabase environment variables.

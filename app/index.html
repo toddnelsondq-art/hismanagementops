@@ -912,6 +912,21 @@
         <div id="notificationLogList"></div>
       </article>
 
+      <article class="card form-card collapsible-card" id="kioskAdminCard">
+        <h3>Store tablets &amp; employee PINs</h3>
+        <p class="hint">Connect a tablet to one store. Employees at that store can then select their name and sign in with a four-digit PIN.</p>
+        <label>Tablet name
+          <input id="kioskDeviceName" placeholder="e.g. Front counter Samsung tablet">
+        </label>
+        <label>Store
+          <select id="kioskLocation"></select>
+        </label>
+        <button id="createKioskCodeBtn" type="button">Generate tablet setup code</button>
+        <div id="kioskEnrollmentResult" class="kiosk-code-result" hidden></div>
+        <h4>Connected tablets</h4>
+        <div id="kioskDeviceList"><p class="hint">Open Manage to load connected tablets.</p></div>
+      </article>
+
       <article class="card form-card collapsible-card" id="addUserCard">
         <h3>Add an employee or manager</h3>
         <label>Name
@@ -925,6 +940,10 @@
         </label>
         <label>Temporary password
           <input id="newUserPassword" type="text" placeholder="Temporary password">
+        </label>
+        <label id="newUserPinWrap">Employee PIN
+          <input id="newUserPin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="new-password" placeholder="4 digits">
+          <span class="hint">Employees use this only on a store tablet. Managers continue using email and password.</span>
         </label>
         <label>Role
           <select id="newUserRole">
@@ -1100,6 +1119,10 @@
       </div>
       <label>Set temporary password
         <input id="editUserPassword" type="text" placeholder="Leave blank to keep current password">
+      </label>
+      <label id="editUserPinWrap">Set employee PIN
+        <input id="editUserPin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="new-password" placeholder="Leave blank to keep current PIN">
+        <span class="hint">Exactly four digits. Only works on a tablet connected to this employee's store.</span>
       </label>
       <button id="saveUserEditBtn" value="default">Save user</button>
     </form>
@@ -1376,8 +1399,8 @@
 
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="auth.js?v=2026-07-28-enter-submit"></script>
-  <script src="app.js?v=password-login-2026-07-16"></script>
+  <script src="auth.js?v=2026-07-29-kiosk-pin"></script>
+  <script src="app.js?v=2026-07-29-kiosk-pin"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>

@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -12,6 +13,8 @@ const DEFAULT_TENANT_ID = safeName(process.env.APP_TENANT_ID || 'his-management'
 const DEFAULT_TENANT_NAME = process.env.APP_TENANT_NAME || 'HIS Management Group Inc';
 const DEFAULT_TENANT_LOGO = process.env.APP_TENANT_LOGO || 'assets/his-management.png';
 const ALERT_TIME_ZONE = process.env.ALERT_TIME_ZONE || 'America/Chicago';
+const KIOSK_TOKEN_SECRET = process.env.KIOSK_TOKEN_SECRET || SUPABASE_SERVICE_ROLE_KEY || '';
+const KIOSK_SESSION_SECONDS = 8 * 60 * 60;
 
 const DEFAULT_LOCATION_ID = 'store-01';
 const DEFAULT_TASK_SECTIONS = ['All Day', 'Opening', 'Mid-shift', 'Closing'];
@@ -154,6 +157,47 @@ async function supabase(pathname, options = {}) {
     throw error;
   }
   return payload;
+}
+
+function sha256(value) {
+  return crypto.createHash('sha256').update(String(value)).digest('hex');
+}
+
+function signKioskToken(payload) {
+  if (!KIOSK_TOKEN_SECRET) throw Object.assign(new Error('Kiosk login is not configured'), { statusCode: 503 });
+  const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = crypto.createHmac('sha256', KIOSK_TOKEN_SECRET).update(encoded).digest('base64url');
+  return `${encoded}.${signature}`;
+}
+
+function verifyKioskToken(token, expectedType) {
+  if (!token || !KIOSK_TOKEN_SECRET) return null;
+  const [encoded, signature] = String(token).split('.');
+  if (!encoded || !signature) return null;
+  const expected = crypto.createHmac('sha256', KIOSK_TOKEN_SECRET).update(encoded).digest();
+  let supplied;
+  try { supplied = Buffer.from(signature, 'base64url'); } catch { return null; }
+  if (expected.length !== supplied.length || !crypto.timingSafeEqual(expected, supplied)) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+    if (payload.type !== expectedType || !payload.exp || payload.exp <= Math.floor(Date.now() / 1000) || payload.tenantId !== tenantId()) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function bearerToken(event) {
+  return String(event.headers.authorization || event.headers.Authorization || '').replace(/^Bearer\s+/i, '');
+}
+
+function randomCode(length = 8) {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from(crypto.randomBytes(length), byte => alphabet[byte % alphabet.length]).join('');
+}
+
+function hashPin(pin, salt) {
+  return crypto.scryptSync(String(pin), salt, 32).toString('hex');
 }
 
 function today() {
@@ -324,6 +368,7 @@ async function readUsers() {
     phone: row.phone || row.mobile_phone || row.mobile || null,
     name: row.name,
     role: row.role,
+    pinEnabled: Boolean(row.pin_hash),
     locationId: row.location_id,
     locationIds: Array.isArray(row.location_ids) ? row.location_ids : [row.location_id]
   }));
@@ -851,8 +896,105 @@ function appProfile(row) {
     name: row.name,
     role: row.role,
     locationId: row.location_id,
-    locationIds: userLocationIds(row)
+    locationIds: userLocationIds(row),
+    authMode: row.authMode || 'password'
   };
+}
+
+async function kioskDeviceFromToken(event) {
+  const payload = verifyKioskToken(bearerToken(event), 'device');
+  if (!payload?.deviceId) throw Object.assign(new Error('This tablet must be set up again'), { statusCode: 401 });
+  const rows = await supabase(`/rest/v1/kiosk_devices?${tenantQuery()}&id=eq.${encodeURIComponent(payload.deviceId)}&active=eq.true&select=*`);
+  const device = rows[0];
+  if (!device || device.token_hash !== sha256(bearerToken(event))) throw Object.assign(new Error('This tablet is no longer authorized'), { statusCode: 401 });
+  supabase(`/rest/v1/kiosk_devices?${tenantQuery()}&id=eq.${encodeURIComponent(device.id)}`, { method: 'PATCH', body: JSON.stringify({ last_seen_at: new Date().toISOString() }) }).catch(() => {});
+  return device;
+}
+
+async function createKioskEnrollment(payload, actor) {
+  if (!canManage(actor)) throw Object.assign(new Error('Only managers can set up store tablets'), { statusCode: 403 });
+  const locationId = payload.locationId || actor.location_id;
+  if (!canAccessLocation(actor, locationId)) throw Object.assign(new Error('You can only set up tablets for your locations'), { statusCode: 403 });
+  const code = randomCode();
+  await supabase('/rest/v1/kiosk_enrollments', {
+    method: 'POST',
+    body: JSON.stringify(withTenant({
+      code_hash: sha256(code), location_id: locationId, device_name: String(payload.deviceName || 'Store tablet').slice(0, 80),
+      created_by: actor.id, expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString()
+    }))
+  });
+  return { code, expiresInMinutes: 15, locationId };
+}
+
+async function enrollKiosk(payload) {
+  const code = String(payload.code || '').trim().toUpperCase();
+  if (!code) throw Object.assign(new Error('Enter the setup code'), { statusCode: 400 });
+  const rows = await supabase(`/rest/v1/kiosk_enrollments?${tenantQuery()}&code_hash=eq.${sha256(code)}&used_at=is.null&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=*&limit=1`);
+  const enrollment = rows[0];
+  if (!enrollment) throw Object.assign(new Error('That setup code is invalid or expired'), { statusCode: 401 });
+  const deviceId = crypto.randomUUID();
+  const exp = Math.floor(Date.now() / 1000) + 365 * 24 * 60 * 60;
+  const token = signKioskToken({ type: 'device', tenantId: tenantId(), deviceId, locationId: enrollment.location_id, exp });
+  await supabase('/rest/v1/kiosk_devices', {
+    method: 'POST',
+    body: JSON.stringify(withTenant({ id: deviceId, location_id: enrollment.location_id, name: enrollment.device_name, token_hash: sha256(token), active: true }))
+  });
+  await supabase(`/rest/v1/kiosk_enrollments?${tenantQuery()}&id=eq.${encodeURIComponent(enrollment.id)}`, { method: 'PATCH', body: JSON.stringify({ used_at: new Date().toISOString() }) });
+  return { token, locationId: enrollment.location_id, deviceName: enrollment.device_name };
+}
+
+async function kioskEmployees(event) {
+  const device = await kioskDeviceFromToken(event);
+  const rows = await supabase(`/rest/v1/app_users?${tenantQuery()}&location_id=eq.${encodeURIComponent(device.location_id)}&role=eq.Employee&active=eq.true&pin_hash=not.is.null&select=id,name&order=name.asc`);
+  const locations = await supabase(`/rest/v1/locations?${tenantQuery()}&id=eq.${encodeURIComponent(device.location_id)}&select=id,name`);
+  return { employees: rows, location: locations[0], deviceName: device.name };
+}
+
+async function kioskPinLogin(event, payload) {
+  const device = await kioskDeviceFromToken(event);
+  const pin = String(payload.pin || '');
+  if (!/^\d{4}$/.test(pin)) throw Object.assign(new Error('Enter a four-digit PIN'), { statusCode: 400 });
+  const rows = await supabase(`/rest/v1/app_users?${tenantQuery()}&id=eq.${encodeURIComponent(payload.userId || '')}&location_id=eq.${encodeURIComponent(device.location_id)}&role=eq.Employee&active=eq.true&select=*`);
+  const user = rows[0];
+  if (!user?.pin_hash || !user.pin_salt) throw Object.assign(new Error('PIN sign-in is not enabled for that employee'), { statusCode: 401 });
+  if (user.pin_locked_until && new Date(user.pin_locked_until) > new Date()) throw Object.assign(new Error('Too many attempts. Ask a manager or wait 15 minutes.'), { statusCode: 429 });
+  const supplied = Buffer.from(hashPin(pin, user.pin_salt), 'hex');
+  const expected = Buffer.from(user.pin_hash, 'hex');
+  const matches = supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected);
+  if (!matches) {
+    const failures = Number(user.pin_failures || 0) + 1;
+    await supabase(`/rest/v1/app_users?${tenantQuery()}&id=eq.${encodeURIComponent(user.id)}`, { method: 'PATCH', body: JSON.stringify({ pin_failures: failures >= 5 ? 0 : failures, pin_locked_until: failures >= 5 ? new Date(Date.now() + 15 * 60 * 1000).toISOString() : null }) });
+    throw Object.assign(new Error(failures >= 5 ? 'Too many attempts. Sign-in is locked for 15 minutes.' : 'Incorrect PIN'), { statusCode: failures >= 5 ? 429 : 401 });
+  }
+  await supabase(`/rest/v1/app_users?${tenantQuery()}&id=eq.${encodeURIComponent(user.id)}`, { method: 'PATCH', body: JSON.stringify({ pin_failures: 0, pin_locked_until: null, pin_last_used_at: new Date().toISOString() }) });
+  const token = signKioskToken({ type: 'session', tenantId: tenantId(), deviceId: device.id, userId: user.id, locationId: device.location_id, exp: Math.floor(Date.now() / 1000) + KIOSK_SESSION_SECONDS });
+  return { token, profile: appProfile({ ...user, authMode: 'kiosk' }) };
+}
+
+async function setUserPin(id, pin, actor) {
+  if (!canManage(actor)) throw Object.assign(new Error('Only managers can set employee PINs'), { statusCode: 403 });
+  if (!/^\d{4}$/.test(String(pin || ''))) throw Object.assign(new Error('PIN must be exactly four digits'), { statusCode: 400 });
+  const rows = await supabase(`/rest/v1/app_users?${tenantQuery()}&id=eq.${encodeURIComponent(id)}&select=*`);
+  const target = rows[0];
+  if (!target || target.role !== 'Employee') throw Object.assign(new Error('PINs are only available for employees'), { statusCode: 400 });
+  if (!canAccessLocation(actor, target.location_id)) throw Object.assign(new Error('You can only set PINs for employees at your locations'), { statusCode: 403 });
+  const salt = crypto.randomBytes(16).toString('hex');
+  await supabase(`/rest/v1/app_users?${tenantQuery()}&id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ pin_salt: salt, pin_hash: hashPin(pin, salt), pin_failures: 0, pin_locked_until: null, updated_at: new Date().toISOString() }) });
+  return { ok: true };
+}
+
+async function readKioskDevices(actor) {
+  if (!canManage(actor)) throw Object.assign(new Error('Only managers can view store tablets'), { statusCode: 403 });
+  const rows = await supabase(`/rest/v1/kiosk_devices?${tenantQuery()}&active=eq.true&select=id,name,location_id,last_seen_at,created_at&order=created_at.desc`);
+  const allowed = userLocationIds(actor);
+  return (isFullAccess(actor) ? rows : rows.filter(row => allowed.includes(row.location_id))).map(row => ({ id: row.id, name: row.name, locationId: row.location_id, lastSeenAt: row.last_seen_at, createdAt: row.created_at }));
+}
+
+async function revokeKioskDevice(id, actor) {
+  const devices = await readKioskDevices(actor);
+  if (!devices.some(device => device.id === id)) throw Object.assign(new Error('Tablet not found'), { statusCode: 404 });
+  await supabase(`/rest/v1/kiosk_devices?${tenantQuery()}&id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ active: false, revoked_at: new Date().toISOString() }) });
+  return readKioskDevices(actor);
 }
 
 function bestProfile(rows) {
@@ -899,6 +1041,14 @@ function allowedRoles(profile) {
 
 async function currentProfile(event) {
   if (!AUTH_REQUIRED) return null;
+  const kiosk = verifyKioskToken(bearerToken(event), 'session');
+  if (kiosk?.userId) {
+    const deviceRows = await supabase(`/rest/v1/kiosk_devices?${tenantQuery()}&id=eq.${encodeURIComponent(kiosk.deviceId)}&location_id=eq.${encodeURIComponent(kiosk.locationId)}&active=eq.true&select=id`);
+    if (!deviceRows[0]) throw Object.assign(new Error('This tablet is no longer authorized'), { statusCode: 401 });
+    const rows = await supabase(`/rest/v1/app_users?${tenantQuery()}&id=eq.${encodeURIComponent(kiosk.userId)}&location_id=eq.${encodeURIComponent(kiosk.locationId)}&role=eq.Employee&active=eq.true&select=*`);
+    if (!rows[0]) throw Object.assign(new Error('Employee session is no longer active'), { statusCode: 401 });
+    return { ...rows[0], authMode: 'kiosk' };
+  }
   const authUser = await currentAuthUser(event);
   if (!authUser?.email) throw Object.assign(new Error('Not signed in'), { statusCode: 401 });
   const email = authUser.email.toLowerCase();
@@ -2208,6 +2358,15 @@ exports.handler = async event => {
       return json(200, { profile: await sessionProfile(event), users: await readUsers() });
     }
 
+    if (method === 'POST' && apiPath === '/kiosk/enroll') return json(200, await enrollKiosk(body));
+    if (method === 'GET' && apiPath === '/kiosk/employees') return json(200, await kioskEmployees(event));
+    if (method === 'POST' && apiPath === '/kiosk/login') return json(200, await kioskPinLogin(event, body));
+    if (method === 'POST' && apiPath === '/kiosk/session-profile') {
+      const profile = await currentProfile(event);
+      if (profile?.authMode !== 'kiosk') throw Object.assign(new Error('Employee session is not active'), { statusCode: 401 });
+      return json(200, { profile: appProfile(profile) });
+    }
+
     if (method === 'GET' && apiPath === '/alerts/check' && query.secret && query.secret === process.env.ALERT_CRON_SECRET) {
       return json(200, await checkAlerts(query, null));
     }
@@ -2219,8 +2378,9 @@ exports.handler = async event => {
 
     if (method === 'GET' && apiPath === '/state') {
       const date = query.date;
-      const locationId = query.locationId || DEFAULT_LOCATION_ID;
-      const historyScope = query.historyScope || 'location';
+      const locationId = actor?.authMode === 'kiosk' ? actor.location_id : (query.locationId || DEFAULT_LOCATION_ID);
+      if (AUTH_REQUIRED && !canAccessLocation(actor, locationId)) throw Object.assign(new Error('You do not have access to that location'), { statusCode: 403 });
+      const historyScope = actor?.authMode === 'kiosk' ? 'location' : (query.historyScope || 'location');
       const [day, history, overdue, taskTemplates, notices, alertSettings, notificationLogs, calendarEvents, users, locations] = await Promise.all([
         readDay(locationId, date),
         readHistory(historyScope === 'all' ? null : locationId),
@@ -2243,12 +2403,13 @@ exports.handler = async event => {
         alertSettings,
         notificationLogs,
         calendarEvents,
-        users,
+        users: actor?.authMode === 'kiosk' ? users.filter(user => user.id === actor.id) : users,
         locations
       });
     }
 
     if (method === 'GET' && apiPath === '/users') return json(200, { users: await readUsers() });
+    if (method === 'GET' && apiPath === '/kiosk/devices') return json(200, { devices: await readKioskDevices(actor) });
     if (method === 'GET' && apiPath === '/locations') return json(200, { locations: await readLocations() });
     if (method === 'GET' && apiPath === '/overdue') return json(200, { overdue: await readOverdue(query.date) });
     if (method === 'GET' && apiPath === '/dashboard') return json(200, await dashboardSummary(actor, query.range || 'day', query.locationId || 'all'));
@@ -2264,9 +2425,11 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/smallwares/state') return json(200, await smallwaresState());
 
     if (method === 'POST' && apiPath === '/day') {
-      await writeDay(body.locationId || DEFAULT_LOCATION_ID, body.date, body.day);
+      const locationId = body.locationId || DEFAULT_LOCATION_ID;
+      if (AUTH_REQUIRED && !canAccessLocation(actor, locationId)) throw Object.assign(new Error('You do not have access to that location'), { statusCode: 403 });
+      await writeDay(locationId, body.date, body.day);
       return json(200, {
-        history: await readHistory(body.locationId || DEFAULT_LOCATION_ID),
+        history: await readHistory(locationId),
         overdue: await readOverdue(body.date)
       });
     }
@@ -2277,7 +2440,9 @@ exports.handler = async event => {
     if (method === 'POST' && apiPath === '/photo') return json(200, { url: await saveAttachment({ ...body, kind: body.taskId || 'checklist-photo', name: `${body.date}-${body.taskId}` }) });
     if (method === 'POST' && apiPath === '/user') {
       assertManageAccess(actor, body);
-      return json(200, { users: await saveUser(body) });
+      await saveUser(body);
+      if (body.pin) await setUserPin(body.id || safeName(body.email || body.name), body.pin, actor);
+      return json(200, { users: await readUsers() });
     }
     if (method === 'POST' && apiPath === '/user/deactivate') {
       return json(200, { users: await deactivateUser(body.id, actor) });
@@ -2285,6 +2450,9 @@ exports.handler = async event => {
     if (method === 'POST' && apiPath === '/user/password') {
       return json(200, await setUserPassword(body.id || actor?.id, body.password, actor));
     }
+    if (method === 'POST' && apiPath === '/user/pin') return json(200, await setUserPin(body.id, body.pin, actor));
+    if (method === 'POST' && apiPath === '/kiosk/enrollment') return json(200, await createKioskEnrollment(body, actor));
+    if (method === 'POST' && apiPath === '/kiosk/revoke') return json(200, { devices: await revokeKioskDevice(body.id, actor) });
     if (method === 'POST' && apiPath === '/invite') {
       assertManageAccess(actor, body);
       return json(200, { login: await createUserLogin({ ...body, invitedBy: body.invitedBy || actor?.name }), users: await readUsers() });

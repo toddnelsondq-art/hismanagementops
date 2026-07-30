@@ -1,16 +1,15 @@
 (function () {
+  const DEVICE_KEY = 'dqops-kiosk-device-token';
+  const SESSION_KEY = 'dqops-kiosk-session';
+  const PROFILE_KEY = 'dqops-kiosk-profile';
+  const INACTIVITY_MS = 5 * 60 * 1000;
   const state = {
     enabled: false,
     token: '',
     profile: null,
+    authMode: '',
     storageBucket: 'dailyops-uploads',
-    tenant: {
-      id: 'his-management',
-      name: 'HIS Management Group Inc',
-      logoUrl: 'assets/his-management.png',
-      appName: 'HIS OPS',
-      subtitle: 'Daily operations'
-    }
+    tenant: { id: 'his-management', name: 'HIS Management Group Inc', logoUrl: 'assets/his-management.png', appName: 'HIS OPS', subtitle: 'Daily operations' }
   };
 
   window.dailyOpsAuth = state;
@@ -20,48 +19,32 @@
     return !['localhost', '127.0.0.1', ''].includes(window.location.hostname) && window.location.protocol !== 'file:';
   }
 
-  function blockHostedApp(message) {
-    const overlay = makeOverlay(message);
-    const input = overlay.querySelector('#authEmail');
-    const password = overlay.querySelector('#authPassword');
-    const button = overlay.querySelector('#authSendBtn');
-    const passwordButton = overlay.querySelector('#authPasswordBtn');
-    if (input) input.style.display = 'none';
-    if (password) password.style.display = 'none';
-    if (button) button.style.display = 'none';
-    if (passwordButton) passwordButton.style.display = 'none';
-    return new Promise(() => {});
+  function escapeHtml(value = '') {
+    return String(value).replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
   }
 
-  function makeOverlay(message = 'Sign in with the email and password provided by your manager.') {
-    let overlay = document.querySelector('#authOverlay');
-    if (overlay) return overlay;
-    overlay = document.createElement('div');
+  function overlayCard(content) {
+    document.querySelector('#authOverlay')?.remove();
+    const overlay = document.createElement('div');
     overlay.id = 'authOverlay';
-    overlay.innerHTML = `
-      <form class="auth-card" id="authForm">
-        <img class="auth-logo" src="${state.tenant.logoUrl}" alt="${state.tenant.name}">
-        <h2>${state.tenant.appName || 'Operations Hub'}</h2>
-        <p class="auth-subtitle">Daily checklists, temperatures, maintenance, and operations</p>
-        <p id="authMessage">${message}</p>
-        <label>Email
-          <input id="authEmail" type="email" placeholder="you@example.com" autocomplete="email">
-        </label>
-        <label>Password
-          <input id="authPassword" type="password" placeholder="Password or temporary password" autocomplete="current-password">
-        </label>
-        <button id="authPasswordBtn" type="submit">Sign in</button>
-        <p class="hint">Users can only join after they have been created by an authorized manager.</p>
-        <p class="auth-version">Login mode: email + password</p>
-      </form>
-    `;
+    overlay.innerHTML = `<div class="auth-card"><img class="auth-logo" src="${escapeHtml(state.tenant.logoUrl)}" alt="${escapeHtml(state.tenant.name)}"><h2>${escapeHtml(state.tenant.appName || 'DQ OPS')}</h2>${content}</div>`;
     document.body.append(overlay);
     return overlay;
   }
 
-  function setMessage(message) {
-    const messageElement = document.querySelector('#authMessage');
-    if (messageElement) messageElement.textContent = message;
+  function blockHostedApp(message) {
+    overlayCard(`<p>${escapeHtml(message)}</p>`);
+    return new Promise(() => {});
+  }
+
+  async function request(path, options = {}, token = '') {
+    const response = await fetch(path, {
+      ...options,
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(options.headers || {}) }
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || payload.message || 'Request failed');
+    return payload;
   }
 
   async function loadSupabaseLibrary() {
@@ -76,96 +59,190 @@
     return Boolean(window.supabase?.createClient);
   }
 
+  function beginInactivityLogout() {
+    let timer;
+    const reset = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        sessionStorage.removeItem(SESSION_KEY);
+        sessionStorage.removeItem(PROFILE_KEY);
+        window.location.reload();
+      }, INACTIVITY_MS);
+    };
+    ['pointerdown', 'keydown', 'touchstart'].forEach(name => window.addEventListener(name, reset, { passive: true }));
+    reset();
+  }
+
+  async function showKioskLogin(deviceToken) {
+    let kiosk;
+    try {
+      kiosk = await request('/api/kiosk/employees', { cache: 'no-store' }, deviceToken);
+    } catch (error) {
+      localStorage.removeItem(DEVICE_KEY);
+      return showPasswordLogin(error.message);
+    }
+    const employees = kiosk.employees || [];
+    const overlay = overlayCard(`
+      <p class="auth-subtitle">${escapeHtml(kiosk.location?.name || 'Store tablet')}</p>
+      <form id="kioskLoginForm">
+        <p id="authMessage">Select your name and enter your four-digit PIN.</p>
+        <label>Your name<select id="kioskUser">${employees.map(user => `<option value="${escapeHtml(user.id)}">${escapeHtml(user.name)}</option>`).join('')}</select></label>
+        <label>PIN<input id="kioskPin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" placeholder="4-digit PIN"></label>
+        <button id="kioskLoginBtn" type="submit">Start shift</button>
+      </form>
+      ${employees.length ? '' : '<p class="hint">No employees at this store have a PIN yet. Ask a manager to add one.</p>'}
+      <button id="managerLoginBtn" class="ghost auth-secondary" type="button">Manager sign in</button>
+      <button id="resetTabletBtn" class="auth-text-button" type="button">Change this tablet's store</button>
+    `);
+    overlay.querySelector('#managerLoginBtn').onclick = () => showPasswordLogin();
+    overlay.querySelector('#resetTabletBtn').onclick = () => {
+      if (window.confirm('Remove this tablet setup? A manager will need to enroll it again.')) {
+        localStorage.removeItem(DEVICE_KEY);
+        showPasswordLogin();
+      }
+    };
+    const form = overlay.querySelector('#kioskLoginForm');
+    form.onsubmit = async event => {
+      event.preventDefault();
+      const button = overlay.querySelector('#kioskLoginBtn');
+      const message = overlay.querySelector('#authMessage');
+      const pin = overlay.querySelector('#kioskPin').value;
+      if (!/^\d{4}$/.test(pin)) { message.textContent = 'Enter your four-digit PIN.'; return; }
+      button.disabled = true;
+      button.textContent = 'Signing in…';
+      try {
+        const result = await request('/api/kiosk/login', { method: 'POST', body: JSON.stringify({ userId: overlay.querySelector('#kioskUser').value, pin }) }, deviceToken);
+        sessionStorage.setItem(SESSION_KEY, result.token);
+        sessionStorage.setItem(PROFILE_KEY, JSON.stringify(result.profile));
+        window.location.reload();
+      } catch (error) {
+        message.textContent = error.message;
+        overlay.querySelector('#kioskPin').value = '';
+        button.disabled = false;
+        button.textContent = 'Start shift';
+      }
+    };
+    overlay.querySelector('#kioskPin').focus();
+    return new Promise(() => {});
+  }
+
+  function showEnrollment() {
+    const overlay = overlayCard(`
+      <p class="auth-subtitle">Set up this store tablet</p>
+      <form id="enrollForm">
+        <p id="authMessage">Enter the setup code generated by a manager in DQ OPS.</p>
+        <label>Setup code<input id="enrollmentCode" inputmode="text" maxlength="8" autocomplete="off" placeholder="8-character code"></label>
+        <button id="enrollBtn" type="submit">Connect tablet</button>
+      </form>
+      <button id="backToLoginBtn" class="ghost auth-secondary" type="button">Back to manager sign in</button>
+    `);
+    overlay.querySelector('#backToLoginBtn').onclick = () => showPasswordLogin();
+    overlay.querySelector('#enrollForm').onsubmit = async event => {
+      event.preventDefault();
+      const button = overlay.querySelector('#enrollBtn');
+      const message = overlay.querySelector('#authMessage');
+      button.disabled = true;
+      try {
+        const result = await request('/api/kiosk/enroll', { method: 'POST', body: JSON.stringify({ code: overlay.querySelector('#enrollmentCode').value }) });
+        localStorage.setItem(DEVICE_KEY, result.token);
+        return showKioskLogin(result.token);
+      } catch (error) {
+        message.textContent = error.message;
+        button.disabled = false;
+      }
+    };
+    overlay.querySelector('#enrollmentCode').focus();
+    return new Promise(() => {});
+  }
+
+  async function showPasswordLogin(message = 'Sign in with the email and password provided by your manager.') {
+    const overlay = overlayCard(`
+      <p class="auth-subtitle">Management sign in</p>
+      <form id="authForm">
+        <p id="authMessage">${escapeHtml(message)}</p>
+        <label>Email<input id="authEmail" type="email" placeholder="you@example.com" autocomplete="email"></label>
+        <label>Password<input id="authPassword" type="password" placeholder="Password or temporary password" autocomplete="current-password"></label>
+        <button id="authPasswordBtn" type="submit">Sign in</button>
+      </form>
+      <button id="setupTabletBtn" class="ghost auth-secondary" type="button">Set up a store tablet</button>
+      <p class="hint">Employee PIN sign-in works only on a tablet enrolled to a store.</p>
+    `);
+    overlay.querySelector('#setupTabletBtn').onclick = showEnrollment;
+    const button = overlay.querySelector('#authPasswordBtn');
+    overlay.querySelector('#authForm').onsubmit = async event => {
+      event.preventDefault();
+      const email = overlay.querySelector('#authEmail').value.trim();
+      const password = overlay.querySelector('#authPassword').value;
+      if (!email || !password) { overlay.querySelector('#authMessage').textContent = 'Enter your email and password.'; return; }
+      button.disabled = true;
+      button.textContent = 'Signing in…';
+      const { error } = await state.client.auth.signInWithPassword({ email, password });
+      if (error) {
+        overlay.querySelector('#authMessage').textContent = error.message;
+        button.disabled = false;
+        button.textContent = 'Sign in';
+        return;
+      }
+      window.location.reload();
+    };
+    overlay.querySelector('#authEmail').focus();
+    return new Promise(() => {});
+  }
+
   async function start() {
     try {
       const response = await fetch('/api/public-config', { cache: 'no-store' });
-      if (!response.ok) {
-        if (isHostedSite()) return blockHostedApp('Hosted login is not connected yet. Check the Netlify environment variables and redeploy the site.');
-        return state;
-      }
+      if (!response.ok) return isHostedSite() ? blockHostedApp('Hosted login is not connected yet.') : state;
       const config = await response.json();
       state.enabled = Boolean(config.authEnabled);
       state.storageBucket = config.storageBucket || state.storageBucket;
       state.tenant = { ...state.tenant, ...(config.tenant || {}) };
-      if (!state.enabled) {
-        if (isHostedSite()) return blockHostedApp('Hosted login is not configured yet. Add SUPABASE_URL and SUPABASE_ANON_KEY in Netlify, then redeploy.');
+      if (!state.enabled) return isHostedSite() ? blockHostedApp('Hosted login is not configured yet.') : state;
+
+      const kioskSession = sessionStorage.getItem(SESSION_KEY);
+      const kioskProfile = sessionStorage.getItem(PROFILE_KEY);
+      if (kioskSession && kioskProfile) {
+        try {
+          const verified = await request('/api/kiosk/session-profile', { method: 'POST', body: '{}' }, kioskSession);
+          state.token = kioskSession;
+          state.profile = verified.profile;
+          state.authMode = 'kiosk';
+          localStorage.setItem('dailyops-current-user', state.profile.id);
+          beginInactivityLogout();
+          return state;
+        } catch {
+          sessionStorage.removeItem(SESSION_KEY);
+          sessionStorage.removeItem(PROFILE_KEY);
+        }
+      }
+
+      await loadSupabaseLibrary();
+      state.client = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
+      const { data } = await state.client.auth.getSession();
+      if (data.session) {
+        state.token = data.session.access_token;
+        const accepted = await request('/api/session-profile', { method: 'POST', body: '{}' }, state.token);
+        state.profile = accepted.profile;
+        state.authMode = 'password';
+        localStorage.setItem('dailyops-current-user', state.profile.id);
         return state;
       }
-      await loadSupabaseLibrary();
-      const client = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
-      state.client = client;
 
-      const { data } = await client.auth.getSession();
-      if (!data.session) {
-        const overlay = makeOverlay();
-        const form = overlay.querySelector('#authForm');
-        const signInButton = overlay.querySelector('#authPasswordBtn');
-        form.onsubmit = async event => {
-          event.preventDefault();
-          if (signInButton.disabled) return;
-          const email = overlay.querySelector('#authEmail').value.trim();
-          const password = overlay.querySelector('#authPassword').value;
-          if (!email || !password) return setMessage('Enter your email and password.');
-          signInButton.disabled = true;
-          signInButton.textContent = 'Signing in…';
-          setMessage('Signing in…');
-          try {
-            const { error } = await client.auth.signInWithPassword({ email, password });
-            if (error) {
-              setMessage(error.message);
-              signInButton.disabled = false;
-              signInButton.textContent = 'Sign in';
-              return;
-            }
-            window.location.reload();
-          } catch {
-            setMessage('Sign in could not be completed. Check your connection and try again.');
-            signInButton.disabled = false;
-            signInButton.textContent = 'Sign in';
-          }
-        };
-        overlay.querySelector('#authEmail').focus();
-        return new Promise(() => {});
-      }
-
-      state.token = data.session.access_token;
-      const accepted = await fetch('/api/session-profile', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${state.token}`,
-          'Content-Type': 'application/json'
-        },
-        body: '{}'
-      });
-      if (!accepted.ok) {
-        let message = 'This login is not attached to an active app user.';
-        try {
-          const payload = await accepted.json();
-          message = payload.error || message;
-        } catch {}
-        const overlay = makeOverlay(message);
-        overlay.querySelector('#authPasswordBtn').type = 'button';
-        overlay.querySelector('#authPasswordBtn').onclick = async () => {
-          await client.auth.signOut();
-          window.location.reload();
-        };
-        overlay.querySelector('#authPasswordBtn').textContent = 'Sign out and try another account';
-        return new Promise(() => {});
-      }
-      const payload = await accepted.json();
-      state.profile = payload.profile;
-      window.localStorage.setItem('dailyops-current-user', payload.profile.id);
-      document.querySelector('#authOverlay')?.remove();
-      return state;
-    } catch {
-      if (isHostedSite()) return blockHostedApp('Hosted login could not start. Check that the Netlify function deployed and the Supabase settings are saved.');
-      return state;
+      const deviceToken = localStorage.getItem(DEVICE_KEY);
+      return deviceToken ? showKioskLogin(deviceToken) : showPasswordLogin();
+    } catch (error) {
+      return isHostedSite() ? blockHostedApp(error.message || 'Hosted login could not start.') : state;
     }
   }
 
   window.dailyOpsSignOut = async function () {
-    if (state.client) await state.client.auth.signOut();
-    window.localStorage.removeItem('dailyops-current-user');
+    if (state.authMode === 'kiosk') {
+      sessionStorage.removeItem(SESSION_KEY);
+      sessionStorage.removeItem(PROFILE_KEY);
+    } else if (state.client) {
+      await state.client.auth.signOut();
+    }
+    localStorage.removeItem('dailyops-current-user');
     window.location.reload();
   };
 })();

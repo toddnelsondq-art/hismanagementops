@@ -1,4 +1,4 @@
-const CACHE_NAME = 'his-ops-v5-food-safety-200';
+const CACHE_NAME = 'his-ops-v6-kiosk-pin';
 const APP_SHELL = [
   '/',
   '/index.html',

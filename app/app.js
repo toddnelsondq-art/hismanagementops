@@ -150,6 +150,7 @@ let resourcesLocationId = localStorage.getItem('resources-location') || 'all';
 let smallwares = { requests: [] };
 let smallwaresLocationId = localStorage.getItem('smallwares-location') || currentLocationId;
 let showApprovedSmallwares = false;
+let kioskDevices = [];
 
 $('#todayLabel').textContent = new Date().toLocaleDateString(undefined, {
   weekday: 'long',
@@ -513,7 +514,17 @@ async function loadState() {
   await loadResourcesState();
   await loadSmallwaresState();
   await loadDashboardState();
+  await loadKioskDevices();
   render();
+}
+
+async function loadKioskDevices() {
+  if (!apiOnline || !canUseManage()) return;
+  try {
+    kioskDevices = (await api('/api/kiosk/devices')).devices || [];
+  } catch {
+    kioskDevices = [];
+  }
 }
 
 async function loadMaintenanceState() {
@@ -1883,7 +1894,7 @@ function applyRoleAccess(user) {
   document.querySelectorAll('[data-view="historyView"]').forEach(button => button.style.display = showHistory && !tech ? '' : 'none');
   document.querySelectorAll('[data-view="manageView"]').forEach(button => button.style.display = showManage && !tech ? '' : 'none');
   document.querySelectorAll('[data-view="locationsView"]').forEach(button => button.style.display = showLocations ? '' : 'none');
-  $('#changePasswordBtn').style.display = window.dailyOpsAuth?.enabled ? '' : 'none';
+  $('#changePasswordBtn').style.display = window.dailyOpsAuth?.enabled && window.dailyOpsAuth?.authMode !== 'kiosk' ? '' : 'none';
   $('#signOutBtn').style.display = window.dailyOpsAuth?.enabled ? '' : 'none';
   $('#sideUserName').textContent = user.name;
   $('#sideUserRole').textContent = user.role;
@@ -2147,6 +2158,7 @@ function renderUsers() {
   $('#addUserCard').style.display = roles.length ? '' : 'none';
   $('#importUsersCard').style.display = roles.length ? '' : 'none';
   $('#usersCard').style.display = canUseManage(actor) ? '' : 'none';
+  renderKioskAdmin();
   $('#userList').innerHTML = manageableUsers(actor).map(user => `
     <article class="card user-row compact-user-row">
       <span class="avatar">${initials(user.name)}</span>
@@ -2941,6 +2953,18 @@ function switchView(viewId) {
 }
 
 document.addEventListener('click', async event => {
+  const revokeTablet = event.target.closest('[data-kiosk-revoke]');
+  if (revokeTablet) {
+    if (!confirm('Remove this tablet? Employees will no longer be able to sign in on it.')) return;
+    try {
+      kioskDevices = (await api('/api/kiosk/revoke', { method: 'POST', body: JSON.stringify({ id: revokeTablet.dataset.kioskRevoke }) })).devices || [];
+      renderKioskAdmin();
+      toast('Tablet removed');
+    } catch (error) {
+      toast(`Tablet was not removed: ${error.message}`);
+    }
+    return;
+  }
   const collapseHeader = event.target.closest('.collapsible-header');
   if (collapseHeader) {
     const card = collapseHeader.closest('.collapsible-card');
@@ -3554,26 +3578,29 @@ $('#addUserBtn').onclick = async () => {
   const email = $('#newUserEmail').value.trim();
   const phone = $('#newUserPhone').value.trim();
   const temporaryPassword = $('#newUserPassword').value.trim();
+  const pin = $('#newUserPin').value.trim();
+  const role = $('#newUserRole').value;
   if (!name) return toast('Enter a user name');
-  if (window.dailyOpsAuth?.enabled && !email) return toast('Enter an email for hosted login');
-  if (window.dailyOpsAuth?.enabled && !temporaryPassword) return toast('Enter a temporary password for hosted login');
+  if (window.dailyOpsAuth?.enabled && role !== 'Employee' && !email) return toast('Enter an email for management login');
+  if (window.dailyOpsAuth?.enabled && role !== 'Employee' && !temporaryPassword) return toast('Enter a temporary password for management login');
+  if (role === 'Employee' && !/^\d{4}$/.test(pin)) return toast('Enter a four-digit employee PIN');
   if (temporaryPassword && !email) return toast('Enter an email when setting a temporary password');
   if (temporaryPassword && temporaryPassword.length < 6) return toast('Temporary password must be at least 6 characters');
   const locationId = $('#newUserLocation').value;
-  const role = $('#newUserRole').value;
   const selectedLocations = [...document.querySelectorAll('#newUserLocations input:checked')].map(input => input.value);
   const locationIds = roleUsesMultipleLocations(role) ? (selectedLocations.length ? selectedLocations : [locationId]) : [locationId];
   if (!allowedAssignableRoles().includes(role)) return toast('You do not have access to create that role');
   if (!isFullAccess() && locationIds.some(savedLocation => !userLocationIds().includes(savedLocation))) return toast('You can only add users to your locations');
   try {
-    await saveUser({ name, email, phone, temporaryPassword, role, locationId, locationIds, invitedBy: currentUser().name });
+    await saveUser({ name, email, phone, temporaryPassword, pin: role === 'Employee' ? pin : '', role, locationId, locationIds, invitedBy: currentUser().name });
     $('#newUserName').value = '';
     $('#newUserEmail').value = '';
     $('#newUserPhone').value = '';
     $('#newUserPassword').value = '';
+    $('#newUserPin').value = '';
     $('#newUserRole').value = 'Employee';
     renderNewUserLocationChecks();
-    toast(temporaryPassword ? 'User added with temporary password' : 'User added');
+    toast(role === 'Employee' ? 'Employee added with PIN' : 'User added with temporary password');
   } catch (error) {
     toast(`User did not save: ${error.message}`);
   }
@@ -3594,16 +3621,24 @@ function openUserDialog(id) {
   $('#editUserEmail').value = user.email || '';
   $('#editUserPhone').value = user.phone || '';
   $('#editUserPassword').value = '';
+  $('#editUserPin').value = '';
   $('#editUserRole').innerHTML = roles.map(role => `<option ${user.role === role ? 'selected' : ''}>${role}</option>`).join('');
   if (!roles.includes(user.role)) $('#editUserRole').innerHTML += `<option selected>${escapeHtml(user.role)}</option>`;
   $('#editUserLocation').innerHTML = visibleLocations.map(location => `<option value="${location.id}" ${user.locationId === location.id ? 'selected' : ''}>${location.name}</option>`).join('');
   renderLocationChecks('#editUserLocations', userLocationIds(user));
   $('#editUserLocationsWrap').style.display = isAboveStore(user) ? 'block' : 'none';
+  $('#editUserPinWrap').style.display = user.role === 'Employee' ? 'block' : 'none';
   $('#userDialog').showModal();
 }
 
 $('#editUserRole').onchange = () => {
   $('#editUserLocationsWrap').style.display = roleUsesMultipleLocations($('#editUserRole').value) ? 'block' : 'none';
+  $('#editUserPinWrap').style.display = $('#editUserRole').value === 'Employee' ? 'block' : 'none';
+};
+
+$('#newUserRole').onchange = () => {
+  renderNewUserLocationChecks();
+  $('#newUserPinWrap').style.display = $('#newUserRole').value === 'Employee' ? 'block' : 'none';
 };
 
 $('#saveUserEditBtn').onclick = async () => {
@@ -3632,7 +3667,9 @@ $('#saveUserEditBtn').onclick = async () => {
     });
     const temporaryPassword = $('#editUserPassword').value.trim();
     if (temporaryPassword) await setUserPassword(id, temporaryPassword);
-    toast(temporaryPassword ? 'User and password saved' : 'User saved');
+    const pin = $('#editUserPin').value.trim();
+    if (pin) await setUserPin(id, pin);
+    toast(pin ? 'User and PIN saved' : temporaryPassword ? 'User and password saved' : 'User saved');
   } catch (error) {
     toast(`User did not save: ${error.message}`);
   }
@@ -3874,6 +3911,20 @@ function importedLocationFromRow(row) {
   return { id, name, address: address || existing.address || '', phone: phone || existing.phone || '' };
 }
 
+function renderKioskAdmin() {
+  const card = $('#kioskAdminCard');
+  if (!card) return;
+  const allowed = locations.filter(location => isFullAccess() || userLocationIds().includes(location.id));
+  card.style.display = canUseManage() ? '' : 'none';
+  $('#kioskLocation').innerHTML = allowed.map(location => `<option value="${escapeHtml(location.id)}">${escapeHtml(location.name)}</option>`).join('');
+  $('#kioskDeviceList').innerHTML = kioskDevices.length ? kioskDevices.map(device => `
+    <article class="card maintenance-row compact">
+      <div><b>${escapeHtml(device.name)}</b><p>${escapeHtml(locationName(device.locationId))}${device.lastSeenAt ? ` · Last used ${new Date(device.lastSeenAt).toLocaleString()}` : ''}</p></div>
+      <button class="danger" data-kiosk-revoke="${escapeHtml(device.id)}" type="button">Remove</button>
+    </article>
+  `).join('') : '<p class="hint">No store tablets are connected yet.</p>';
+}
+
 async function importLocationsFromFile() {
   const file = $('#locationImportFile').files[0];
   if (!file) return toast('Choose an Excel or CSV file first');
@@ -3914,7 +3965,7 @@ async function importLocationsFromFile() {
 
 async function saveUser(user) {
   if (apiOnline) {
-    const path = user.email && user.temporaryPassword && !user.id ? '/api/invite' : '/api/user';
+    const path = user.role !== 'Employee' && user.email && user.temporaryPassword && !user.id ? '/api/invite' : '/api/user';
     users = (await api(path, { method: 'POST', body: JSON.stringify(user) })).users;
   } else {
     const id = user.id || user.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -3949,6 +4000,11 @@ async function deactivateUser(id) {
 async function setUserPassword(id, password) {
   if (!password || password.length < 6) throw new Error('Password must be at least 6 characters');
   return api('/api/user/password', { method: 'POST', body: JSON.stringify({ id, password }) });
+}
+
+async function setUserPin(id, pin) {
+  if (!/^\d{4}$/.test(pin)) throw new Error('PIN must be exactly four digits');
+  return api('/api/user/pin', { method: 'POST', body: JSON.stringify({ id, pin }) });
 }
 
 async function saveLocationRecord(location) {
@@ -4001,6 +4057,17 @@ document.querySelectorAll('nav button, .ops-sidebar button[data-view]').forEach(
 });
 
 $('#signOutBtn').onclick = () => window.dailyOpsSignOut ? window.dailyOpsSignOut() : toast('Sign out is available on the hosted app');
+$('#createKioskCodeBtn').onclick = async () => {
+  const deviceName = $('#kioskDeviceName').value.trim() || 'Store tablet';
+  try {
+    const enrollment = await api('/api/kiosk/enrollment', { method: 'POST', body: JSON.stringify({ deviceName, locationId: $('#kioskLocation').value }) });
+    const result = $('#kioskEnrollmentResult');
+    result.hidden = false;
+    result.innerHTML = `<p>On the tablet, choose <b>Set up a store tablet</b> and enter:</p><strong class="kiosk-code">${escapeHtml(enrollment.code)}</strong><p>This code expires in ${enrollment.expiresInMinutes} minutes and works once.</p>`;
+  } catch (error) {
+    toast(`Could not create setup code: ${error.message}`);
+  }
+};
 $('#noticesBtn').onclick = () => switchView('noticesView');
 $('#addTemplateTaskBtn').onclick = savePermanentTask;
 $('#loadAreaChecklistsBtn').onclick = importAreaChecklists;
