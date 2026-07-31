@@ -1,4 +1,4 @@
-const CACHE_NAME = 'his-ops-v10-location-startup';
+const CACHE_NAME = 'his-ops-v11-location-fallback';
 const APP_SHELL = [
   '/',
   '/index.html',

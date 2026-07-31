@@ -2521,8 +2521,14 @@ exports.handler = async event => {
 
     if (method === 'GET' && apiPath === '/state') {
       const date = query.date;
-      const locationId = actor?.authMode === 'kiosk' ? actor.location_id : (query.locationId || DEFAULT_LOCATION_ID);
-      if (AUTH_REQUIRED && !canAccessLocation(actor, locationId)) throw Object.assign(new Error('You do not have access to that location'), { statusCode: 403 });
+      const requestedLocationId = actor?.authMode === 'kiosk' ? actor.location_id : (query.locationId || DEFAULT_LOCATION_ID);
+      const assignedLocationIds = userLocationIds(actor).filter(Boolean);
+      const locationId = AUTH_REQUIRED && !canAccessLocation(actor, requestedLocationId)
+        ? assignedLocationIds[0]
+        : requestedLocationId;
+      if (!locationId || (AUTH_REQUIRED && !canAccessLocation(actor, locationId))) {
+        throw Object.assign(new Error('No accessible location is assigned to this account'), { statusCode: 403 });
+      }
       const historyScope = actor?.authMode === 'kiosk' ? 'location' : (query.historyScope || 'location');
       const [day, history, overdue, taskTemplates, notices, alertSettings, notificationLogs, calendarEvents, users, locations] = await Promise.all([
         readDay(locationId, date),
@@ -2537,6 +2543,7 @@ exports.handler = async event => {
         readLocations()
       ]);
       return json(200, {
+        locationId,
         day,
         history,
         overdue,

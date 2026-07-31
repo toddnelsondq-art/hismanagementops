@@ -484,6 +484,8 @@ async function loadState() {
   try {
     const state = await api(`/api/state?date=${dateKey}&locationId=${currentLocationId}&historyScope=${historyScope}`);
     applyTenantBranding();
+    currentLocationId = state.locationId || state.day?.locationId || currentLocationId;
+    localStorage.setItem('dailyops-current-location', currentLocationId);
     day = state.day;
     history = state.history;
     overdue = state.overdue || [];
