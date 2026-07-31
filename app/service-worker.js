@@ -1,4 +1,4 @@
-const CACHE_NAME = 'his-ops-v8-inspection-lists-photos';
+const CACHE_NAME = 'his-ops-v9-session-refresh';
 const APP_SHELL = [
   '/',
   '/index.html',

@@ -323,14 +323,21 @@ function toast(message) {
 
 async function api(path, options = {}) {
   if (window.dailyOpsAuthReady) await window.dailyOpsAuthReady;
-  const authToken = window.dailyOpsAuth?.token;
+  let authToken = window.dailyOpsAuth?.token;
+  if (window.dailyOpsAuth?.authMode === 'password' && window.dailyOpsAuth?.client) {
+    const { data, error } = await window.dailyOpsAuth.client.auth.getSession();
+    if (error) throw new Error('Your sign-in could not be refreshed. Please sign in again.');
+    authToken = data.session?.access_token || '';
+    window.dailyOpsAuth.token = authToken;
+  }
+  const { headers: optionHeaders = {}, ...requestOptions } = options;
   const response = await fetch(path, {
+    ...requestOptions,
     headers: {
       'Content-Type': 'application/json',
       ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-      ...(options.headers || {})
-    },
-    ...options
+      ...optionHeaders
+    }
   });
   if (!response.ok) {
     const text = await response.text();
