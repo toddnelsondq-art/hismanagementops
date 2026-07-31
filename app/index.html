@@ -726,6 +726,7 @@
       <article class="card form-card" id="inspectionFormCard">
         <h3>Complete store visit</h3>
         <p class="hint">This checklist is optional. Score each item as Meets standard, Needs attention, or Unsatisfactory. Mark N/A when an item does not apply.</p>
+        <label>Inspection list<select id="inspectionTemplate"></select></label>
         <div class="two-col">
           <label>Visit date<input id="inspectionDate" type="date"></label>
           <label>Location<select id="inspectionLocation"></select></label>
@@ -737,7 +738,10 @@
       <article class="card">
         <div class="inspection-chart-head">
           <div><h3>Location performance</h3><p class="hint">Every visit score and the average for the selected period.</p></div>
-          <label>Location<select id="inspectionChartLocation"></select></label>
+          <div class="inspection-chart-filters">
+            <label>Inspection list<select id="inspectionChartTemplate"></select></label>
+            <label>Location<select id="inspectionChartLocation"></select></label>
+          </div>
         </div>
         <div class="range-buttons" id="inspectionRangeButtons">
           <button class="ghost active" data-inspection-months="1" type="button">1 month</button>
@@ -1468,7 +1472,7 @@
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="auth.js?v=2026-07-29-kiosk-pin"></script>
-  <script src="app.js?v=2026-07-31-resource-inspections"></script>
+  <script src="app.js?v=2026-07-31-inspection-lists-photos"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>

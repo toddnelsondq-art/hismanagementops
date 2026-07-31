@@ -148,8 +148,10 @@ let storeDocsLocationId = localStorage.getItem('store-docs-location') || 'all';
 let resources = { resources: [] };
 let resourcesLocationId = localStorage.getItem('resources-location') || 'all';
 let receipts = { receipts: [] };
-let inspections = { template: [], inspections: [] };
+let inspections = { templates: [], inspections: [] };
 let inspectionChartMonths = Number(localStorage.getItem('inspection-chart-months')) || 1;
+let inspectionTemplateId = localStorage.getItem('inspection-template') || 'store-visit';
+let inspectionChartTemplateId = localStorage.getItem('inspection-chart-template') || 'store-visit';
 let smallwares = { requests: [] };
 let smallwaresLocationId = localStorage.getItem('smallwares-location') || currentLocationId;
 let showApprovedSmallwares = false;
@@ -1816,7 +1818,7 @@ function inspectionChartMarkup(records) {
     </svg>`;
 }
 
-function renderInspections() {
+function renderInspectionsLegacy() {
   if (!$('#inspectionsView') || !canAddStoreDocuments()) return;
   const allowed = areaManagerLocations();
   const options = allowed.map(location => `<option value="${escapeHtml(location.id)}">${escapeHtml(location.name)}</option>`).join('');
@@ -1839,6 +1841,43 @@ function renderInspections() {
   $('#inspectionAverage').textContent = average === null ? 'No scores yet' : `${average}% average`;
   const history = (inspections.inspections || []).filter(record => record.locationId === selected);
   $('#inspectionHistory').innerHTML = history.length ? history.map(record => `<details class="card"><summary class="inspection-history-head"><div><b>${escapeHtml(record.date)} · ${escapeHtml(locationName(record.locationId))}</b><p class="hint">${escapeHtml(record.completedBy || '')}${record.notes ? ` · ${escapeHtml(record.notes)}` : ''}</p></div><strong>${record.score}%</strong></summary><div class="inspection-results">${(record.answers || []).map(answer => `<p><span>${escapeHtml(answer.category)} · ${escapeHtml(answer.label)}</span><b>${answer.value === null ? 'N/A' : answer.value === 2 ? 'Meets standard' : answer.value === 1 ? 'Needs attention' : 'Unsatisfactory'}</b>${answer.comment ? `<small>${escapeHtml(answer.comment)}</small>` : ''}</p>`).join('')}</div></details>`).join('') : '<div class="empty">No store visits have been saved for this location.</div>';
+}
+
+function renderInspections() {
+  if (!$('#inspectionsView') || !canAddStoreDocuments()) return;
+  const templates = inspections.templates || [];
+  if (!templates.some(template => template.id === inspectionTemplateId)) inspectionTemplateId = templates[0]?.id || 'store-visit';
+  if (!templates.some(template => template.id === inspectionChartTemplateId)) inspectionChartTemplateId = templates[0]?.id || 'store-visit';
+  const templateOptions = templates.map(template => `<option value="${escapeHtml(template.id)}">${escapeHtml(template.name)}</option>`).join('');
+  $('#inspectionTemplate').innerHTML = templateOptions;
+  $('#inspectionTemplate').value = inspectionTemplateId;
+  $('#inspectionChartTemplate').innerHTML = templateOptions;
+  $('#inspectionChartTemplate').value = inspectionChartTemplateId;
+
+  const allowed = areaManagerLocations();
+  const options = allowed.map(location => `<option value="${escapeHtml(location.id)}">${escapeHtml(location.name)}</option>`).join('');
+  const formLocation = $('#inspectionLocation').value;
+  $('#inspectionLocation').innerHTML = options;
+  if (allowed.some(location => location.id === formLocation)) $('#inspectionLocation').value = formLocation;
+  const chartLocation = $('#inspectionChartLocation').value || allowed[0]?.id;
+  $('#inspectionChartLocation').innerHTML = options;
+  if (allowed.some(location => location.id === chartLocation)) $('#inspectionChartLocation').value = chartLocation;
+
+  const activeTemplate = templates.find(template => template.id === inspectionTemplateId);
+  if ($('#inspectionChecklist').dataset.templateId !== inspectionTemplateId) {
+    $('#inspectionChecklist').innerHTML = (activeTemplate?.items || []).map(item => `<div class="inspection-item"><div><b>${escapeHtml(item.label)}</b><span>${escapeHtml(item.category)}</span></div><select data-inspection-answer="${escapeHtml(item.id)}"><option value="2">Meets standard</option><option value="1">Needs attention</option><option value="0">Unsatisfactory</option><option value="na">N/A</option></select><input data-inspection-comment="${escapeHtml(item.id)}" placeholder="Optional comment"><label class="inspection-photo-button" title="Attach optional photo"><span>📎</span><input data-inspection-photo="${escapeHtml(item.id)}" type="file" accept="image/*" capture="environment"></label></div>`).join('');
+    $('#inspectionChecklist').dataset.templateId = inspectionTemplateId;
+  }
+  document.querySelectorAll('[data-inspection-months]').forEach(button => button.classList.toggle('active', Number(button.dataset.inspectionMonths) === inspectionChartMonths));
+  const selected = $('#inspectionChartLocation').value;
+  const start = inspectionRangeStart();
+  const matchesTemplate = record => (record.templateId || 'store-visit') === inspectionChartTemplateId;
+  const records = (inspections.inspections || []).filter(record => record.locationId === selected && matchesTemplate(record) && new Date(`${record.date}T12:00:00`) >= start).sort((a, b) => a.date.localeCompare(b.date));
+  $('#inspectionChart').innerHTML = inspectionChartMarkup(records);
+  const average = records.length ? Math.round(records.reduce((sum, record) => sum + record.score, 0) / records.length) : null;
+  $('#inspectionAverage').textContent = average === null ? 'No scores yet' : `${average}% average`;
+  const history = (inspections.inspections || []).filter(record => record.locationId === selected && matchesTemplate(record));
+  $('#inspectionHistory').innerHTML = history.length ? history.map(record => `<details class="card"><summary class="inspection-history-head"><div><b>${escapeHtml(record.date)} · ${escapeHtml(locationName(record.locationId))}</b><p class="hint">${escapeHtml(record.templateName || 'Store Visit Inspection')} · ${escapeHtml(record.completedBy || '')}${record.notes ? ` · ${escapeHtml(record.notes)}` : ''}</p></div><strong>${record.score}%</strong></summary><div class="inspection-results">${(record.answers || []).map(answer => `<p><span>${escapeHtml(answer.category)} · ${escapeHtml(answer.label)}</span><b>${answer.value === null ? 'N/A' : answer.value === 2 ? 'Meets standard' : answer.value === 1 ? 'Needs attention' : 'Unsatisfactory'}</b>${answer.comment ? `<small>${escapeHtml(answer.comment)}</small>` : ''}${answer.photoUrl ? `<a class="inspection-result-photo" href="${escapeHtml(answer.photoUrl)}" target="_blank" rel="noopener">${isImageUrl(answer.photoUrl) ? `<img src="${escapeHtml(answer.photoUrl)}" alt="Inspection attachment">` : ''}<span>📎 ${escapeHtml(answer.photoName || 'View photo')}</span></a>` : ''}</p>`).join('')}</div></details>`).join('') : '<div class="empty">No inspections from this list have been saved for this location.</div>';
 }
 
 function renderSmallwares() {
@@ -2027,7 +2066,7 @@ async function loadReceiptsState() {
 
 async function loadInspectionsState() {
   if (!apiOnline || !canAddStoreDocuments()) return;
-  try { inspections = await api('/api/inspections/state'); } catch { inspections = { template: [], inspections: [] }; }
+  try { inspections = await api('/api/inspections/state'); } catch { inspections = { templates: [], inspections: [] }; }
 }
 
 function renderOverdue() {
@@ -3362,7 +3401,24 @@ document.addEventListener('change', async event => {
     await updateFpcStatus(recordId, itemId, event.target.value);
   }
   if (event.target.matches('#receiptFilterLocation, #receiptFilterDate')) renderReceipts();
+  if (event.target.matches('#inspectionTemplate')) {
+    inspectionTemplateId = event.target.value;
+    localStorage.setItem('inspection-template', inspectionTemplateId);
+    $('#inspectionChecklist').dataset.templateId = '';
+    renderInspections();
+  }
+  if (event.target.matches('#inspectionChartTemplate')) {
+    inspectionChartTemplateId = event.target.value;
+    localStorage.setItem('inspection-chart-template', inspectionChartTemplateId);
+    renderInspections();
+  }
   if (event.target.matches('#inspectionChartLocation')) renderInspections();
+  if (event.target.matches('[data-inspection-photo]')) {
+    const label = event.target.closest('.inspection-photo-button');
+    const file = event.target.files?.[0];
+    label?.classList.toggle('has-file', Boolean(file));
+    if (label) label.title = file ? `Attached: ${file.name}` : 'Attach optional photo';
+  }
 });
 
 $('#historyScope').onchange = async event => {
@@ -4083,7 +4139,7 @@ function exportReceiptCsv() {
   URL.revokeObjectURL(link.href);
 }
 
-async function saveInspection() {
+async function saveInspectionLegacy() {
   if (!canAddStoreDocuments()) return toast('Only Area Managers and above can complete inspections');
   const answers = (inspections.template || []).map(item => {
     const raw = document.querySelector(`[data-inspection-answer="${item.id}"]`)?.value;
@@ -4101,6 +4157,38 @@ async function saveInspection() {
     $('#inspectionChecklist').dataset.ready = '';
     renderInspections();
     toast('Store inspection saved');
+  } catch (error) {
+    toast(`Inspection did not save: ${error.message}`);
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Save inspection';
+  }
+}
+
+async function saveInspection() {
+  if (!canAddStoreDocuments()) return toast('Only Area Managers and above can complete inspections');
+  const template = (inspections.templates || []).find(entry => entry.id === inspectionTemplateId);
+  if (!template) return toast('Choose an inspection list');
+  const button = $('#saveInspectionBtn');
+  button.disabled = true;
+  button.textContent = 'Uploading photos and saving…';
+  try {
+    const answers = await Promise.all(template.items.map(async item => {
+      const raw = document.querySelector(`[data-inspection-answer="${item.id}"]`)?.value;
+      const file = document.querySelector(`[data-inspection-photo="${item.id}"]`)?.files?.[0];
+      const photoUrl = file ? await uploadFileDirectToSupabase(file, `inspection-photo/${template.id}`) : '';
+      return { id: item.id, value: raw === 'na' ? null : Number(raw), comment: document.querySelector(`[data-inspection-comment="${item.id}"]`)?.value.trim() || '', photoUrl, photoName: file?.name || '' };
+    }));
+    inspections = await api('/api/inspections/inspection', {
+      method: 'POST',
+      body: JSON.stringify({ templateId: template.id, locationId: $('#inspectionLocation').value, locationName: locationName($('#inspectionLocation').value), date: $('#inspectionDate').value || dateKey, notes: $('#inspectionNotes').value.trim(), answers })
+    });
+    $('#inspectionNotes').value = '';
+    $('#inspectionChecklist').dataset.templateId = '';
+    inspectionChartTemplateId = template.id;
+    localStorage.setItem('inspection-chart-template', inspectionChartTemplateId);
+    renderInspections();
+    toast(`${template.name} saved`);
   } catch (error) {
     toast(`Inspection did not save: ${error.message}`);
   } finally {

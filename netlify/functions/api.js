@@ -1919,7 +1919,7 @@ async function saveReceipt(payload, actor) {
   return receiptState(actor);
 }
 
-const DEFAULT_VISIT_ITEMS = [
+const STORE_VISIT_ITEMS = [
   ['Exterior', 'Parking lot, sidewalks, landscaping, and exterior appearance'],
   ['Exterior', 'Drive-thru menu boards, windows, and approach are clean and operational'],
   ['Guest areas', 'Lobby, restrooms, tables, floors, and trash areas are clean'],
@@ -1937,6 +1937,38 @@ const DEFAULT_VISIT_ITEMS = [
   ['Brand readiness', 'Required signage, promotions, and merchandising are current']
 ].map((item, index) => ({ id: `visit-${index + 1}`, category: item[0], label: item[1] }));
 
+const FOOD_SAFETY_CRITICAL_ITEMS = [
+  'Chemicals are correctly stored and labeled.',
+  'Ice machine internal ice contact surfaces are maintained clean.',
+  'Soda dispensing nozzles, Misty dispensing nozzles, and the Misty Machine internal product reservoir are maintained clean.',
+  'Approved cake labels are in use in the cake display freezer.',
+  'Hot dogs are held at a minimum internal temperature of 140°F (60°C).',
+  'Gravy is held at a minimum internal temperature of 140°F (60°C).',
+  'Handwashing sinks are stocked, unobstructed, and properly functioning.',
+  'Chili is held at a minimum internal temperature of 140°F (60°C).',
+  'Chicken strips are held at a minimum internal temperature of 140°F (60°C).',
+  'Hot dogs are cooked to a minimum internal temperature of 150°F (66°C).'
+].map((label, index) => ({ id: `food-critical-${index + 1}`, category: 'Food Safety Critical', label }));
+
+const CLEANLINESS_RED_ITEMS = [
+  'Behind the counter fryers and hood are maintained clean.',
+  'Chemicals are properly stored and labeled.',
+  'Behind the counter floors and walls are maintained clean.',
+  'Behind the counter warmer drawers and food warmers are maintained clean.',
+  'Approved cake labels are in use in the cake display freezer.',
+  'Behind the counter coolers and freezers are maintained clean.',
+  'Dumpster area is maintained clean.',
+  'Behind the counter grills and grill hood are maintained clean.',
+  'Behind the counter shelving, drawers, and dry racks, including legs and casters, are maintained clean.',
+  'Ice machine internal ice contact surfaces are maintained clean.'
+].map((label, index) => ({ id: `cleanliness-red-${index + 1}`, category: 'Cleanliness Red', label }));
+
+const VISIT_TEMPLATES = [
+  { id: 'store-visit', name: 'Store Visit Inspection', items: STORE_VISIT_ITEMS },
+  { id: 'food-safety-criticals', name: 'Top 10 Food Safety Criticals', items: FOOD_SAFETY_CRITICAL_ITEMS },
+  { id: 'cleanliness-reds', name: 'Top 10 Cleanliness Reds', items: CLEANLINESS_RED_ITEMS }
+];
+
 async function readVisitInspections() {
   const inspections = await readMaintenanceKey('visitInspections', []);
   return Array.isArray(inspections) ? inspections : [];
@@ -1946,26 +1978,27 @@ async function inspectionState(actor) {
   if (AUTH_REQUIRED && !canAreaManage(actor)) throw Object.assign(new Error('Only Area Managers and above can access store inspections'), { statusCode: 403 });
   const allowed = userLocationIds(actor);
   const inspections = (await readVisitInspections()).filter(entry => entry.active !== false && (!AUTH_REQUIRED || isFullAccess(actor) || allowed.includes(entry.locationId)));
-  return { template: DEFAULT_VISIT_ITEMS, inspections };
+  return { template: STORE_VISIT_ITEMS, templates: VISIT_TEMPLATES, inspections };
 }
 
 async function saveVisitInspection(payload, actor) {
   if (AUTH_REQUIRED && !canAreaManage(actor)) throw Object.assign(new Error('Only Area Managers and above can complete store inspections'), { statusCode: 403 });
   const locationId = payload.locationId || DEFAULT_LOCATION_ID;
   if (!canAccessLocation(actor, locationId)) throw Object.assign(new Error('You can only inspect your assigned locations'), { statusCode: 403 });
+  const template = VISIT_TEMPLATES.find(entry => entry.id === payload.templateId) || VISIT_TEMPLATES[0];
   const submitted = Array.isArray(payload.answers) ? payload.answers : [];
-  const answers = DEFAULT_VISIT_ITEMS.map(item => {
+  const answers = template.items.map(item => {
     const answer = submitted.find(entry => entry.id === item.id) || {};
     const value = answer.value === null || answer.value === 'na' ? null : Number(answer.value);
     if (value !== null && ![0, 1, 2].includes(value)) throw Object.assign(new Error('Every inspection answer must use a valid score'), { statusCode: 400 });
-    return { ...item, value, comment: String(answer.comment || '').trim().slice(0, 500) };
+    return { ...item, value, comment: String(answer.comment || '').trim().slice(0, 500), photoUrl: String(answer.photoUrl || '').trim(), photoName: String(answer.photoName || '').trim().slice(0, 180) };
   });
   const scored = answers.filter(answer => answer.value !== null);
   if (!scored.length) throw Object.assign(new Error('Score at least one inspection item'), { statusCode: 400 });
   const score = Math.round(scored.reduce((sum, answer) => sum + answer.value, 0) / (scored.length * 2) * 100);
   const inspections = await readVisitInspections();
   inspections.unshift({
-    id: `VISIT-${Date.now()}`, locationId, locationName: payload.locationName || '', date: payload.date || today(), score, answers,
+    id: `VISIT-${Date.now()}`, templateId: template.id, templateName: template.name, locationId, locationName: payload.locationName || '', date: payload.date || today(), score, answers,
     notes: String(payload.notes || '').trim(), completedBy: actor?.name || 'Area Manager', completedById: actor?.id || '', createdAt: new Date().toISOString(), active: true
   });
   await writeMaintenanceKey('visitInspections', inspections);
