@@ -157,6 +157,12 @@ insert into storage.buckets(id, name, public)
 values ('dailyops-uploads', 'dailyops-uploads', true)
 on conflict (id) do nothing;
 
+-- Financial receipts are private and are downloaded through short-lived signed links
+-- created only after the app verifies the user's role and assigned locations.
+insert into storage.buckets(id, name, public)
+values ('dqops-receipts', 'dqops-receipts', false)
+on conflict (id) do update set public = false;
+
 -- Allow signed-in app users to upload/read files in the app storage bucket.
 -- Needed for direct browser-to-Supabase document uploads.
 drop policy if exists "Authenticated users can upload dailyops files" on storage.objects;

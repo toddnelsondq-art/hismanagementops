@@ -1,4 +1,4 @@
-const CACHE_NAME = 'his-ops-v6-kiosk-pin';
+const CACHE_NAME = 'his-ops-v7-resource-inspections';
 const APP_SHELL = [
   '/',
   '/index.html',

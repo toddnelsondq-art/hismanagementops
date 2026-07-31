@@ -6,6 +6,7 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const SITE_URL = process.env.URL || process.env.DEPLOY_PRIME_URL || 'http://localhost:8888';
 const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads';
+const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
 const MAINTENANCE_ROLE = 'Maintenance Tech';
@@ -1862,6 +1863,115 @@ async function saveStoreDocument(payload, actor) {
   return storeDocumentsState();
 }
 
+async function readReceipts() {
+  const receipts = await readMaintenanceKey('purchaseReceipts', []);
+  return Array.isArray(receipts) ? receipts : [];
+}
+
+async function signedReceiptUrl(pathname) {
+  if (!pathname) return '';
+  const response = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${RECEIPTS_BUCKET}/${pathname}`, {
+    method: 'POST',
+    headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expiresIn: 3600 })
+  });
+  if (!response.ok) return '';
+  const result = await response.json();
+  const signedPath = result.signedURL || result.signedUrl || '';
+  return signedPath ? `${SUPABASE_URL}/storage/v1${signedPath}` : '';
+}
+
+async function receiptState(actor) {
+  if (AUTH_REQUIRED && !canAreaManage(actor)) throw Object.assign(new Error('Only Area Managers and above can access receipts'), { statusCode: 403 });
+  const allowed = userLocationIds(actor);
+  const receipts = (await readReceipts()).filter(receipt => receipt.active !== false && (!AUTH_REQUIRED || isFullAccess(actor) || allowed.includes(receipt.locationId)));
+  return { receipts: await Promise.all(receipts.map(async receipt => ({ ...receipt, downloadUrl: await signedReceiptUrl(receipt.storagePath) }))) };
+}
+
+async function saveReceipt(payload, actor) {
+  if (AUTH_REQUIRED && !canAreaManage(actor)) throw Object.assign(new Error('Only Area Managers and above can upload receipts'), { statusCode: 403 });
+  const locationId = payload.locationId || DEFAULT_LOCATION_ID;
+  if (!canAccessLocation(actor, locationId)) throw Object.assign(new Error('You can only upload receipts for your assigned locations'), { statusCode: 403 });
+  const vendor = String(payload.vendor || '').trim();
+  const amount = Number(payload.amount);
+  if (!vendor) throw Object.assign(new Error('Vendor is required'), { statusCode: 400 });
+  if (!Number.isFinite(amount) || amount < 0) throw Object.assign(new Error('Enter a valid receipt amount'), { statusCode: 400 });
+  if (!payload.attachment?.dataUrl) throw Object.assign(new Error('Choose a receipt photo or PDF'), { statusCode: 400 });
+  const [header, encoded] = payload.attachment.dataUrl.split(',');
+  if (!encoded || payload.attachment.dataUrl.length > 5_500_000) throw Object.assign(new Error('Receipt file must be under 4 MB'), { statusCode: 413 });
+  const mimeType = header.split(';')[0].replace('data:', '') || 'application/octet-stream';
+  const originalName = safeName(payload.attachment.name || '');
+  const extension = originalName.includes('.') ? originalName.split('.').pop() : (mimeType.split('/')[1] || 'bin');
+  const storagePath = `${safeName(locationId)}/${payload.date || today()}/${Date.now()}-${safeName(vendor)}.${extension}`;
+  const response = await fetch(`${SUPABASE_URL}/storage/v1/object/${RECEIPTS_BUCKET}/${storagePath}`, {
+    method: 'POST',
+    headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': mimeType, 'x-upsert': 'false' },
+    body: Buffer.from(encoded, 'base64')
+  });
+  if (!response.ok) throw new Error(await response.text());
+  const receipts = await readReceipts();
+  receipts.unshift({
+    id: `RECEIPT-${Date.now()}`, locationId, locationName: payload.locationName || '', date: payload.date || today(), vendor,
+    amount: Math.round(amount * 100) / 100, category: payload.category || 'Other', notes: String(payload.notes || '').trim(),
+    fileName: payload.attachment.name || 'Receipt', storagePath, createdBy: actor?.name || 'Area Manager', createdById: actor?.id || '', createdAt: new Date().toISOString(), active: true
+  });
+  await writeMaintenanceKey('purchaseReceipts', receipts);
+  return receiptState(actor);
+}
+
+const DEFAULT_VISIT_ITEMS = [
+  ['Exterior', 'Parking lot, sidewalks, landscaping, and exterior appearance'],
+  ['Exterior', 'Drive-thru menu boards, windows, and approach are clean and operational'],
+  ['Guest areas', 'Lobby, restrooms, tables, floors, and trash areas are clean'],
+  ['Guest areas', 'Team provides friendly, accurate, and timely service'],
+  ['Food safety', 'Handwashing, glove use, and employee hygiene meet standards'],
+  ['Food safety', 'Products are labeled, dated, rotated, and stored correctly'],
+  ['Food safety', 'Required temperatures and food-safety logs are complete'],
+  ['Operations', 'Grill and chill stations are clean, stocked, and organized'],
+  ['Operations', 'Product quality and portioning meet standards'],
+  ['Operations', 'Opening, shift, and closing checklists are being completed'],
+  ['People', 'Employees are in uniform and assigned effectively'],
+  ['People', 'Manager is coaching the team and following up on priorities'],
+  ['Equipment', 'Critical equipment is operating and repair needs are documented'],
+  ['Financial controls', 'Cash handling, deposits, discounts, and void controls are followed'],
+  ['Brand readiness', 'Required signage, promotions, and merchandising are current']
+].map((item, index) => ({ id: `visit-${index + 1}`, category: item[0], label: item[1] }));
+
+async function readVisitInspections() {
+  const inspections = await readMaintenanceKey('visitInspections', []);
+  return Array.isArray(inspections) ? inspections : [];
+}
+
+async function inspectionState(actor) {
+  if (AUTH_REQUIRED && !canAreaManage(actor)) throw Object.assign(new Error('Only Area Managers and above can access store inspections'), { statusCode: 403 });
+  const allowed = userLocationIds(actor);
+  const inspections = (await readVisitInspections()).filter(entry => entry.active !== false && (!AUTH_REQUIRED || isFullAccess(actor) || allowed.includes(entry.locationId)));
+  return { template: DEFAULT_VISIT_ITEMS, inspections };
+}
+
+async function saveVisitInspection(payload, actor) {
+  if (AUTH_REQUIRED && !canAreaManage(actor)) throw Object.assign(new Error('Only Area Managers and above can complete store inspections'), { statusCode: 403 });
+  const locationId = payload.locationId || DEFAULT_LOCATION_ID;
+  if (!canAccessLocation(actor, locationId)) throw Object.assign(new Error('You can only inspect your assigned locations'), { statusCode: 403 });
+  const submitted = Array.isArray(payload.answers) ? payload.answers : [];
+  const answers = DEFAULT_VISIT_ITEMS.map(item => {
+    const answer = submitted.find(entry => entry.id === item.id) || {};
+    const value = answer.value === null || answer.value === 'na' ? null : Number(answer.value);
+    if (value !== null && ![0, 1, 2].includes(value)) throw Object.assign(new Error('Every inspection answer must use a valid score'), { statusCode: 400 });
+    return { ...item, value, comment: String(answer.comment || '').trim().slice(0, 500) };
+  });
+  const scored = answers.filter(answer => answer.value !== null);
+  if (!scored.length) throw Object.assign(new Error('Score at least one inspection item'), { statusCode: 400 });
+  const score = Math.round(scored.reduce((sum, answer) => sum + answer.value, 0) / (scored.length * 2) * 100);
+  const inspections = await readVisitInspections();
+  inspections.unshift({
+    id: `VISIT-${Date.now()}`, locationId, locationName: payload.locationName || '', date: payload.date || today(), score, answers,
+    notes: String(payload.notes || '').trim(), completedBy: actor?.name || 'Area Manager', completedById: actor?.id || '', createdAt: new Date().toISOString(), active: true
+  });
+  await writeMaintenanceKey('visitInspections', inspections);
+  return inspectionState(actor);
+}
+
 async function readResources() {
   const resources = await readMaintenanceKey('resources', []);
   return Array.isArray(resources) ? resources : [];
@@ -2422,6 +2532,8 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/fpc/state') return json(200, await fpcState());
     if (method === 'GET' && apiPath === '/store-documents/state') return json(200, await storeDocumentsState());
     if (method === 'GET' && apiPath === '/resources/state') return json(200, await resourcesState());
+    if (method === 'GET' && apiPath === '/receipts/state') return json(200, await receiptState(actor));
+    if (method === 'GET' && apiPath === '/inspections/state') return json(200, await inspectionState(actor));
     if (method === 'GET' && apiPath === '/smallwares/state') return json(200, await smallwaresState());
 
     if (method === 'POST' && apiPath === '/day') {
@@ -2512,6 +2624,8 @@ exports.handler = async event => {
     if (method === 'POST' && apiPath === '/store-documents/document') {
       return json(200, await saveStoreDocument(body, actor));
     }
+    if (method === 'POST' && apiPath === '/receipts/receipt') return json(200, await saveReceipt(body, actor));
+    if (method === 'POST' && apiPath === '/inspections/inspection') return json(200, await saveVisitInspection(body, actor));
     if (method === 'POST' && apiPath === '/resources/resource') {
       return json(200, await saveResource(body, actor));
     }

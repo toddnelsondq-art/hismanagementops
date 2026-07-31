@@ -147,6 +147,9 @@ let storeDocuments = { documents: [] };
 let storeDocsLocationId = localStorage.getItem('store-docs-location') || 'all';
 let resources = { resources: [] };
 let resourcesLocationId = localStorage.getItem('resources-location') || 'all';
+let receipts = { receipts: [] };
+let inspections = { template: [], inspections: [] };
+let inspectionChartMonths = Number(localStorage.getItem('inspection-chart-months')) || 1;
 let smallwares = { requests: [] };
 let smallwaresLocationId = localStorage.getItem('smallwares-location') || currentLocationId;
 let showApprovedSmallwares = false;
@@ -157,6 +160,8 @@ $('#todayLabel').textContent = new Date().toLocaleDateString(undefined, {
   month: 'long',
   day: 'numeric'
 }).toUpperCase();
+if ($('#receiptDate')) $('#receiptDate').value = dateKey;
+if ($('#inspectionDate')) $('#inspectionDate').value = dateKey;
 
 function setupDailyOpsLayout() {
   const todayView = $('#todayView');
@@ -512,6 +517,8 @@ async function loadState() {
   await loadCalendarState();
   await loadStoreDocumentsState();
   await loadResourcesState();
+  await loadReceiptsState();
+  await loadInspectionsState();
   await loadSmallwaresState();
   await loadDashboardState();
   await loadKioskDevices();
@@ -1146,6 +1153,8 @@ function render() {
   renderFpc();
   renderStoreDocuments();
   renderResources();
+  renderReceipts();
+  renderInspections();
   renderSmallwares();
 }
 
@@ -1735,6 +1744,11 @@ function renderResources() {
     $('#resourceLocation').value = [...$('#resourceLocation').options].some(option => option.value === selectedAdminLocation) ? selectedAdminLocation : 'all';
   }
   $('#resourcesAdminCard').style.display = canManageResources() ? '' : 'none';
+  document.querySelectorAll('#resourcesSectionHub [data-section-view]').forEach(button => {
+    const view = button.dataset.sectionView;
+    const allowed = (view === 'trainingView' && !isMaintenanceTech()) || (view === 'fpcView' && canUseHub()) || (view === 'storeDocsView' && canUseHub() && !isMaintenanceTech()) || (view === 'historyView' && canUseHistory() && !isMaintenanceTech());
+    button.style.display = allowed ? '' : 'none';
+  });
   $('#cancelResourceEditBtn').style.display = $('#resourceId').value ? '' : 'none';
 
   const list = scopedResources();
@@ -1752,6 +1766,79 @@ function renderResources() {
       </div>
     </article>
   `).join('') : '<div class="empty">No resources for this view yet.</div>';
+}
+
+function areaManagerLocations() {
+  return locations.filter(location => isFullAccess() || userLocationIds().includes(location.id));
+}
+
+function renderReceipts() {
+  if (!$('#receiptsView') || !canAddStoreDocuments()) return;
+  const allowed = areaManagerLocations();
+  const locationOptions = allowed.map(location => `<option value="${escapeHtml(location.id)}">${escapeHtml(location.name)}</option>`).join('');
+  const currentUpload = $('#receiptLocation').value;
+  $('#receiptLocation').innerHTML = locationOptions;
+  if (allowed.some(location => location.id === currentUpload)) $('#receiptLocation').value = currentUpload;
+  const currentFilter = $('#receiptFilterLocation').value || 'all';
+  $('#receiptFilterLocation').innerHTML = `<option value="all">All assigned locations</option>${locationOptions}`;
+  if ([...$('#receiptFilterLocation').options].some(option => option.value === currentFilter)) $('#receiptFilterLocation').value = currentFilter;
+  const fromDate = $('#receiptFilterDate').value;
+  const list = (receipts.receipts || []).filter(receipt => ($('#receiptFilterLocation').value === 'all' || receipt.locationId === $('#receiptFilterLocation').value) && (!fromDate || receipt.date >= fromDate));
+  $('#receiptsCount').textContent = `${list.length} receipt${list.length === 1 ? '' : 's'}`;
+  $('#receiptList').innerHTML = list.length ? list.map(receipt => `
+    <article class="card receipt-row">
+      <div><p class="eyebrow">${escapeHtml(receipt.date || '')} · ${escapeHtml(locationName(receipt.locationId))}</p><h3>${escapeHtml(receipt.vendor)}</h3><p>${escapeHtml(receipt.category || 'Other')} · Uploaded by ${escapeHtml(receipt.createdBy || '')}</p>${receipt.notes ? `<p class="hint">${escapeHtml(receipt.notes)}</p>` : ''}</div>
+      <div class="receipt-total"><b>${Number(receipt.amount || 0).toLocaleString(undefined, { style: 'currency', currency: 'USD' })}</b>${receipt.downloadUrl ? `<a class="button-link ghost" href="${escapeHtml(receipt.downloadUrl)}" target="_blank" rel="noopener">Download</a>` : '<span class="hint">File unavailable</span>'}</div>
+    </article>
+  `).join('') : '<div class="empty">No receipts match this view.</div>';
+}
+
+function inspectionRangeStart() {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  start.setMonth(start.getMonth() - inspectionChartMonths);
+  return start;
+}
+
+function inspectionChartMarkup(records) {
+  if (!records.length) return '<div class="empty">No inspections in this period.</div>';
+  const width = 760, height = 260, left = 42, right = 16, top = 18, bottom = 42;
+  const chartWidth = width - left - right, chartHeight = height - top - bottom;
+  const points = records.map((record, index) => ({ x: left + (records.length === 1 ? chartWidth / 2 : index * chartWidth / (records.length - 1)), y: top + (100 - record.score) / 100 * chartHeight, record }));
+  const average = Math.round(records.reduce((sum, record) => sum + record.score, 0) / records.length);
+  const averageY = top + (100 - average) / 100 * chartHeight;
+  return `<div class="inspection-summary"><strong>${average}%</strong><span>average · ${records.length} visit${records.length === 1 ? '' : 's'}</span></div>
+    <svg class="inspection-line-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Inspection scores over time">
+      ${[0,25,50,75,100].map(value => { const y = top + (100 - value) / 100 * chartHeight; return `<line x1="${left}" y1="${y}" x2="${width-right}" y2="${y}" class="chart-grid"/><text x="${left-8}" y="${y+4}" text-anchor="end">${value}%</text>`; }).join('')}
+      <line x1="${left}" y1="${averageY}" x2="${width-right}" y2="${averageY}" class="chart-average"/>
+      ${records.length > 1 ? `<polyline points="${points.map(point => `${point.x},${point.y}`).join(' ')}" class="chart-line"/>` : ''}
+      ${points.map(point => `<circle cx="${point.x}" cy="${point.y}" r="6" class="chart-point"><title>${escapeHtml(point.record.date)}: ${point.record.score}%</title></circle><text x="${point.x}" y="${height-17}" text-anchor="middle">${escapeHtml(point.record.date.slice(5))}</text>`).join('')}
+    </svg>`;
+}
+
+function renderInspections() {
+  if (!$('#inspectionsView') || !canAddStoreDocuments()) return;
+  const allowed = areaManagerLocations();
+  const options = allowed.map(location => `<option value="${escapeHtml(location.id)}">${escapeHtml(location.name)}</option>`).join('');
+  const formLocation = $('#inspectionLocation').value;
+  $('#inspectionLocation').innerHTML = options;
+  if (allowed.some(location => location.id === formLocation)) $('#inspectionLocation').value = formLocation;
+  const chartLocation = $('#inspectionChartLocation').value || allowed[0]?.id;
+  $('#inspectionChartLocation').innerHTML = options;
+  if (allowed.some(location => location.id === chartLocation)) $('#inspectionChartLocation').value = chartLocation;
+  if (!$('#inspectionChecklist').dataset.ready) {
+    $('#inspectionChecklist').innerHTML = (inspections.template || []).map(item => `<div class="inspection-item"><div><b>${escapeHtml(item.label)}</b><span>${escapeHtml(item.category)}</span></div><select data-inspection-answer="${escapeHtml(item.id)}"><option value="2">Meets standard</option><option value="1">Needs attention</option><option value="0">Unsatisfactory</option><option value="na">N/A</option></select><input data-inspection-comment="${escapeHtml(item.id)}" placeholder="Optional comment"></div>`).join('');
+    $('#inspectionChecklist').dataset.ready = 'true';
+  }
+  document.querySelectorAll('[data-inspection-months]').forEach(button => button.classList.toggle('active', Number(button.dataset.inspectionMonths) === inspectionChartMonths));
+  const selected = $('#inspectionChartLocation').value;
+  const start = inspectionRangeStart();
+  const records = (inspections.inspections || []).filter(record => record.locationId === selected && new Date(`${record.date}T12:00:00`) >= start).sort((a, b) => a.date.localeCompare(b.date));
+  $('#inspectionChart').innerHTML = inspectionChartMarkup(records);
+  const average = records.length ? Math.round(records.reduce((sum, record) => sum + record.score, 0) / records.length) : null;
+  $('#inspectionAverage').textContent = average === null ? 'No scores yet' : `${average}% average`;
+  const history = (inspections.inspections || []).filter(record => record.locationId === selected);
+  $('#inspectionHistory').innerHTML = history.length ? history.map(record => `<details class="card"><summary class="inspection-history-head"><div><b>${escapeHtml(record.date)} · ${escapeHtml(locationName(record.locationId))}</b><p class="hint">${escapeHtml(record.completedBy || '')}${record.notes ? ` · ${escapeHtml(record.notes)}` : ''}</p></div><strong>${record.score}%</strong></summary><div class="inspection-results">${(record.answers || []).map(answer => `<p><span>${escapeHtml(answer.category)} · ${escapeHtml(answer.label)}</span><b>${answer.value === null ? 'N/A' : answer.value === 2 ? 'Meets standard' : answer.value === 1 ? 'Needs attention' : 'Unsatisfactory'}</b>${answer.comment ? `<small>${escapeHtml(answer.comment)}</small>` : ''}</p>`).join('')}</div></details>`).join('') : '<div class="empty">No store visits have been saved for this location.</div>';
 }
 
 function renderSmallwares() {
@@ -1888,21 +1975,25 @@ function applyRoleAccess(user) {
   document.querySelectorAll('[data-view="fpcView"]').forEach(button => button.style.display = showHub ? '' : 'none');
   document.querySelectorAll('[data-view="calendarView"]').forEach(button => button.style.display = showHub && !tech ? '' : 'none');
   document.querySelectorAll('[data-view="storeDocsView"]').forEach(button => button.style.display = showHub && !tech ? '' : 'none');
-  document.querySelectorAll('[data-view="resourcesView"]').forEach(button => button.style.display = tech ? 'none' : '' );
+  document.querySelectorAll('[data-view="resourcesView"]').forEach(button => button.style.display = '');
   document.querySelectorAll('[data-view="smallwaresView"]').forEach(button => button.style.display = showHub && !tech ? '' : 'none');
   document.querySelectorAll('[data-view="taskListsView"], [data-view="tempLogsView"], [data-view="todayView"]').forEach(button => button.style.display = canUseDailyOps(user) ? '' : 'none');
   document.querySelectorAll('[data-view="historyView"]').forEach(button => button.style.display = showHistory && !tech ? '' : 'none');
   document.querySelectorAll('[data-view="manageView"]').forEach(button => button.style.display = showManage && !tech ? '' : 'none');
   document.querySelectorAll('[data-view="locationsView"]').forEach(button => button.style.display = showLocations ? '' : 'none');
+  document.querySelectorAll('[data-view="receiptsView"], [data-view="inspectionsView"]').forEach(button => button.style.display = canAddStoreDocuments(user) ? '' : 'none');
+  document.querySelectorAll('#manageSectionHub [data-section-view="locationsView"]').forEach(button => button.style.display = showLocations ? '' : 'none');
+  document.querySelectorAll('#manageSectionHub [data-section-view="receiptsView"], #manageSectionHub [data-section-view="inspectionsView"]').forEach(button => button.style.display = canAddStoreDocuments(user) ? '' : 'none');
   $('#changePasswordBtn').style.display = window.dailyOpsAuth?.enabled && window.dailyOpsAuth?.authMode !== 'kiosk' ? '' : 'none';
   $('#signOutBtn').style.display = window.dailyOpsAuth?.enabled ? '' : 'none';
   $('#sideUserName').textContent = user.name;
   $('#sideUserRole').textContent = user.role;
-  if (tech && ($('#taskListsView').classList.contains('active') || $('#tempLogsView').classList.contains('active') || $('#todayView').classList.contains('active') || $('#calendarView').classList.contains('active') || $('#storeDocsView').classList.contains('active') || $('#smallwaresView').classList.contains('active') || $('#historyView').classList.contains('active') || $('#manageView').classList.contains('active'))) switchView('homeView');
+  if (tech && ($('#taskListsView').classList.contains('active') || $('#tempLogsView').classList.contains('active') || $('#todayView').classList.contains('active') || $('#calendarView').classList.contains('active') || $('#storeDocsView').classList.contains('active') || $('#smallwaresView').classList.contains('active') || $('#historyView').classList.contains('active') || $('#manageView').classList.contains('active') || $('#receiptsView').classList.contains('active') || $('#inspectionsView').classList.contains('active'))) switchView('homeView');
   if (!showHub && ($('#homeView').classList.contains('active') || $('#maintenanceView').classList.contains('active') || $('#fpcView').classList.contains('active') || $('#calendarView').classList.contains('active') || $('#storeDocsView').classList.contains('active') || $('#smallwaresView').classList.contains('active'))) switchView('todayView');
   if (!showHistory && $('#historyView').classList.contains('active')) switchView('todayView');
   if (!showManage && $('#manageView').classList.contains('active')) switchView('todayView');
   if (!showLocations && $('#locationsView').classList.contains('active')) switchView('todayView');
+  if (!canAddStoreDocuments(user) && ($('#receiptsView').classList.contains('active') || $('#inspectionsView').classList.contains('active'))) switchView('todayView');
 }
 
 function renderLocations() {
@@ -1927,6 +2018,16 @@ function renderLocations() {
       ${location.phone ? `<a class="location-phone" href="tel:${escapeHtml(String(location.phone).replace(/[^+\d]/g, ''))}">${escapeHtml(location.phone)}</a>` : '<p class="hint">Phone number not entered yet</p>'}
     </article>
   `).join('') || '<div class="empty">No assigned locations are available.</div>';
+}
+
+async function loadReceiptsState() {
+  if (!apiOnline || !canAddStoreDocuments()) return;
+  try { receipts = await api('/api/receipts/state'); } catch { receipts = { receipts: [] }; }
+}
+
+async function loadInspectionsState() {
+  if (!apiOnline || !canAddStoreDocuments()) return;
+  try { inspections = await api('/api/inspections/state'); } catch { inspections = { template: [], inspections: [] }; }
 }
 
 function renderOverdue() {
@@ -2977,8 +3078,11 @@ document.addEventListener('click', async event => {
   if (sectionButton) {
     const targetView = sectionButton.dataset.sectionView;
     if ((targetView === 'homeView' || targetView === 'maintenanceView' || targetView === 'fpcView' || targetView === 'calendarView' || targetView === 'storeDocsView' || targetView === 'smallwaresView') && !canUseHub()) return toast('Only managers and above can access this section');
+    if ((targetView === 'receiptsView' || targetView === 'inspectionsView') && !canAddStoreDocuments()) return toast('Only Area Managers and above can access this section');
+    if (targetView === 'locationsView' && !canViewLocations()) return toast('Only managers and above can access locations');
     if (isMaintenanceTech() && !['homeView', 'maintenanceView', 'fpcView'].includes(targetView)) return toast('This role can only access Dashboard, Maintenance, and FPC');
     switchView(targetView);
+    return;
   }
 
   const taskSectionButton = event.target.closest('[data-task-section]');
@@ -3257,6 +3361,8 @@ document.addEventListener('change', async event => {
     const [recordId, itemId] = event.target.dataset.fpcStatus.split('|');
     await updateFpcStatus(recordId, itemId, event.target.value);
   }
+  if (event.target.matches('#receiptFilterLocation, #receiptFilterDate')) renderReceipts();
+  if (event.target.matches('#inspectionChartLocation')) renderInspections();
 });
 
 $('#historyScope').onchange = async event => {
@@ -3911,6 +4017,98 @@ function importedLocationFromRow(row) {
   return { id, name, address: address || existing.address || '', phone: phone || existing.phone || '' };
 }
 
+async function receiptFileToDataUrl(file) {
+  if (!file.type.startsWith('image/') || file.size <= 4 * 1024 * 1024) return fileToDataUrl(file);
+  const source = await createImageBitmap(file);
+  const scale = Math.min(1, 1800 / Math.max(source.width, source.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(source.width * scale);
+  canvas.height = Math.round(source.height * scale);
+  canvas.getContext('2d').drawImage(source, 0, 0, canvas.width, canvas.height);
+  source.close();
+  return canvas.toDataURL('image/jpeg', 0.78);
+}
+
+async function saveReceipt() {
+  if (!canAddStoreDocuments()) return toast('Only Area Managers and above can upload receipts');
+  const vendor = $('#receiptVendor').value.trim();
+  const amount = Number($('#receiptAmount').value);
+  const file = $('#receiptFile').files[0];
+  if (!vendor) return toast('Enter the vendor');
+  if (!Number.isFinite(amount) || amount < 0) return toast('Enter a valid amount');
+  if (!file) return toast('Choose a receipt photo or PDF');
+  const button = $('#saveReceiptBtn');
+  button.disabled = true;
+  button.textContent = 'Uploading…';
+  try {
+    receipts = await api('/api/receipts/receipt', {
+      method: 'POST',
+      body: JSON.stringify({
+        locationId: $('#receiptLocation').value,
+        locationName: locationName($('#receiptLocation').value),
+        date: $('#receiptDate').value || dateKey,
+        vendor,
+        amount,
+        category: $('#receiptCategory').value,
+        notes: $('#receiptNotes').value.trim(),
+        attachment: { name: file.name, dataUrl: await receiptFileToDataUrl(file) }
+      })
+    });
+    $('#receiptVendor').value = '';
+    $('#receiptAmount').value = '';
+    $('#receiptNotes').value = '';
+    $('#receiptFile').value = '';
+    renderReceipts();
+    toast('Receipt uploaded');
+  } catch (error) {
+    toast(`Receipt did not upload: ${error.message}`);
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Upload receipt';
+  }
+}
+
+function exportReceiptCsv() {
+  const filterLocation = $('#receiptFilterLocation').value;
+  const fromDate = $('#receiptFilterDate').value;
+  const list = (receipts.receipts || []).filter(receipt => (filterLocation === 'all' || receipt.locationId === filterLocation) && (!fromDate || receipt.date >= fromDate));
+  if (!list.length) return toast('No receipts match this view');
+  const csvCell = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
+  const rows = [['Date', 'Location', 'Vendor', 'Amount', 'Category', 'Notes', 'Uploaded By', 'File Name'], ...list.map(receipt => [receipt.date, locationName(receipt.locationId), receipt.vendor, Number(receipt.amount || 0).toFixed(2), receipt.category, receipt.notes, receipt.createdBy, receipt.fileName])];
+  const blob = new Blob([rows.map(row => row.map(csvCell).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `dqops-receipts-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+async function saveInspection() {
+  if (!canAddStoreDocuments()) return toast('Only Area Managers and above can complete inspections');
+  const answers = (inspections.template || []).map(item => {
+    const raw = document.querySelector(`[data-inspection-answer="${item.id}"]`)?.value;
+    return { id: item.id, value: raw === 'na' ? null : Number(raw), comment: document.querySelector(`[data-inspection-comment="${item.id}"]`)?.value.trim() || '' };
+  });
+  const button = $('#saveInspectionBtn');
+  button.disabled = true;
+  button.textContent = 'Saving…';
+  try {
+    inspections = await api('/api/inspections/inspection', {
+      method: 'POST',
+      body: JSON.stringify({ locationId: $('#inspectionLocation').value, locationName: locationName($('#inspectionLocation').value), date: $('#inspectionDate').value || dateKey, notes: $('#inspectionNotes').value.trim(), answers })
+    });
+    $('#inspectionNotes').value = '';
+    $('#inspectionChecklist').dataset.ready = '';
+    renderInspections();
+    toast('Store inspection saved');
+  } catch (error) {
+    toast(`Inspection did not save: ${error.message}`);
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Save inspection';
+  }
+}
+
 function renderKioskAdmin() {
   const card = $('#kioskAdminCard');
   if (!card) return;
@@ -4097,6 +4295,16 @@ $('#saveFpcInspectionBtn').onclick = saveFpcInspection;
 $('#saveFpcItemBtn').onclick = saveFpcItem;
 $('#saveFpcEditBtn').onclick = saveFpcEdit;
 $('#saveStoreDocBtn').onclick = saveStoreDocument;
+$('#saveReceiptBtn').onclick = saveReceipt;
+$('#exportReceiptsBtn').onclick = exportReceiptCsv;
+$('#saveInspectionBtn').onclick = saveInspection;
+document.querySelectorAll('[data-inspection-months]').forEach(button => {
+  button.onclick = () => {
+    inspectionChartMonths = Number(button.dataset.inspectionMonths);
+    localStorage.setItem('inspection-chart-months', inspectionChartMonths);
+    renderInspections();
+  };
+});
 $('#saveResourceBtn').onclick = saveResource;
 $('#cancelResourceEditBtn').onclick = resetResourceForm;
 $('#submitSmallwaresBtn').onclick = submitSmallwaresRequest;

@@ -626,6 +626,13 @@
         <span class="status" id="resourcesCount">0 links</span>
       </div>
 
+      <div class="section-hub-grid" id="resourcesSectionHub">
+        <button class="section-hub-card" data-section-view="fpcView" type="button"><span>★</span><b>FPC</b><small>Facility inspections and repair follow-up</small></button>
+        <button class="section-hub-card" data-section-view="storeDocsView" type="button"><span>📄</span><b>Documents</b><small>Store documents and shared files</small></button>
+        <button class="section-hub-card" data-section-view="trainingView" type="button"><span>🎓</span><b>Training</b><small>Food safety quizzes and training tools</small></button>
+        <button class="section-hub-card" data-section-view="historyView" type="button"><span>▤</span><b>Reports</b><small>Completed checklist history and exports</small></button>
+      </div>
+
       <article class="card location-switcher">
         <label>Resource location
           <select id="resourcesLocation"></select>
@@ -676,6 +683,71 @@
       </article>
 
       <div id="resourcesList"></div>
+    </section>
+
+    <section id="receiptsView" class="view">
+      <div class="date">
+        <div><p>PURCHASE RECORDS</p><h2>Receipt archive</h2></div>
+        <span class="status" id="receiptsCount">0 receipts</span>
+      </div>
+      <article class="card form-card" id="receiptUploadCard">
+        <h3>Upload purchase receipt</h3>
+        <p class="hint">Receipts are stored privately. Area Managers and above can upload for their assigned locations.</p>
+        <div class="two-col">
+          <label>Purchase date<input id="receiptDate" type="date"></label>
+          <label>Location<select id="receiptLocation"></select></label>
+        </div>
+        <div class="two-col">
+          <label>Vendor<input id="receiptVendor" placeholder="e.g. Lowe's, Restaurant Depot"></label>
+          <label>Amount<input id="receiptAmount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00"></label>
+        </div>
+        <label>Category
+          <select id="receiptCategory"><option>Repairs</option><option>Smallwares</option><option>Food</option><option>Cleaning supplies</option><option>Office</option><option>Travel</option><option>Other</option></select>
+        </label>
+        <label>Notes<textarea id="receiptNotes" placeholder="What was purchased or why"></textarea></label>
+        <label>Receipt photo or PDF<input id="receiptFile" type="file" accept="image/*,application/pdf" capture="environment"><span class="hint">Large photos are compressed automatically. PDFs must be under 4 MB.</span></label>
+        <button id="saveReceiptBtn" type="button">Upload receipt</button>
+      </article>
+      <article class="card location-switcher">
+        <div class="two-col">
+          <label>View location<select id="receiptFilterLocation"></select></label>
+          <label>From date<input id="receiptFilterDate" type="date"></label>
+        </div>
+        <button id="exportReceiptsBtn" class="ghost" type="button">Download receipt list (CSV)</button>
+      </article>
+      <div id="receiptList"></div>
+    </section>
+
+    <section id="inspectionsView" class="view">
+      <div class="date">
+        <div><p>STORE VISITS</p><h2>Area Manager inspections</h2></div>
+        <span class="status" id="inspectionAverage">No scores yet</span>
+      </div>
+      <article class="card form-card" id="inspectionFormCard">
+        <h3>Complete store visit</h3>
+        <p class="hint">This checklist is optional. Score each item as Meets standard, Needs attention, or Unsatisfactory. Mark N/A when an item does not apply.</p>
+        <div class="two-col">
+          <label>Visit date<input id="inspectionDate" type="date"></label>
+          <label>Location<select id="inspectionLocation"></select></label>
+        </div>
+        <div id="inspectionChecklist" class="inspection-checklist"></div>
+        <label>Visit notes<textarea id="inspectionNotes" placeholder="Follow-up, coaching, or other observations"></textarea></label>
+        <button id="saveInspectionBtn" type="button">Save inspection</button>
+      </article>
+      <article class="card">
+        <div class="inspection-chart-head">
+          <div><h3>Location performance</h3><p class="hint">Every visit score and the average for the selected period.</p></div>
+          <label>Location<select id="inspectionChartLocation"></select></label>
+        </div>
+        <div class="range-buttons" id="inspectionRangeButtons">
+          <button class="ghost active" data-inspection-months="1" type="button">1 month</button>
+          <button class="ghost" data-inspection-months="3" type="button">3 months</button>
+          <button class="ghost" data-inspection-months="6" type="button">6 months</button>
+          <button class="ghost" data-inspection-months="12" type="button">1 year</button>
+        </div>
+        <div id="inspectionChart"></div>
+      </article>
+      <div id="inspectionHistory"></div>
     </section>
 
     <section id="smallwaresView" class="view">
@@ -760,8 +832,14 @@
       <div class="date">
         <div>
           <p>MANAGER TOOLS</p>
-          <h2>Daily assignments</h2>
+          <h2>Manage</h2>
         </div>
+      </div>
+
+      <div class="section-hub-grid" id="manageSectionHub">
+        <button class="section-hub-card" data-section-view="locationsView" type="button"><span>⌖</span><b>Locations</b><small>Addresses, phone numbers, and store setup</small></button>
+        <button class="section-hub-card" data-section-view="receiptsView" type="button"><span>🧾</span><b>Receipts</b><small>Private purchase receipt archive</small></button>
+        <button class="section-hub-card" data-section-view="inspectionsView" type="button"><span>✓</span><b>Store inspections</b><small>Visit checklist, scores, and trends</small></button>
       </div>
 
       <article class="card form-card collapsible-card">
@@ -1014,13 +1092,8 @@
     <button data-view="taskListsView"><span class="nav-icon">✓</span><span>Task Lists</span></button>
     <button data-view="tempLogsView"><span class="nav-icon">◒</span><span>Temp Logs</span></button>
     <button data-view="maintenanceView"><span class="nav-icon">🔧</span><span>Maintenance</span></button>
-    <button data-view="fpcView"><span class="nav-icon">★</span><span>FPC</span></button>
-    <button data-view="storeDocsView"><span class="nav-icon">📄</span><span>Documents</span></button>
     <button data-view="resourcesView"><span class="nav-icon">🔗</span><span>Resources</span></button>
-    <button data-view="trainingView"><span class="nav-icon">🎓</span><span>Training</span></button>
     <button data-view="smallwaresView"><span class="nav-icon">🧺</span><span>Smallwares</span></button>
-    <button data-view="historyView"><span class="nav-icon">▤</span><span>Reports</span></button>
-    <button data-view="locationsView"><span class="nav-icon">⌖</span><span>Locations</span></button>
     <button data-view="manageView" id="sideManageNav"><span class="nav-icon">⚙</span><span>Manage</span></button>
     <button data-view="calendarView"><span class="nav-icon">📅</span><span>Calendar</span></button>
     <div class="side-user">
@@ -1032,15 +1105,10 @@
   <nav>
     <button data-view="tempLogsView">◒<span>Temps</span></button>
     <button data-view="maintenanceView">🔧<span>Maint.</span></button>
-    <button data-view="fpcView">★<span>FPC</span></button>
-    <button data-view="storeDocsView">📄<span>Docs</span></button>
-    <button data-view="resourcesView">🔗<span>Links</span></button>
-    <button data-view="trainingView">🎓<span>Training</span></button>
+    <button data-view="resourcesView">🔗<span>Resources</span></button>
     <button data-view="smallwaresView">🧺<span>Items</span></button>
-    <button data-view="locationsView">⌖<span>Locations</span></button>
     <button data-view="homeView" class="active" id="homeNav">⌂<span>Home</span></button>
     <button data-view="taskListsView">✓<span>Tasks</span></button>
-    <button data-view="historyView">▤<span>History</span></button>
     <button data-view="manageView" id="manageNav">＋<span>Manage</span></button>
     <button data-view="calendarView">📅<span>Calendar</span></button>
   </nav>
@@ -1400,7 +1468,7 @@
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="auth.js?v=2026-07-29-kiosk-pin"></script>
-  <script src="app.js?v=2026-07-29-kiosk-pin"></script>
+  <script src="app.js?v=2026-07-31-resource-inspections"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>
