@@ -469,6 +469,18 @@ function allowedAssignableRoles(actor = currentUser()) {
 }
 
 async function loadState() {
+  const authProfile = window.dailyOpsAuth?.profile;
+  if (authProfile?.id) {
+    currentUserId = authProfile.id;
+    localStorage.setItem('dailyops-current-user', currentUserId);
+    const authLocations = authProfile.locationIds?.length
+      ? authProfile.locationIds
+      : [authProfile.locationId].filter(Boolean);
+    if (!isFullAccess(authProfile) && authLocations.length && !authLocations.includes(currentLocationId)) {
+      currentLocationId = authLocations[0];
+      localStorage.setItem('dailyops-current-location', currentLocationId);
+    }
+  }
   try {
     const state = await api(`/api/state?date=${dateKey}&locationId=${currentLocationId}&historyScope=${historyScope}`);
     applyTenantBranding();
@@ -503,13 +515,17 @@ async function loadState() {
     };
     day = fallback.days[currentLocationId][dateKey];
     users = fallback.users || users;
+    if (authProfile?.id) {
+      if (!users.some(user => user.id === authProfile.id)) users = [authProfile, ...users];
+      currentUserId = authProfile.id;
+    }
     locations = fallback.locations || locations;
     history = Object.entries(fallback.days[currentLocationId] || {})
       .filter(([, entry]) => entry.complete)
       .map(([date, entry]) => ({ locationId: currentLocationId, date, day: entry }));
     overdue = [];
     apiOnline = false;
-    toast('Backend not running — using this browser only');
+    toast(`Live data did not load — ${error.message}`);
   }
 
   const user = currentUser();

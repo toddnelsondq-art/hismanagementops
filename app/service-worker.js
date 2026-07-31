@@ -1,4 +1,4 @@
-const CACHE_NAME = 'his-ops-v9-session-refresh';
+const CACHE_NAME = 'his-ops-v10-location-startup';
 const APP_SHELL = [
   '/',
   '/index.html',
