@@ -1113,6 +1113,48 @@ async function writeMaintenanceKey(key, payload) {
   });
 }
 
+function normalizeSmsPhone(value = '') {
+  const digits = String(value).replace(/\D/g, '');
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
+  return '';
+}
+
+async function saveSmsConsentPreference(payload = {}) {
+  const consent = payload.consent === true;
+  const message = consent
+    ? 'Your SMS opt-in preference has been recorded. Reply STOP at any time to opt out.'
+    : 'Your preference has been recorded. You are not opted in to HIS OPS text messages.';
+  if (String(payload.company || '').trim()) return { ok: true, consent: false, message };
+
+  const name = String(payload.name || '').trim();
+  const phone = normalizeSmsPhone(payload.phone);
+  if (name.length < 2) throw Object.assign(new Error('Enter your full name'), { statusCode: 400 });
+  if (!phone) throw Object.assign(new Error('Enter a valid 10-digit US mobile number'), { statusCode: 400 });
+
+  const records = await readMaintenanceKey('smsConsentRecords', []);
+  const history = Array.isArray(records) ? records : [];
+  history.unshift({
+    id: `SMSCONSENT-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+    name: name.slice(0, 100),
+    phone,
+    consent,
+    source: 'public-web-form',
+    disclosureVersion: '2026-08-07',
+    submittedAt: new Date().toISOString()
+  });
+  await writeMaintenanceKey('smsConsentRecords', history.slice(0, 5000));
+  return { ok: true, consent, message };
+}
+
+async function hasSmsConsent(phone) {
+  const normalized = normalizeSmsPhone(phone);
+  if (!normalized) return false;
+  const records = await readMaintenanceKey('smsConsentRecords', []);
+  const latest = (Array.isArray(records) ? records : []).find(record => normalizeSmsPhone(record.phone) === normalized);
+  return latest?.consent === true;
+}
+
 async function readNotificationLogs(actor = null) {
   const logs = await readMaintenanceKey('notificationLogs', []);
   const list = Array.isArray(logs) ? logs : [];
@@ -1491,8 +1533,11 @@ async function sendEmailMessage({ to, subject, text }) {
 
 async function sendTwilioSms(to, text) {
   if (!to) return { skipped: true, reason: 'No phone number' };
+  const normalizedTo = normalizeSmsPhone(to);
+  if (!normalizedTo) return { skipped: true, reason: 'Invalid phone number' };
+  if (!(await hasSmsConsent(normalizedTo))) return { skipped: true, reason: 'Recipient has not opted in to SMS' };
   if (!twilioIsReady()) return { skipped: true, reason: 'Twilio is not configured' };
-  const body = new URLSearchParams({ To: to, From: process.env.TWILIO_FROM_NUMBER, Body: text });
+  const body = new URLSearchParams({ To: normalizedTo, From: process.env.TWILIO_FROM_NUMBER, Body: text });
   const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`, {
     method: 'POST',
     headers: {
@@ -2495,6 +2540,10 @@ exports.handler = async event => {
         tenant: await readTenantConfig(),
         authEnabled: Boolean(SUPABASE_URL && process.env.SUPABASE_ANON_KEY)
       });
+    }
+
+    if (method === 'POST' && apiPath === '/sms-consent') {
+      return json(200, await saveSmsConsentPreference(body));
     }
 
     if ((method === 'POST' && apiPath === '/session-profile') || (method === 'POST' && apiPath === '/accept-invite')) {

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SMS Consent | HIS OPS</title>
+  <title>SMS Preferences and Consent | HIS OPS</title>
   <link rel="stylesheet" href="his-theme.css">
   <style>
     body { margin: 0; background: #f3f6fb; color: #0f1b33; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
@@ -13,8 +13,17 @@
     a { color: #092b55; font-weight: 700; }
     .brand { display: flex; gap: 16px; align-items: center; margin-bottom: 24px; }
     .brand img { width: 72px; border-radius: 16px; }
-    .consent-box { border: 2px solid #d9e2ef; border-radius: 18px; padding: 20px; background: #f8fbff; margin: 20px 0; }
-    .updated { color: #617087; }
+    .consent-box { border: 2px solid #d9e2ef; border-radius: 18px; padding: 22px; background: #f8fbff; margin: 20px 0; }
+    .updated, .hint { color: #617087; }
+    label { display: block; font-weight: 700; margin: 16px 0 6px; }
+    input[type="text"], input[type="tel"] { width: 100%; box-sizing: border-box; border: 1px solid #b8c5d6; border-radius: 10px; padding: 12px; font: inherit; background: #fff; }
+    .choice { display: grid; grid-template-columns: 24px 1fr; gap: 10px; align-items: start; font-weight: 500; }
+    .choice input { width: 20px; height: 20px; margin: 3px 0 0; }
+    button { margin-top: 18px; border: 0; border-radius: 10px; padding: 12px 18px; background: #092b55; color: #fff; font: inherit; font-weight: 800; cursor: pointer; }
+    button:disabled { opacity: .55; cursor: wait; }
+    #formMessage { min-height: 24px; margin-top: 12px; font-weight: 700; }
+    .honeypot { position: absolute; left: -9999px; }
+    @media (max-width: 600px) { main { margin: 0; border-radius: 0; padding: 24px 18px; } }
   </style>
 </head>
 <body>
@@ -22,36 +31,83 @@
     <div class="brand">
       <img src="assets/his-management.png" alt="HIS OPS logo">
       <div>
-        <h1>SMS Consent</h1>
-        <p class="updated">Last updated: July 18, 2026</p>
+        <h1>SMS Preferences and Consent</h1>
+        <p class="updated">Last updated: August 7, 2026</p>
       </div>
     </div>
 
-    <p>HIS OPS is an internal operations application used by authorized restaurant employees, managers, area managers, maintenance personnel, directors, and ownership. Users may receive SMS/text messages only after they are added as an authorized user and their phone number is entered into their HIS OPS user profile by management or through an approved user import/onboarding process.</p>
+    <p>HIS OPS is an internal operations application operated by Average Guys Business Services for authorized restaurant employees, managers, area managers, maintenance personnel, directors, and ownership.</p>
 
-    <h2>How Users Consent</h2>
-    <p>Users consent to receive SMS/text messages when they provide their mobile phone number to company management for HIS OPS operational alerts and agree to receive text messages related to store operations, checklist completion, temperature logs, maintenance assignments, PM tasks, FPC repair items, calendar notices, and weekly assignment summaries.</p>
+    <h2>How to Opt In</h2>
+    <p>Authorized HIS OPS users may voluntarily opt in by completing the public form below. Entering a phone number in an employee profile does not, by itself, provide SMS consent. The user must personally submit this form with the consent checkbox selected.</p>
+    <p><strong>SMS consent is optional. It is not a condition of employment, access to HIS OPS, or receipt of non-SMS operational communications.</strong> Users can submit the form without selecting the checkbox to record that they do not consent.</p>
 
-    <div class="consent-box">
-      <p><strong>Consent language used for HIS OPS users:</strong></p>
-      <p>By providing my mobile phone number for HIS OPS, I agree to receive operational text messages from Average Guys Business Services / HIS OPS. Messages may include checklist reminders, temperature log reminders, maintenance work order assignments, PM task reminders, FPC repair assignments, calendar notices, store notices, and weekly assignment summaries. Message frequency varies. Message and data rates may apply. Reply STOP to opt out. Reply HELP for help. I understand that my mobile information and SMS consent will not be shared with third parties or affiliates for marketing or promotional purposes.</p>
-    </div>
+    <form id="smsConsentForm" class="consent-box">
+      <h2>Set Your SMS Preference</h2>
+      <label for="consentName">Full name</label>
+      <input id="consentName" name="name" type="text" autocomplete="name" maxlength="100" required>
 
-    <h2>Opt-Out and Help</h2>
+      <label for="consentPhone">Mobile phone number</label>
+      <input id="consentPhone" name="phone" type="tel" autocomplete="tel" inputmode="tel" placeholder="(555) 555-0123" maxlength="24" required>
+
+      <label class="honeypot" aria-hidden="true">Company<input id="consentCompany" name="company" type="text" tabindex="-1" autocomplete="off"></label>
+
+      <label class="choice" for="smsOptIn">
+        <input id="smsOptIn" name="consent" type="checkbox" value="yes">
+        <span>I agree to receive recurring operational SMS/text messages from Average Guys Business Services / HIS OPS at the mobile number entered above. Messages may include checklist and temperature-log reminders, maintenance and PM assignments, FPC repair assignments, calendar notices, store notices, and weekly assignment summaries. Message frequency varies. Message and data rates may apply. Reply STOP to opt out or HELP for help. Consent is not a condition of employment or use of HIS OPS.</span>
+      </label>
+
+      <p class="hint">The checkbox is intentionally unchecked. If you leave it unchecked and select “Save SMS preference,” your preference will be recorded as declined.</p>
+      <p>By saving your preference, you acknowledge the <a href="terms.html" target="_blank" rel="noopener">SMS Terms of Service</a> and <a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a>. Mobile information and SMS consent are not shared with third parties or affiliates for marketing or promotional purposes.</p>
+
+      <button id="saveConsentBtn" type="submit">Save SMS preference</button>
+      <p id="formMessage" role="status" aria-live="polite"></p>
+    </form>
+
+    <h2>What Happens Next</h2>
     <ul>
-      <li>Users can opt out at any time by replying STOP to a text message.</li>
-      <li>Users can request help by replying HELP.</li>
-      <li>Users may also contact company management to update or remove their phone number from HIS OPS.</li>
+      <li>If the checkbox is selected, the number is recorded as opted in for HIS OPS operational messages.</li>
+      <li>If the checkbox is not selected, the number is recorded as not opted in and will not receive HIS OPS operational texts.</li>
+      <li>Users may change their preference by submitting this form again with the same mobile number.</li>
+      <li>Users can opt out at any time by replying STOP. Reply HELP for assistance.</li>
     </ul>
 
     <h2>Sample Messages</h2>
     <ul>
       <li>HIS OPS work order assigned. Location: Roseville. Task: Repair freezer door gasket. Sign in for details. Reply STOP to opt out.</li>
       <li>HIS OPS alert: Spicer closing checklist is overdue. Sign in for details. Reply HELP for help.</li>
-      <li>HIS OPS weekly assignments: 3 open item(s). Sign in for details. Reply STOP to opt out.</li>
+      <li>HIS OPS weekly assignments: 3 open items. Sign in for details. Reply STOP to opt out.</li>
     </ul>
 
     <p><a href="privacy.html">Privacy Policy</a> · <a href="terms.html">Terms of Service</a></p>
   </main>
+  <script>
+    document.querySelector('#smsConsentForm').addEventListener('submit', async event => {
+      event.preventDefault();
+      const button = document.querySelector('#saveConsentBtn');
+      const message = document.querySelector('#formMessage');
+      button.disabled = true;
+      message.textContent = 'Saving your preference…';
+      try {
+        const response = await fetch('/api/sms-consent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: document.querySelector('#consentName').value.trim(),
+            phone: document.querySelector('#consentPhone').value.trim(),
+            consent: document.querySelector('#smsOptIn').checked,
+            company: document.querySelector('#consentCompany').value
+          })
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || 'Your preference could not be saved.');
+        message.textContent = result.message;
+      } catch (error) {
+        message.textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
+  </script>
 </body>
 </html>
