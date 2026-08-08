@@ -9,6 +9,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
+const APP_VERSION = '1.0.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const DEFAULT_TENANT_ID = safeName(process.env.APP_TENANT_ID || 'his-management');
 const DEFAULT_TENANT_NAME = process.env.APP_TENANT_NAME || 'HIS Management Group Inc';
@@ -2721,6 +2722,13 @@ exports.handler = async event => {
     const method = event.httpMethod;
     const query = event.queryStringParameters || {};
     const body = event.body ? JSON.parse(event.body) : {};
+
+    if (method === 'GET' && apiPath === '/version') {
+      return json(200, {
+        version: APP_VERSION,
+        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.07.1'
+      });
+    }
 
     if (method === 'GET' && apiPath === '/public-config') {
       return json(200, {

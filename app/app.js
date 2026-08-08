@@ -105,6 +105,89 @@ const weekdayOptions = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 
 const maintenanceRole = 'Maintenance Tech';
 const dateKey = new Date().toISOString().slice(0, 10);
 const $ = selector => document.querySelector(selector);
+let waitingAppServiceWorker = null;
+let updateRefreshRequested = false;
+let currentDeploymentId = '';
+
+function showAppVersion(version = window.DQ_OPS_VERSION || '1.0.0', build = window.DQ_OPS_BUILD || 'unknown') {
+  if ($('#appVersionLabel')) $('#appVersionLabel').textContent = `DQ OPS v${version}`;
+  if ($('#appBuildLabel')) $('#appBuildLabel').textContent = `Build ${String(build).slice(0, 12)}`;
+}
+
+async function deployedAppVersion() {
+  const response = await fetch(`/api/version?t=${Date.now()}`, { cache: 'no-store' });
+  if (!response.ok) throw new Error('Version service unavailable');
+  return response.json();
+}
+
+function showAppUpdateReady(worker) {
+  if (worker) waitingAppServiceWorker = worker;
+  if ($('#appUpdateBanner')) $('#appUpdateBanner').hidden = false;
+  if ($('#helpRefreshNowBtn')) $('#helpRefreshNowBtn').hidden = false;
+  if ($('#checkForUpdatesBtn')) $('#checkForUpdatesBtn').textContent = 'Update ready';
+}
+
+function refreshToAppUpdate() {
+  if (!waitingAppServiceWorker) return location.reload();
+  updateRefreshRequested = true;
+  waitingAppServiceWorker.postMessage({ type: 'SKIP_WAITING' });
+}
+
+async function checkForAppUpdate() {
+  if (!('serviceWorker' in navigator) || location.protocol !== 'https:') return toast('Update checks are available on the hosted app');
+  const button = $('#checkForUpdatesBtn');
+  if (button) { button.disabled = true; button.textContent = 'Checking…'; }
+  try {
+    const deployed = await deployedAppVersion();
+    if (currentDeploymentId && deployed.build && deployed.build !== currentDeploymentId) {
+      showAppUpdateReady(null);
+      return;
+    }
+    const registration = await navigator.serviceWorker.getRegistration('/');
+    if (!registration) return toast('Update service is not ready yet');
+    await registration.update();
+    if (registration.waiting) showAppUpdateReady(registration.waiting);
+    else if (!registration.installing) {
+      if (button) button.textContent = 'Check for updates';
+      toast('DQ OPS is up to date');
+    }
+  } catch (error) {
+    if (button) button.textContent = 'Check for updates';
+    toast(`Update check failed: ${error.message}`);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function setupAppUpdateFlow() {
+  showAppVersion();
+  if (!('serviceWorker' in navigator) || location.protocol !== 'https:') return;
+  try {
+    const deployed = await deployedAppVersion();
+    currentDeploymentId = deployed.build || '';
+    showAppVersion(deployed.version, deployed.build);
+    const registration = await navigator.serviceWorker.register('/service-worker.js');
+    if (registration.waiting && navigator.serviceWorker.controller) showAppUpdateReady(registration.waiting);
+    registration.addEventListener('updatefound', () => {
+      const worker = registration.installing;
+      if (!worker) return;
+      worker.addEventListener('statechange', () => {
+        if (worker.state === 'installed' && navigator.serviceWorker.controller) showAppUpdateReady(worker);
+      });
+    });
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (updateRefreshRequested) location.reload();
+    });
+    window.setInterval(async () => {
+      try {
+        const latest = await deployedAppVersion();
+        if (currentDeploymentId && latest.build && latest.build !== currentDeploymentId) showAppUpdateReady(null);
+      } catch {}
+    }, 300000);
+  } catch (error) {
+    console.warn('DQ OPS update service did not start', error);
+  }
+}
 const hostedAuthEnabled = () => Boolean(window.dailyOpsAuth?.enabled);
 let locations = [{ id: 'store-01', name: 'Store 1' }];
 let currentLocationId = localStorage.getItem('dailyops-current-location') || 'store-01';
@@ -4736,6 +4819,9 @@ $('#submitManagementReportBtn').onclick = submitManagementReport;
 $('#customizeDashboardBtn').onclick = openDashboardCustomization;
 $('#saveDashboardBtn').onclick = saveDashboardCustomization;
 $('#resetDashboardBtn').onclick = resetDashboardCustomization;
+$('#checkForUpdatesBtn').onclick = checkForAppUpdate;
+$('#helpRefreshNowBtn').onclick = refreshToAppUpdate;
+$('#refreshAppUpdateBtn').onclick = refreshToAppUpdate;
 $('#showApprovedSmallwaresBtn').onclick = () => {
   showApprovedSmallwares = !showApprovedSmallwares;
   renderSmallwares();
@@ -4783,4 +4869,5 @@ function renderHistory() {
     : '<div class="empty">Completed checklists will appear here.</div>';
 }
 
+setupAppUpdateFlow();
 loadState();

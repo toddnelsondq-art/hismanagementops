@@ -1,4 +1,6 @@
-const CACHE_NAME = 'his-ops-v14-dashboard-customization';
+importScripts('/version.js');
+
+const CACHE_NAME = `his-ops-v${self.DQ_OPS_VERSION}-${self.DQ_OPS_BUILD}`;
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -6,6 +8,7 @@ const APP_SHELL = [
   '/temperature.css',
   '/his-theme.css',
   '/auth.js',
+  '/version.js',
   '/app.js',
   '/food-safety-questions.js',
   '/food-safety-manager-expanded.js',
@@ -20,8 +23,11 @@ self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => cache.addAll(APP_SHELL))
-      .then(() => self.skipWaiting())
   );
+});
+
+self.addEventListener('message', event => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('activate', event => {

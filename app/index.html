@@ -890,6 +890,10 @@
       <article class="card help-intro">
         <h3>Welcome to DQ OPS</h3>
         <p>Use this guide for a quick explanation of each area. What you can see and change depends on your role and assigned locations, so some options described here may not appear on your account.</p>
+        <div class="app-version-row">
+          <div><b id="appVersionLabel">DQ OPS version</b><p class="hint" id="appBuildLabel">Build information loading…</p></div>
+          <div class="row-actions"><button id="checkForUpdatesBtn" class="ghost" type="button">Check for updates</button><button id="helpRefreshNowBtn" type="button" hidden>Refresh now</button></div>
+        </div>
       </article>
 
       <article class="card help-contents" id="helpContents" aria-label="Help table of contents">
@@ -1694,18 +1698,15 @@
     </form>
   </dialog>
 
+  <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="version.js?v=2026-08-07-1"></script>
   <script src="auth.js?v=2026-07-29-kiosk-pin"></script>
-  <script src="app.js?v=2026-08-07-dashboard-customization"></script>
+  <script src="app.js?v=2026-08-07-visible-version"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>
-  <script>
-    if ('serviceWorker' in navigator && location.protocol === 'https:') {
-      window.addEventListener('load', () => navigator.serviceWorker.register('/service-worker.js'));
-    }
-  </script>
 </body>
 </html>
 

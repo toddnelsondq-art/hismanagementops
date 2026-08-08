@@ -510,6 +510,13 @@ nav button[data-view="manageView"]{order:12}
 .dashboard-widget-setting{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid #dbe3ee;border-radius:12px;background:#f8fafc}
 .dashboard-widget-setting .check{margin:0;font-weight:800}
 .dialog-actions{display:flex;justify-content:space-between;gap:12px;margin-top:18px}
+.app-version-row{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:16px;padding-top:14px;border-top:1px solid #dbe3ee}
+.app-version-row p{margin:4px 0 0}
+.app-update-banner{position:fixed;z-index:10000;left:50%;bottom:24px;transform:translateX(-50%);width:min(680px,calc(100vw - 28px));display:flex;align-items:center;justify-content:space-between;gap:18px;padding:14px 16px;border-radius:14px;background:#082b55;color:#fff;box-shadow:0 18px 45px rgba(2,18,40,.35)}
+.app-update-banner[hidden]{display:none}
+.app-update-banner div{display:grid;gap:3px}
+.app-update-banner span{font-size:13px;color:#d8e7f7}
+.app-update-banner button{flex:0 0 auto;background:#fff;color:#082b55}
 
 @media(max-width:760px){
   .help-contents-grid{
@@ -524,6 +531,8 @@ nav button[data-view="manageView"]{order:12}
   .dashboard-default-grid{grid-template-columns:1fr}
   .dashboard-widget-setting{align-items:flex-start;flex-direction:column}
   .dialog-actions{flex-direction:column-reverse}
+  .app-version-row,.app-update-banner{align-items:stretch;flex-direction:column}
+  .app-update-banner{bottom:12px}
 }
 
 @media(max-width:480px){
