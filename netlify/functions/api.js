@@ -2367,6 +2367,55 @@ async function updateManagementReport(payload, actor) {
   return managementReportsState(actor);
 }
 
+const DASHBOARD_WIDGETS = ['shortcuts', 'alerts', 'upcoming', 'incidents', 'operations', 'maintenance', 'fpc', 'inspections', 'progress'];
+
+function defaultDashboardPreferences() {
+  return { visible: [...DASHBOARD_WIDGETS], order: [...DASHBOARD_WIDGETS], defaultRange: 'day', defaultLocationId: 'all' };
+}
+
+function normalizeDashboardPreferences(value = {}) {
+  const defaults = defaultDashboardPreferences();
+  const visible = Array.isArray(value.visible) ? value.visible.filter(id => DASHBOARD_WIDGETS.includes(id)) : defaults.visible;
+  const suppliedOrder = Array.isArray(value.order) ? value.order.filter(id => DASHBOARD_WIDGETS.includes(id)) : [];
+  const order = [...new Set([...suppliedOrder, ...DASHBOARD_WIDGETS])];
+  return {
+    visible: [...new Set(visible)],
+    order,
+    defaultRange: ['day', 'week', 'month'].includes(value.defaultRange) ? value.defaultRange : 'day',
+    defaultLocationId: String(value.defaultLocationId || 'all')
+  };
+}
+
+async function dashboardPreferencesState(actor) {
+  if (AUTH_REQUIRED && !canAreaManage(actor)) return { preferences: defaultDashboardPreferences(), customizable: false };
+  const storedValue = await readMaintenanceKey('dashboardPreferences', {});
+  const stored = storedValue && typeof storedValue === 'object' && !Array.isArray(storedValue) ? storedValue : {};
+  const preferences = normalizeDashboardPreferences(stored?.[actor?.id] || {});
+  return { preferences, customizable: true };
+}
+
+async function saveDashboardPreferences(payload, actor) {
+  if (AUTH_REQUIRED && !canAreaManage(actor)) throw Object.assign(new Error('Only Area Managers and above can customize dashboards'), { statusCode: 403 });
+  const preferences = normalizeDashboardPreferences(payload.preferences || payload);
+  if (preferences.defaultLocationId !== 'all' && !canAccessLocation(actor, preferences.defaultLocationId)) {
+    throw Object.assign(new Error('You cannot use that location as your dashboard default'), { statusCode: 403 });
+  }
+  const storedValue = await readMaintenanceKey('dashboardPreferences', {});
+  const stored = storedValue && typeof storedValue === 'object' && !Array.isArray(storedValue) ? storedValue : {};
+  stored[actor?.id || 'local-user'] = preferences;
+  await writeMaintenanceKey('dashboardPreferences', stored);
+  return { preferences, customizable: true };
+}
+
+async function resetDashboardPreferences(actor) {
+  if (AUTH_REQUIRED && !canAreaManage(actor)) throw Object.assign(new Error('Only Area Managers and above can reset dashboard settings'), { statusCode: 403 });
+  const storedValue = await readMaintenanceKey('dashboardPreferences', {});
+  const stored = storedValue && typeof storedValue === 'object' && !Array.isArray(storedValue) ? storedValue : {};
+  delete stored[actor?.id || 'local-user'];
+  await writeMaintenanceKey('dashboardPreferences', stored);
+  return { preferences: defaultDashboardPreferences(), customizable: true };
+}
+
 async function maintenanceLists() {
   const rows = await readMaintenanceKey('lists', []);
   const keys = {
@@ -2720,7 +2769,7 @@ exports.handler = async event => {
         throw Object.assign(new Error('No accessible location is assigned to this account'), { statusCode: 403 });
       }
       const historyScope = actor?.authMode === 'kiosk' ? 'location' : (query.historyScope || 'location');
-      const [day, history, overdue, taskTemplates, notices, alertSettings, notificationLogs, calendarEvents, managementReports, users, locations] = await Promise.all([
+      const [day, history, overdue, taskTemplates, notices, alertSettings, notificationLogs, calendarEvents, managementReports, dashboardPreferences, users, locations] = await Promise.all([
         readDay(locationId, date),
         readHistory(historyScope === 'all' ? null : locationId),
         readOverdue(date),
@@ -2730,6 +2779,7 @@ exports.handler = async event => {
         readNotificationLogs(actor).catch(() => []),
         calendarState(actor).catch(() => ({ events: [] })),
         managementReportsState(actor).catch(() => ({ reports: [] })),
+        dashboardPreferencesState(actor).catch(() => ({ preferences: defaultDashboardPreferences(), customizable: false })),
         readUsers(),
         readLocations()
       ]);
@@ -2745,6 +2795,7 @@ exports.handler = async event => {
         notificationLogs,
         calendarEvents,
         managementReports,
+        dashboardPreferences,
         users: actor?.authMode === 'kiosk' ? users.filter(user => user.id === actor.id) : users,
         locations
       });
@@ -2768,6 +2819,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/inspections/state') return json(200, await inspectionState(actor));
     if (method === 'GET' && apiPath === '/smallwares/state') return json(200, await smallwaresState());
     if (method === 'GET' && apiPath === '/management-reports/state') return json(200, await managementReportsState(actor));
+    if (method === 'GET' && apiPath === '/dashboard/preferences') return json(200, await dashboardPreferencesState(actor));
 
     if (method === 'POST' && apiPath === '/day') {
       const locationId = body.locationId || DEFAULT_LOCATION_ID;
@@ -2873,6 +2925,8 @@ exports.handler = async event => {
     }
     if (method === 'POST' && apiPath === '/management-reports/report') return json(200, await saveManagementReport(body, actor));
     if (method === 'POST' && apiPath === '/management-reports/update') return json(200, await updateManagementReport(body, actor));
+    if (method === 'POST' && apiPath === '/dashboard/preferences') return json(200, await saveDashboardPreferences(body, actor));
+    if (method === 'POST' && apiPath === '/dashboard/preferences/reset') return json(200, await resetDashboardPreferences(actor));
 
     if (method === 'POST' && apiPath === '/maintenance/work-order') {
       const workOrder = await writeWorkOrder(body);

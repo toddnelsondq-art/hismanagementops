@@ -130,6 +130,22 @@ let selectedTempList = localStorage.getItem('dailyops-temp-list') || 'Grill';
 let selectedTempSession = localStorage.getItem('dailyops-temp-session') || 'Day';
 let dashboardRange = localStorage.getItem('dailyops-dashboard-range') || 'day';
 let dashboardLocationId = localStorage.getItem('dailyops-dashboard-location') || 'all';
+const dashboardWidgetCatalog = [
+  { id: 'shortcuts', label: 'Quick links' },
+  { id: 'alerts', label: 'Upcoming visits and events' },
+  { id: 'upcoming', label: 'Upcoming maintenance and FPC tasks' },
+  { id: 'incidents', label: 'Incident Reports' },
+  { id: 'operations', label: 'Cleaning and temperature logs' },
+  { id: 'maintenance', label: 'Maintenance work orders' },
+  { id: 'fpc', label: 'FPC repair items' },
+  { id: 'inspections', label: 'Inspection performance' },
+  { id: 'progress', label: 'Location progress detail' }
+];
+const defaultDashboardPreferences = () => ({ visible: dashboardWidgetCatalog.map(widget => widget.id), order: dashboardWidgetCatalog.map(widget => widget.id), defaultRange: 'day', defaultLocationId: 'all' });
+let dashboardPreferences = defaultDashboardPreferences();
+let dashboardPreferencesCustomizable = false;
+let editingDashboardPreferences = null;
+let dashboardPreferencesApplied = false;
 let dashboardMetrics = {
   ops: { completed: 0, remaining: 0, total: 0, percent: 0 },
   maintenance: { completed: 0, open: 0, total: 0, percent: 0 }
@@ -276,7 +292,44 @@ function setupDailyOpsLayout() {
   }
 }
 
+function setupCustomizableDashboard() {
+  const home = $('#homeView');
+  if (!home || $('#dashboardWidgetArea')) return;
+  const controls = home.querySelector('.dashboard-controls');
+  const shortcuts = home.querySelector(':scope > .hub-grid');
+  const alerts = $('#dashboardAlertsCard');
+  const upcoming = $('#dashboardUpcomingTasksCard');
+  const metricGrid = home.querySelector('.dashboard-grid');
+  const metricCards = metricGrid ? [...metricGrid.children] : [];
+  const progress = home.querySelector('.dashboard-progress-card');
+  const area = document.createElement('div');
+  area.id = 'dashboardWidgetArea';
+  area.className = 'dashboard-widget-area';
+  controls.insertAdjacentElement('afterend', area);
+
+  const incidentCard = document.createElement('article');
+  incidentCard.className = 'card dashboard-card dashboard-widget';
+  incidentCard.id = 'dashboardIncidentCard';
+  incidentCard.innerHTML = '<div><p class="eyebrow">MANAGEMENT</p><h3>Incident Reports</h3></div><div id="dashboardIncidentSummary"></div><button class="ghost" data-section-view="managementReportsView" type="button">Open Incident Reports</button>';
+  const inspectionCard = document.createElement('article');
+  inspectionCard.className = 'card dashboard-card dashboard-widget';
+  inspectionCard.id = 'dashboardInspectionCard';
+  inspectionCard.innerHTML = '<div><p class="eyebrow">STORE VISITS</p><h3>Inspection performance</h3></div><div id="dashboardInspectionSummary"></div><button class="ghost" data-section-view="inspectionsView" type="button">Open inspections</button>';
+
+  const widgets = { shortcuts, alerts, upcoming, incidents: incidentCard, operations: metricCards[0], maintenance: metricCards[1], fpc: metricCards[2], inspections: inspectionCard, progress };
+  dashboardWidgetCatalog.forEach(widget => {
+    const element = widgets[widget.id];
+    if (!element) return;
+    element.dataset.dashboardWidget = widget.id;
+    element.classList.add('dashboard-widget');
+    if (['shortcuts', 'alerts', 'upcoming', 'progress'].includes(widget.id)) element.classList.add('widget-wide');
+    area.appendChild(element);
+  });
+  metricGrid?.remove();
+}
+
 setupDailyOpsLayout();
+setupCustomizableDashboard();
 
 function setupCollapsibleCards() {
   document.querySelectorAll('.collapsible-card').forEach((card, index) => {
@@ -503,6 +556,15 @@ async function loadState() {
     notificationLogs = state.notificationLogs || notificationLogs;
     calendarEvents = state.calendarEvents || calendarEvents;
     managementReports = state.managementReports || managementReports;
+    if (state.dashboardPreferences?.preferences) {
+      dashboardPreferences = state.dashboardPreferences.preferences;
+      dashboardPreferencesCustomizable = Boolean(state.dashboardPreferences.customizable);
+      if (!dashboardPreferencesApplied) {
+        dashboardRange = dashboardPreferences.defaultRange || dashboardRange;
+        dashboardLocationId = dashboardPreferences.defaultLocationId || dashboardLocationId;
+        dashboardPreferencesApplied = true;
+      }
+    }
     users = state.users?.length ? state.users : users;
     locations = state.locations?.length ? state.locations : locations;
     if (window.dailyOpsAuth?.profile?.id) {
@@ -1200,6 +1262,105 @@ function setPie(selector, percent) {
   $(selector).style.setProperty('--pct', value);
 }
 
+function canCustomizeDashboard(user = currentUser()) {
+  return ['Area Manager', 'Director of Operations', 'Owner'].includes(user.role);
+}
+
+function normalizeClientDashboardPreferences(value = {}) {
+  const allIds = dashboardWidgetCatalog.map(widget => widget.id);
+  const visible = Array.isArray(value.visible) ? value.visible.filter(id => allIds.includes(id)) : allIds;
+  const suppliedOrder = Array.isArray(value.order) ? value.order.filter(id => allIds.includes(id)) : [];
+  return { visible: [...new Set(visible)], order: [...new Set([...suppliedOrder, ...allIds])], defaultRange: ['day', 'week', 'month'].includes(value.defaultRange) ? value.defaultRange : 'day', defaultLocationId: String(value.defaultLocationId || 'all') };
+}
+
+function renderDashboardWidgetSummaries() {
+  if ($('#dashboardIncidentSummary')) {
+    const openReports = (managementReports.reports || []).filter(report => report.status !== 'Resolved');
+    const latest = openReports[0];
+    $('#dashboardIncidentSummary').innerHTML = `<p class="dashboard-summary-number">${openReports.length}</p><p class="hint">open authorized report${openReports.length === 1 ? '' : 's'}</p>${latest ? `<p><b>${escapeHtml(latest.title)}</b><br><span class="hint">${escapeHtml(latest.locationName || locationName(latest.locationId))} · ${escapeHtml(latest.severity || 'Medium')}</span></p>` : ''}`;
+  }
+  if ($('#dashboardInspectionSummary')) {
+    const allowed = dashboardLocationId === 'all' ? accessibleLocationIds() : [dashboardLocationId];
+    const cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - 3);
+    const recent = (inspections.inspections || []).filter(record => allowed.includes(record.locationId) && new Date(`${record.date}T12:00:00`) >= cutoff);
+    const average = recent.length ? Math.round(recent.reduce((sum, record) => sum + (Number(record.score) || 0), 0) / recent.length) : null;
+    $('#dashboardInspectionSummary').innerHTML = `<p class="dashboard-summary-number">${average === null ? '—' : `${average}%`}</p><p class="hint">${recent.length ? `${recent.length} inspection${recent.length === 1 ? '' : 's'} in the last 3 months` : 'No inspections in the last 3 months'}</p>`;
+  }
+}
+
+function applyDashboardPreferences(activeUser = currentUser()) {
+  dashboardPreferences = normalizeClientDashboardPreferences(dashboardPreferences);
+  const area = $('#dashboardWidgetArea');
+  if (!area) return;
+  dashboardPreferences.order.forEach(id => {
+    const widget = area.querySelector(`[data-dashboard-widget="${CSS.escape(id)}"]`);
+    if (widget) area.appendChild(widget);
+  });
+  area.querySelectorAll('[data-dashboard-widget]').forEach(widget => {
+    const id = widget.dataset.dashboardWidget;
+    const permitted = (id !== 'incidents' || canUseManagementReports(activeUser)) && (id !== 'inspections' || canAddStoreDocuments(activeUser)) && (!['operations', 'progress'].includes(id) || canUseDailyOps(activeUser));
+    widget.style.display = dashboardPreferences.visible.includes(id) && permitted ? '' : 'none';
+  });
+  $('#customizeDashboardBtn').style.display = dashboardPreferencesCustomizable && canCustomizeDashboard(activeUser) ? '' : 'none';
+  renderDashboardWidgetSummaries();
+}
+
+function renderDashboardCustomization() {
+  editingDashboardPreferences = normalizeClientDashboardPreferences(editingDashboardPreferences || dashboardPreferences);
+  const visibleLocations = locations.filter(location => isFullAccess() || userLocationIds().includes(location.id));
+  $('#dashboardDefaultRange').value = editingDashboardPreferences.defaultRange;
+  $('#dashboardDefaultLocation').innerHTML = [`<option value="all">${isFullAccess() ? 'All locations' : 'All assigned locations'}</option>`, ...visibleLocations.map(location => `<option value="${escapeHtml(location.id)}">${escapeHtml(location.name)}</option>`)].join('');
+  if (![...$('#dashboardDefaultLocation').options].some(option => option.value === editingDashboardPreferences.defaultLocationId)) editingDashboardPreferences.defaultLocationId = 'all';
+  $('#dashboardDefaultLocation').value = editingDashboardPreferences.defaultLocationId;
+  $('#dashboardWidgetSettings').innerHTML = editingDashboardPreferences.order.map((id, index) => {
+    const widget = dashboardWidgetCatalog.find(item => item.id === id);
+    return `<div class="dashboard-widget-setting"><label class="check"><input type="checkbox" data-dashboard-widget-visible="${escapeHtml(id)}" ${editingDashboardPreferences.visible.includes(id) ? 'checked' : ''}> ${escapeHtml(widget?.label || id)}</label><div class="row-actions"><button class="ghost" data-dashboard-widget-move="${escapeHtml(id)}|up" ${index === 0 ? 'disabled' : ''} type="button">Up</button><button class="ghost" data-dashboard-widget-move="${escapeHtml(id)}|down" ${index === editingDashboardPreferences.order.length - 1 ? 'disabled' : ''} type="button">Down</button></div></div>`;
+  }).join('');
+}
+
+function openDashboardCustomization() {
+  if (!canCustomizeDashboard() || !dashboardPreferencesCustomizable) return toast('Dashboard customization is available to Area Managers and above');
+  editingDashboardPreferences = JSON.parse(JSON.stringify(normalizeClientDashboardPreferences(dashboardPreferences)));
+  renderDashboardCustomization();
+  $('#dashboardCustomizeDialog').showModal();
+}
+
+async function saveDashboardCustomization() {
+  editingDashboardPreferences.defaultRange = $('#dashboardDefaultRange').value;
+  editingDashboardPreferences.defaultLocationId = $('#dashboardDefaultLocation').value;
+  editingDashboardPreferences.visible = [...document.querySelectorAll('[data-dashboard-widget-visible]:checked')].map(input => input.dataset.dashboardWidgetVisible);
+  try {
+    const result = await api('/api/dashboard/preferences', { method: 'POST', body: JSON.stringify({ preferences: editingDashboardPreferences }) });
+    dashboardPreferences = normalizeClientDashboardPreferences(result.preferences);
+    dashboardRange = dashboardPreferences.defaultRange;
+    dashboardLocationId = dashboardPreferences.defaultLocationId;
+    localStorage.setItem('dailyops-dashboard-range', dashboardRange);
+    localStorage.setItem('dailyops-dashboard-location', dashboardLocationId);
+    await loadDashboardState();
+    $('#dashboardCustomizeDialog').close();
+    render();
+    toast('Dashboard settings saved');
+  } catch (error) { toast(`Dashboard settings did not save: ${error.message}`); }
+}
+
+async function resetDashboardCustomization() {
+  if (!confirm('Reset your dashboard cards, order, time period, and location to the default layout?')) return;
+  try {
+    const result = await api('/api/dashboard/preferences/reset', { method: 'POST', body: '{}' });
+    dashboardPreferences = normalizeClientDashboardPreferences(result.preferences || defaultDashboardPreferences());
+    editingDashboardPreferences = JSON.parse(JSON.stringify(dashboardPreferences));
+    dashboardRange = dashboardPreferences.defaultRange;
+    dashboardLocationId = dashboardPreferences.defaultLocationId;
+    localStorage.setItem('dailyops-dashboard-range', dashboardRange);
+    localStorage.setItem('dailyops-dashboard-location', dashboardLocationId);
+    await loadDashboardState();
+    renderDashboardCustomization();
+    render();
+    toast('Dashboard reset to default');
+  } catch (error) { toast(`Dashboard did not reset: ${error.message}`); }
+}
+
 function renderDashboard(visibleLocations, activeUser) {
   if (!$('#dashboardRange')) return;
   const canUseAll = usesAssignedLocations(activeUser);
@@ -1240,6 +1401,7 @@ function renderDashboard(visibleLocations, activeUser) {
   $('#fpcChartHint').textContent = 'Current FPC repair item completion for the selected location view.';
   renderDashboardProgress();
   renderUpcomingMaintenanceTasks(visibleLocations, activeUser);
+  applyDashboardPreferences(activeUser);
 }
 
 function renderDashboardProgress() {
@@ -3191,6 +3353,20 @@ function switchView(viewId) {
 }
 
 document.addEventListener('click', async event => {
+  const dashboardMove = event.target.closest('[data-dashboard-widget-move]');
+  if (dashboardMove) {
+    const [id, direction] = dashboardMove.dataset.dashboardWidgetMove.split('|');
+    const from = editingDashboardPreferences.order.indexOf(id);
+    const to = direction === 'up' ? from - 1 : from + 1;
+    if (from >= 0 && to >= 0 && to < editingDashboardPreferences.order.length) {
+      editingDashboardPreferences.defaultRange = $('#dashboardDefaultRange').value;
+      editingDashboardPreferences.defaultLocationId = $('#dashboardDefaultLocation').value;
+      [editingDashboardPreferences.order[from], editingDashboardPreferences.order[to]] = [editingDashboardPreferences.order[to], editingDashboardPreferences.order[from]];
+      editingDashboardPreferences.visible = [...document.querySelectorAll('[data-dashboard-widget-visible]:checked')].map(input => input.dataset.dashboardWidgetVisible);
+      renderDashboardCustomization();
+    }
+    return;
+  }
   const managementUpdate = event.target.closest('[data-management-update]');
   if (managementUpdate) return updateManagementReport(managementUpdate.dataset.managementUpdate);
   const managementFilter = event.target.closest('[data-management-report-filter]');
@@ -4557,6 +4733,9 @@ $('#saveResourceBtn').onclick = saveResource;
 $('#cancelResourceEditBtn').onclick = resetResourceForm;
 $('#submitSmallwaresBtn').onclick = submitSmallwaresRequest;
 $('#submitManagementReportBtn').onclick = submitManagementReport;
+$('#customizeDashboardBtn').onclick = openDashboardCustomization;
+$('#saveDashboardBtn').onclick = saveDashboardCustomization;
+$('#resetDashboardBtn').onclick = resetDashboardCustomization;
 $('#showApprovedSmallwaresBtn').onclick = () => {
   showApprovedSmallwares = !showApprovedSmallwares;
   renderSmallwares();

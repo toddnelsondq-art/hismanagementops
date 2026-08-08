@@ -497,6 +497,19 @@ nav button[data-view="manageView"]{order:12}
 .management-review-controls{display:grid;grid-template-columns:minmax(140px,.35fr) minmax(260px,1fr) auto;align-items:end;gap:.75rem;margin-top:1rem;padding-top:1rem;border-top:1px solid #dbe3ee}
 .management-review-controls label{margin:0}
 .management-review-controls textarea{min-height:72px;resize:vertical}
+.dashboard-widget-area{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:18px}
+.dashboard-widget-area .dashboard-widget{margin:0;min-width:0}
+.dashboard-widget-area .widget-wide{grid-column:1/-1}
+.dashboard-widget-area .hub-grid{margin:0}
+.dashboard-widget-area .dashboard-progress-card{margin-top:0}
+.dashboard-summary-number{font-size:2.4rem;font-weight:900;line-height:1;margin:18px 0 4px;color:var(--navy)}
+.dashboard-customize-dialog{width:min(680px,calc(100vw - 28px));max-height:88vh}
+.dashboard-customize-dialog form{overflow:auto;max-height:82vh}
+.dashboard-default-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}
+.dashboard-widget-settings{display:grid;gap:8px;margin:16px 0}
+.dashboard-widget-setting{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid #dbe3ee;border-radius:12px;background:#f8fafc}
+.dashboard-widget-setting .check{margin:0;font-weight:800}
+.dialog-actions{display:flex;justify-content:space-between;gap:12px;margin-top:18px}
 
 @media(max-width:760px){
   .help-contents-grid{
@@ -506,6 +519,11 @@ nav button[data-view="manageView"]{order:12}
   .management-report-form .form-grid.three-col{grid-template-columns:1fr}
   .management-report-badges{justify-content:flex-start}
   .management-review-controls{grid-template-columns:1fr}
+  .dashboard-widget-area{grid-template-columns:1fr}
+  .dashboard-widget-area .widget-wide{grid-column:auto}
+  .dashboard-default-grid{grid-template-columns:1fr}
+  .dashboard-widget-setting{align-items:flex-start;flex-direction:column}
+  .dialog-actions{flex-direction:column-reverse}
 }
 
 @media(max-width:480px){

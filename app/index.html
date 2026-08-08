@@ -36,6 +36,7 @@
           <p>OPERATIONS PLATFORM</p>
           <h2 id="homeGreeting">Dashboard</h2>
         </div>
+        <button id="customizeDashboardBtn" class="ghost" type="button">Customize dashboard</button>
       </div>
 
       <div class="hub-grid">
@@ -926,7 +927,7 @@
 
         <article class="card help-section" id="help-dashboard">
           <h3>Dashboard</h3>
-          <p>Shows a quick summary of daily operations, maintenance, FPC work, upcoming visits, and location performance. Use the time-period and location selectors to narrow the information.</p>
+          <p>Shows a quick summary of daily operations, maintenance, FPC work, Incident Reports, inspections, upcoming visits, and location performance. Use the time-period and location selectors to narrow the information. Area Managers and above can select Customize dashboard to show or hide widgets, change their order, and save a default time period and location. Reset to default restores the standard layout.</p>
           <a href="#helpContents">Back to contents</a>
         </article>
 
@@ -1611,6 +1612,19 @@
     </form>
   </dialog>
 
+  <dialog id="dashboardCustomizeDialog" class="dashboard-customize-dialog">
+    <form method="dialog">
+      <div class="modal-head"><div><p class="eyebrow">PERSONAL SETTINGS</p><h3>Customize dashboard</h3></div><button value="cancel" class="x" aria-label="Close">×</button></div>
+      <p class="hint">Choose what appears, move widgets into your preferred order, and select the view that should open by default. These settings apply only to your account.</p>
+      <div class="dashboard-default-grid">
+        <label>Default time period<select id="dashboardDefaultRange"><option value="day">Current day</option><option value="week">Current week</option><option value="month">Current month</option></select></label>
+        <label>Default location<select id="dashboardDefaultLocation"></select></label>
+      </div>
+      <div id="dashboardWidgetSettings" class="dashboard-widget-settings"></div>
+      <div class="dialog-actions"><button id="resetDashboardBtn" class="ghost" type="button">Reset to default</button><button id="saveDashboardBtn" type="button">Save dashboard</button></div>
+    </form>
+  </dialog>
+
   <dialog id="workOrderDialog">
     <form method="dialog">
       <div class="modal-head">
@@ -1683,7 +1697,7 @@
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="auth.js?v=2026-07-29-kiosk-pin"></script>
-  <script src="app.js?v=2026-08-07-management-reports"></script>
+  <script src="app.js?v=2026-08-07-dashboard-customization"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>
