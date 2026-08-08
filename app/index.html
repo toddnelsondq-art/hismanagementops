@@ -754,6 +754,51 @@
       <div id="inspectionHistory"></div>
     </section>
 
+    <section id="managementReportsView" class="view">
+      <div class="date">
+        <div>
+          <p>MANAGEMENT COMMUNICATION</p>
+          <h2>Incident Reports</h2>
+        </div>
+        <span class="status" id="managementReportCount">0 open</span>
+      </div>
+
+      <article class="card form-card management-report-form">
+        <h3>Report a cash shortage or store issue</h3>
+        <p class="hint">Use this for issues that require management awareness or follow-up. For an immediate threat, emergency, robbery, injury, or active safety concern, contact emergency services and your supervisor first.</p>
+        <div class="form-grid three-col">
+          <label>Location<select id="managementReportLocation"></select></label>
+          <label>Issue type
+            <select id="managementReportType">
+              <option>Cash shortage</option>
+              <option>Deposit discrepancy</option>
+              <option>Register variance</option>
+              <option>Employee concern</option>
+              <option>Customer incident</option>
+              <option>Safety or security</option>
+              <option>Policy concern</option>
+              <option>Other store issue</option>
+            </select>
+          </label>
+          <label>Severity
+            <select id="managementReportSeverity"><option>Low</option><option selected>Medium</option><option>High</option><option>Critical</option></select>
+          </label>
+          <label>Date and time occurred<input id="managementReportOccurredAt" type="datetime-local"></label>
+          <label>Cash amount, if applicable<input id="managementReportAmount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00"></label>
+          <label>Short subject<input id="managementReportTitle" maxlength="120" placeholder="Example: Closing register shortage"></label>
+        </div>
+        <label>What happened?<textarea id="managementReportDetails" rows="5" maxlength="4000" placeholder="Include the relevant facts, people involved, and how the issue was discovered."></textarea></label>
+        <label>Immediate action taken<textarea id="managementReportAction" rows="3" maxlength="2000" placeholder="Describe calls made, cash recounted, records secured, or other action already taken."></textarea></label>
+        <button id="submitManagementReportBtn" type="button">Submit management report</button>
+      </article>
+
+      <article class="card toolbar management-report-toolbar">
+        <div><b>Authorized reports</b><p class="hint">Visibility follows the reporter’s role and assigned location.</p></div>
+        <div class="segmented"><button class="active" data-management-report-filter="open" type="button">Open</button><button data-management-report-filter="resolved" type="button">Resolved</button><button data-management-report-filter="all" type="button">All</button></div>
+      </article>
+      <div id="managementReportList"></div>
+    </section>
+
     <section id="smallwaresView" class="view">
       <div class="date">
         <div>
@@ -860,6 +905,7 @@
           <a href="#help-training">Training</a>
           <a href="#help-reports">Reports</a>
           <a href="#help-smallwares">Smallwares</a>
+          <a href="#help-management-reports">Incident Reports</a>
           <a href="#help-calendar">Calendar</a>
           <a href="#help-notices">Notices</a>
           <a href="#help-manage">Manage</a>
@@ -935,6 +981,13 @@
         <article class="card help-section" id="help-smallwares">
           <h3>Smallwares</h3>
           <p>Managers can request replacement or additional smallwares for their store. Enter the item, quantity, and reason. Area Managers and above can review requests and mark them approved or declined.</p>
+          <a href="#helpContents">Back to contents</a>
+        </article>
+
+        <article class="card help-section" id="help-management-reports">
+          <h3>Incident Reports</h3>
+          <p>Shift Managers and above can report cash shortages, deposit or register discrepancies, employee concerns, customer incidents, safety issues, and other matters needing management attention. Enter the facts and immediate action taken. Store Managers review Shift Manager reports; Area Managers and above review Store Manager reports. Authorized supervisors can document follow-up and mark a report resolved.</p>
+          <p class="hint">This area does not replace calling emergency services or immediately contacting a supervisor during an active emergency.</p>
           <a href="#helpContents">Back to contents</a>
         </article>
 
@@ -1078,6 +1131,7 @@
           <p class="hint">Leave all checked for a company-wide notice, or choose only the roles that should see it.</p>
           <div id="noticeTargetRoles" class="location-checks">
             <label class="location-check"><input type="checkbox" value="Employee" checked> Employees</label>
+            <label class="location-check"><input type="checkbox" value="Shift Manager" checked> Shift Managers</label>
             <label class="location-check"><input type="checkbox" value="Manager" checked> Managers</label>
             <label class="location-check"><input type="checkbox" value="Area Manager" checked> Area Managers</label>
             <label class="location-check"><input type="checkbox" value="Maintenance Tech" checked> Maintenance Techs</label>
@@ -1178,11 +1232,12 @@
         </label>
         <label id="newUserPinWrap">Employee PIN
           <input id="newUserPin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="new-password" placeholder="4 digits">
-          <span class="hint">Employees use this only on a store tablet. Managers continue using email and password.</span>
+          <span class="hint">Employees use this only on a store tablet. Shift Managers and above use email and password.</span>
         </label>
         <label>Role
           <select id="newUserRole">
             <option>Employee</option>
+            <option>Shift Manager</option>
             <option>Manager</option>
             <option>Area Manager</option>
             <option>Maintenance Tech</option>
@@ -1251,6 +1306,7 @@
     <button data-view="maintenanceView"><span class="nav-icon">🔧</span><span>Maintenance</span></button>
     <button data-view="resourcesView"><span class="nav-icon">🔗</span><span>Resources</span></button>
     <button data-view="smallwaresView"><span class="nav-icon">🧺</span><span>Smallwares</span></button>
+    <button data-view="managementReportsView"><span class="nav-icon">!</span><span>Incidents</span></button>
     <button data-view="manageView" id="sideManageNav"><span class="nav-icon">⚙</span><span>Manage</span></button>
     <button data-view="calendarView"><span class="nav-icon">📅</span><span>Calendar</span></button>
     <div class="side-user">
@@ -1264,6 +1320,7 @@
     <button data-view="maintenanceView">🔧<span>Maint.</span></button>
     <button data-view="resourcesView">🔗<span>Resources</span></button>
     <button data-view="smallwaresView">🧺<span>Items</span></button>
+    <button data-view="managementReportsView">!<span>Incidents</span></button>
     <button data-view="homeView" class="active" id="homeNav">⌂<span>Home</span></button>
     <button data-view="taskListsView">✓<span>Tasks</span></button>
     <button data-view="manageView" id="manageNav">＋<span>Manage</span></button>
@@ -1327,6 +1384,7 @@
       <label>Role
         <select id="editUserRole">
           <option>Employee</option>
+          <option>Shift Manager</option>
           <option>Manager</option>
           <option>Area Manager</option>
           <option>Maintenance Tech</option>
@@ -1625,7 +1683,7 @@
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="auth.js?v=2026-07-29-kiosk-pin"></script>
-  <script src="app.js?v=2026-08-07-help"></script>
+  <script src="app.js?v=2026-08-07-management-reports"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>

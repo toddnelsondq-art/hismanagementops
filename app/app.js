@@ -153,6 +153,8 @@ let inspectionChartMonths = Number(localStorage.getItem('inspection-chart-months
 let inspectionTemplateId = localStorage.getItem('inspection-template') || 'store-visit';
 let inspectionChartTemplateId = localStorage.getItem('inspection-chart-template') || 'store-visit';
 let smallwares = { requests: [] };
+let managementReports = { reports: [] };
+let managementReportStatusFilter = 'open';
 let smallwaresLocationId = localStorage.getItem('smallwares-location') || currentLocationId;
 let showApprovedSmallwares = false;
 let kioskDevices = [];
@@ -164,6 +166,7 @@ $('#todayLabel').textContent = new Date().toLocaleDateString(undefined, {
 }).toUpperCase();
 if ($('#receiptDate')) $('#receiptDate').value = dateKey;
 if ($('#inspectionDate')) $('#inspectionDate').value = dateKey;
+if ($('#managementReportOccurredAt')) $('#managementReportOccurredAt').value = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 
 function setupDailyOpsLayout() {
   const todayView = $('#todayView');
@@ -382,7 +385,11 @@ function canUseHistory(user = currentUser()) {
 }
 
 function canUseManage(user = currentUser()) {
-  return user.role !== 'Employee';
+  return roleRank(user.role) >= roleRank('Manager');
+}
+
+function canUseManagementReports(user = currentUser()) {
+  return user.role !== 'Employee' && !isMaintenanceTech(user);
 }
 
 function canUseHub(user = currentUser()) {
@@ -462,9 +469,9 @@ function manageableUsers(actor = currentUser()) {
 }
 
 function allowedAssignableRoles(actor = currentUser()) {
-  if (isFullAccess(actor)) return ['Employee', 'Manager', 'Area Manager', maintenanceRole, 'Director of Operations', 'Owner'];
-  if (actor.role === 'Area Manager') return ['Employee', 'Manager', 'Area Manager', maintenanceRole];
-  if (actor.role === 'Manager') return ['Employee', 'Manager'];
+  if (isFullAccess(actor)) return ['Employee', 'Shift Manager', 'Manager', 'Area Manager', maintenanceRole, 'Director of Operations', 'Owner'];
+  if (actor.role === 'Area Manager') return ['Employee', 'Shift Manager', 'Manager', 'Area Manager', maintenanceRole];
+  if (actor.role === 'Manager') return ['Employee', 'Shift Manager', 'Manager'];
   return [];
 }
 
@@ -495,6 +502,7 @@ async function loadState() {
     alertSettings = state.alertSettings || alertSettings;
     notificationLogs = state.notificationLogs || notificationLogs;
     calendarEvents = state.calendarEvents || calendarEvents;
+    managementReports = state.managementReports || managementReports;
     users = state.users?.length ? state.users : users;
     locations = state.locations?.length ? state.locations : locations;
     if (window.dailyOpsAuth?.profile?.id) {
@@ -547,6 +555,7 @@ async function loadState() {
   await loadReceiptsState();
   await loadInspectionsState();
   await loadSmallwaresState();
+  await loadManagementReportsState();
   await loadDashboardState();
   await loadKioskDevices();
   render();
@@ -1183,6 +1192,7 @@ function render() {
   renderReceipts();
   renderInspections();
   renderSmallwares();
+  renderManagementReports();
 }
 
 function setPie(selector, percent) {
@@ -1799,6 +1809,15 @@ function areaManagerLocations() {
   return locations.filter(location => isFullAccess() || userLocationIds().includes(location.id));
 }
 
+async function loadManagementReportsState() {
+  if (!apiOnline || !canUseManagementReports()) return;
+  try {
+    managementReports = await api('/api/management-reports/state');
+  } catch {
+    managementReports = { reports: [] };
+  }
+}
+
 function renderReceipts() {
   if (!$('#receiptsView') || !canAddStoreDocuments()) return;
   const allowed = areaManagerLocations();
@@ -2041,6 +2060,7 @@ function applyRoleAccess(user) {
   document.querySelectorAll('[data-view="storeDocsView"]').forEach(button => button.style.display = showHub && !tech ? '' : 'none');
   document.querySelectorAll('[data-view="resourcesView"]').forEach(button => button.style.display = '');
   document.querySelectorAll('[data-view="smallwaresView"]').forEach(button => button.style.display = showHub && !tech ? '' : 'none');
+  document.querySelectorAll('[data-view="managementReportsView"]').forEach(button => button.style.display = canUseManagementReports(user) ? '' : 'none');
   document.querySelectorAll('[data-view="taskListsView"], [data-view="tempLogsView"], [data-view="todayView"]').forEach(button => button.style.display = canUseDailyOps(user) ? '' : 'none');
   document.querySelectorAll('[data-view="historyView"]').forEach(button => button.style.display = showHistory && !tech ? '' : 'none');
   document.querySelectorAll('[data-view="manageView"]').forEach(button => button.style.display = showManage && !tech ? '' : 'none');
@@ -2053,13 +2073,63 @@ function applyRoleAccess(user) {
   $('#signOutBtn').style.display = window.dailyOpsAuth?.enabled ? '' : 'none';
   $('#sideUserName').textContent = user.name;
   $('#sideUserRole').textContent = user.role;
-  if (tech && ($('#taskListsView').classList.contains('active') || $('#tempLogsView').classList.contains('active') || $('#todayView').classList.contains('active') || $('#calendarView').classList.contains('active') || $('#storeDocsView').classList.contains('active') || $('#smallwaresView').classList.contains('active') || $('#historyView').classList.contains('active') || $('#manageView').classList.contains('active') || $('#receiptsView').classList.contains('active') || $('#inspectionsView').classList.contains('active'))) switchView('homeView');
+  if (tech && ($('#taskListsView').classList.contains('active') || $('#tempLogsView').classList.contains('active') || $('#todayView').classList.contains('active') || $('#calendarView').classList.contains('active') || $('#storeDocsView').classList.contains('active') || $('#smallwaresView').classList.contains('active') || $('#managementReportsView').classList.contains('active') || $('#historyView').classList.contains('active') || $('#manageView').classList.contains('active') || $('#receiptsView').classList.contains('active') || $('#inspectionsView').classList.contains('active'))) switchView('homeView');
   if (!showHub && ($('#homeView').classList.contains('active') || $('#maintenanceView').classList.contains('active') || $('#fpcView').classList.contains('active') || $('#calendarView').classList.contains('active') || $('#storeDocsView').classList.contains('active') || $('#smallwaresView').classList.contains('active'))) switchView('todayView');
   if (!showHistory && $('#historyView').classList.contains('active')) switchView('todayView');
   if (!showManage && $('#manageView').classList.contains('active')) switchView('todayView');
   if (!showManage && $('#helpView').classList.contains('active')) switchView('todayView');
   if (!showLocations && $('#locationsView').classList.contains('active')) switchView('todayView');
   if (!canAddStoreDocuments(user) && ($('#receiptsView').classList.contains('active') || $('#inspectionsView').classList.contains('active'))) switchView('todayView');
+}
+
+function managementReportMinimumRole(report = {}) {
+  return {
+    'Shift Manager': 'Manager',
+    Manager: 'Area Manager',
+    'Area Manager': 'Director of Operations',
+    'Director of Operations': 'Owner'
+  }[report.reportedByRole] || 'Owner';
+}
+
+function canUpdateManagementReport(report, user = currentUser()) {
+  return roleRank(user.role) >= roleRank(managementReportMinimumRole(report));
+}
+
+function renderManagementReports() {
+  if (!$('#managementReportList') || !canUseManagementReports()) return;
+  const visibleLocations = locations.filter(location => isFullAccess() || userLocationIds().includes(location.id));
+  const locationSelect = $('#managementReportLocation');
+  const selectedLocation = locationSelect.value || currentLocationId;
+  locationSelect.innerHTML = visibleLocations.map(location => `<option value="${escapeHtml(location.id)}">${escapeHtml(location.name)}</option>`).join('');
+  locationSelect.value = visibleLocations.some(location => location.id === selectedLocation) ? selectedLocation : (visibleLocations[0]?.id || currentLocationId);
+  locationSelect.disabled = visibleLocations.length < 2;
+  const reports = (managementReports.reports || []).filter(report => managementReportStatusFilter === 'all' || (managementReportStatusFilter === 'open' ? report.status !== 'Resolved' : report.status === 'Resolved'));
+  const openCount = (managementReports.reports || []).filter(report => report.status !== 'Resolved').length;
+  $('#managementReportCount').textContent = `${openCount} open`;
+  document.querySelectorAll('[data-management-report-filter]').forEach(button => button.classList.toggle('active', button.dataset.managementReportFilter === managementReportStatusFilter));
+  $('#managementReportList').innerHTML = reports.length ? reports.map(report => {
+    const canUpdate = canUpdateManagementReport(report);
+    const amount = report.amount === null || report.amount === undefined ? '' : `<span class="management-report-amount">$${Number(report.amount).toFixed(2)}</span>`;
+    return `
+      <article class="card management-report-card severity-${escapeHtml(String(report.severity || 'Medium').toLowerCase())}">
+        <div class="management-report-heading">
+          <div>
+            <p class="eyebrow">${escapeHtml(report.locationName || locationName(report.locationId))} · ${escapeHtml(report.type || 'Store issue')}</p>
+            <h3>${escapeHtml(report.title)}</h3>
+          </div>
+          <div class="management-report-badges"><span class="status">${escapeHtml(report.severity || 'Medium')}</span><span class="status">${escapeHtml(report.status || 'Open')}</span>${amount}</div>
+        </div>
+        <p class="hint">Reported by ${escapeHtml(report.reportedBy || '')} · ${escapeHtml(report.reportedByRole || '')} · ${report.createdAt ? new Date(report.createdAt).toLocaleString() : ''}</p>
+        <p>${escapeHtml(report.details || '')}</p>
+        ${report.immediateAction ? `<p><b>Immediate action:</b> ${escapeHtml(report.immediateAction)}</p>` : ''}
+        ${report.followUp ? `<div class="management-follow-up"><b>Management follow-up</b><p>${escapeHtml(report.followUp)}</p><small>${escapeHtml(report.reviewedBy || '')}${report.updatedAt ? ` · ${new Date(report.updatedAt).toLocaleString()}` : ''}</small></div>` : ''}
+        ${canUpdate ? `<div class="management-review-controls">
+          <label>Status<select data-management-status="${escapeHtml(report.id)}"><option ${report.status === 'Open' ? 'selected' : ''}>Open</option><option ${report.status === 'Reviewing' ? 'selected' : ''}>Reviewing</option><option ${report.status === 'Resolved' ? 'selected' : ''}>Resolved</option></select></label>
+          <label>Management follow-up<textarea data-management-followup="${escapeHtml(report.id)}" rows="2" placeholder="Document review, action taken, or resolution">${escapeHtml(report.followUp || '')}</textarea></label>
+          <button data-management-update="${escapeHtml(report.id)}" type="button">Save follow-up</button>
+        </div>` : ''}
+      </article>`;
+  }).join('') : '<div class="empty">No management reports match this view.</div>';
 }
 
 function renderLocations() {
@@ -2348,7 +2418,8 @@ function roleUsesMultipleLocations(role) {
 function roleRank(role = 'Employee') {
   return {
     Employee: 0,
-    Manager: 1,
+    'Shift Manager': 1,
+    Manager: 2,
     [maintenanceRole]: 2,
     'Area Manager': 3,
     'Director of Operations': 4,
@@ -3120,6 +3191,14 @@ function switchView(viewId) {
 }
 
 document.addEventListener('click', async event => {
+  const managementUpdate = event.target.closest('[data-management-update]');
+  if (managementUpdate) return updateManagementReport(managementUpdate.dataset.managementUpdate);
+  const managementFilter = event.target.closest('[data-management-report-filter]');
+  if (managementFilter) {
+    managementReportStatusFilter = managementFilter.dataset.managementReportFilter;
+    renderManagementReports();
+    return;
+  }
   const revokeTablet = event.target.closest('[data-kiosk-revoke]');
   if (revokeTablet) {
     if (!confirm('Remove this tablet? Employees will no longer be able to sign in on it.')) return;
@@ -3918,6 +3997,8 @@ function normalizeRole(value = 'Employee') {
   const normalized = String(value || 'Employee').toLowerCase().replace(/[^a-z]/g, '');
   const roles = {
     employee: 'Employee',
+    shiftmanager: 'Shift Manager',
+    shiftlead: 'Shift Manager',
     manager: 'Manager',
     areamanager: 'Area Manager',
     maintenancetech: maintenanceRole,
@@ -4099,6 +4180,57 @@ function importedLocationFromRow(row) {
   if (!id && /^\d+$/.test(idValue)) id = `store-${String(Number(idValue)).padStart(2, '0')}`;
   const existing = locations.find(location => location.id === id) || {};
   return { id, name, address: address || existing.address || '', phone: phone || existing.phone || '' };
+}
+
+async function submitManagementReport() {
+  const title = $('#managementReportTitle').value.trim();
+  const details = $('#managementReportDetails').value.trim();
+  if (!title || !details) return toast('Enter a subject and describe what happened');
+  const locationId = $('#managementReportLocation').value;
+  try {
+    const result = await api('/api/management-reports/report', {
+      method: 'POST',
+      body: JSON.stringify({
+        locationId,
+        locationName: locationName(locationId),
+        type: $('#managementReportType').value,
+        severity: $('#managementReportSeverity').value,
+        title,
+        amount: $('#managementReportAmount').value,
+        occurredAt: $('#managementReportOccurredAt').value,
+        details,
+        immediateAction: $('#managementReportAction').value.trim()
+      })
+    });
+    managementReports = { reports: result.reports || [] };
+    $('#managementReportTitle').value = '';
+    $('#managementReportAmount').value = '';
+    $('#managementReportDetails').value = '';
+    $('#managementReportAction').value = '';
+    $('#managementReportSeverity').value = 'Medium';
+    $('#managementReportOccurredAt').value = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    renderManagementReports();
+    const delivered = (result.notifications || []).filter(item => item.delivered).length;
+    const attempted = (result.notifications || []).length;
+    toast(attempted ? `Report submitted · ${delivered} of ${attempted} email notification${attempted === 1 ? '' : 's'} queued` : 'Report submitted · no matching email recipient was found');
+  } catch (error) {
+    toast(`Report did not submit: ${error.message}`);
+  }
+}
+
+async function updateManagementReport(id) {
+  const status = document.querySelector(`[data-management-status="${CSS.escape(id)}"]`)?.value;
+  const followUp = document.querySelector(`[data-management-followup="${CSS.escape(id)}"]`)?.value.trim();
+  try {
+    managementReports = await api('/api/management-reports/update', {
+      method: 'POST',
+      body: JSON.stringify({ id, status, followUp })
+    });
+    renderManagementReports();
+    toast('Management follow-up saved');
+  } catch (error) {
+    toast(`Follow-up did not save: ${error.message}`);
+  }
 }
 
 async function receiptFileToDataUrl(file) {
@@ -4424,6 +4556,7 @@ document.querySelectorAll('[data-inspection-months]').forEach(button => {
 $('#saveResourceBtn').onclick = saveResource;
 $('#cancelResourceEditBtn').onclick = resetResourceForm;
 $('#submitSmallwaresBtn').onclick = submitSmallwaresRequest;
+$('#submitManagementReportBtn').onclick = submitManagementReport;
 $('#showApprovedSmallwaresBtn').onclick = () => {
   showApprovedSmallwares = !showApprovedSmallwares;
   renderSmallwares();

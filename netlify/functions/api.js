@@ -1000,11 +1000,12 @@ async function revokeKioskDevice(id, actor) {
 
 function bestProfile(rows) {
   const rank = {
-    Owner: 5,
-    'Director of Operations': 4,
-    'Area Manager': 3,
-    [MAINTENANCE_ROLE]: 2,
-    Manager: 2,
+    Owner: 6,
+    'Director of Operations': 5,
+    'Area Manager': 4,
+    [MAINTENANCE_ROLE]: 3,
+    Manager: 3,
+    'Shift Manager': 2,
     Employee: 1
   };
   return [...rows].sort((a, b) => (rank[b.role] || 0) - (rank[a.role] || 0))[0];
@@ -1015,7 +1016,11 @@ function isFullAccess(profile) {
 }
 
 function canManage(profile) {
-  return profile && profile.role !== 'Employee';
+  return roleRank(profile?.role) >= roleRank('Manager');
+}
+
+function canSubmitManagementReport(profile) {
+  return profile && profile.role !== 'Employee' && profile.role !== MAINTENANCE_ROLE;
 }
 
 function canAreaManage(profile) {
@@ -1025,7 +1030,8 @@ function canAreaManage(profile) {
 function roleRank(role = 'Employee') {
   return {
     Employee: 0,
-    Manager: 1,
+    'Shift Manager': 1,
+    Manager: 2,
     [MAINTENANCE_ROLE]: 2,
     'Area Manager': 3,
     'Director of Operations': 4,
@@ -1034,9 +1040,9 @@ function roleRank(role = 'Employee') {
 }
 
 function allowedRoles(profile) {
-  if (isFullAccess(profile)) return ['Employee', 'Manager', 'Area Manager', MAINTENANCE_ROLE, 'Director of Operations', 'Owner'];
-  if (profile?.role === 'Area Manager') return ['Employee', 'Manager', 'Area Manager', MAINTENANCE_ROLE];
-  if (profile?.role === 'Manager') return ['Employee', 'Manager'];
+  if (isFullAccess(profile)) return ['Employee', 'Shift Manager', 'Manager', 'Area Manager', MAINTENANCE_ROLE, 'Director of Operations', 'Owner'];
+  if (profile?.role === 'Area Manager') return ['Employee', 'Shift Manager', 'Manager', 'Area Manager', MAINTENANCE_ROLE];
+  if (profile?.role === 'Manager') return ['Employee', 'Shift Manager', 'Manager'];
   return [];
 }
 
@@ -2226,6 +2232,141 @@ async function updateSmallwaresRequest(payload, actor) {
   return smallwaresState();
 }
 
+async function readManagementReports() {
+  const reports = await readMaintenanceKey('managementReports', []);
+  return Array.isArray(reports) ? reports : [];
+}
+
+function reportLocationIds(user = {}) {
+  if (Array.isArray(user.locationIds) && user.locationIds.length) return user.locationIds;
+  if (Array.isArray(user.location_ids) && user.location_ids.length) return user.location_ids;
+  return [user.locationId || user.location_id || DEFAULT_LOCATION_ID].filter(Boolean);
+}
+
+function managementReportMinimumViewerRole(report = {}) {
+  if (report.reportedByRole === 'Shift Manager') return 'Manager';
+  if (report.reportedByRole === 'Manager') return 'Area Manager';
+  if (report.reportedByRole === 'Area Manager') return 'Director of Operations';
+  if (report.reportedByRole === 'Director of Operations') return 'Owner';
+  return 'Owner';
+}
+
+function canViewManagementReport(actor, report = {}) {
+  if (!AUTH_REQUIRED) return true;
+  if (!actor || !canSubmitManagementReport(actor)) return false;
+  if (report.reportedById && report.reportedById === actor.id) return true;
+  if (roleRank(actor.role) < roleRank(managementReportMinimumViewerRole(report))) return false;
+  if (isFullAccess(actor)) return true;
+  return reportLocationIds(actor).includes(report.locationId);
+}
+
+async function managementReportsState(actor) {
+  const reports = await readManagementReports();
+  return { reports: reports.filter(report => report.active !== false && canViewManagementReport(actor, report)) };
+}
+
+function managementReportNotificationRecipients(reporter, users, locationId) {
+  const reporterRole = reporter?.role || '';
+  return users.filter(user => {
+    if (!user.email || user.id === reporter?.id) return false;
+    if (reporterRole === 'Shift Manager') return user.role === 'Manager' && reportLocationIds(user).includes(locationId);
+    if (reporterRole === 'Manager') return ['Area Manager', 'Director of Operations', 'Owner'].includes(user.role) && (isFullAccess(user) || reportLocationIds(user).includes(locationId));
+    if (reporterRole === 'Area Manager') return ['Director of Operations', 'Owner'].includes(user.role);
+    if (reporterRole === 'Director of Operations') return user.role === 'Owner';
+    return false;
+  });
+}
+
+async function notifyManagementReport(report, actor) {
+  const recipients = managementReportNotificationRecipients(actor, await readUsers(), report.locationId);
+  const amountLine = report.amount !== null ? `Amount: $${Number(report.amount).toFixed(2)}` : '';
+  const text = [
+    `A ${report.severity.toLowerCase()}-severity management report was submitted in HIS OPS.`,
+    `Location: ${report.locationName}`,
+    `Type: ${report.type}`,
+    `Subject: ${report.title}`,
+    amountLine,
+    `Reported by: ${report.reportedBy} (${report.reportedByRole})`,
+    `Occurred: ${report.occurredAt}`,
+    '',
+    report.details,
+    report.immediateAction ? `Immediate action: ${report.immediateAction}` : '',
+    '',
+    'Sign in to HIS OPS to review and follow up.'
+  ].filter(Boolean).join('\n');
+  const attempts = [];
+  for (const recipient of recipients) {
+    let result;
+    try {
+      result = await sendEmailMessage({ to: recipient.email, subject: `HIS OPS management report: ${report.title}`, text });
+    } catch (error) {
+      result = { delivered: false, reason: error.message || 'Email request failed' };
+    }
+    attempts.push({
+      type: 'Management report', channel: 'email', title: report.title,
+      detail: `${report.type} · ${report.severity}`, locationId: report.locationId,
+      locationName: report.locationName, recipientId: recipient.id,
+      recipientName: recipient.name, to: recipient.email,
+      delivered: Boolean(result.delivered), skipped: Boolean(result.skipped),
+      status: result.status ? String(result.status) : '', reason: result.reason || ''
+    });
+  }
+  await appendNotificationLogs(attempts);
+  return attempts;
+}
+
+async function saveManagementReport(payload, actor) {
+  if (AUTH_REQUIRED && !canSubmitManagementReport(actor)) throw Object.assign(new Error('Only Shift Managers and above can submit management reports'), { statusCode: 403 });
+  const locationId = payload.locationId || reportLocationIds(actor)[0];
+  if (AUTH_REQUIRED && !canAccessLocation(actor, locationId)) throw Object.assign(new Error('You can only report an issue for your assigned location'), { statusCode: 403 });
+  const title = String(payload.title || '').trim();
+  const details = String(payload.details || '').trim();
+  if (!title || !details) throw Object.assign(new Error('Subject and details are required'), { statusCode: 400 });
+  const reports = await readManagementReports();
+  const amount = payload.amount === '' || payload.amount === null || payload.amount === undefined ? null : Number(payload.amount);
+  if (amount !== null && (!Number.isFinite(amount) || amount < 0)) throw Object.assign(new Error('Enter a valid shortage or variance amount'), { statusCode: 400 });
+  const report = {
+    id: `REPORT-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    locationId,
+    locationName: String(payload.locationName || '').trim(),
+    type: String(payload.type || 'Other').trim(),
+    severity: ['Low', 'Medium', 'High', 'Critical'].includes(payload.severity) ? payload.severity : 'Medium',
+    title,
+    amount,
+    occurredAt: String(payload.occurredAt || new Date().toISOString()),
+    details,
+    immediateAction: String(payload.immediateAction || '').trim(),
+    status: 'Open',
+    followUp: '',
+    reportedBy: actor?.name || payload.reportedBy || 'Manager',
+    reportedById: actor?.id || payload.reportedById || '',
+    reportedByRole: actor?.role || payload.reportedByRole || 'Manager',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    active: true
+  };
+  reports.unshift(report);
+  await writeMaintenanceKey('managementReports', reports.slice(0, 2000));
+  const notifications = await notifyManagementReport(report, actor);
+  return { ...(await managementReportsState(actor)), report, notifications };
+}
+
+async function updateManagementReport(payload, actor) {
+  const reports = await readManagementReports();
+  const report = reports.find(entry => entry.id === payload.id && entry.active !== false);
+  if (!report || !canViewManagementReport(actor, report)) throw Object.assign(new Error('Management report not found'), { statusCode: 404 });
+  const minimumRole = managementReportMinimumViewerRole(report);
+  if (AUTH_REQUIRED && roleRank(actor?.role) < roleRank(minimumRole)) throw Object.assign(new Error(`Only ${minimumRole}s and above can update this report`), { statusCode: 403 });
+  report.status = ['Open', 'Reviewing', 'Resolved'].includes(payload.status) ? payload.status : report.status;
+  report.followUp = String(payload.followUp || '').trim();
+  report.reviewedBy = actor?.name || '';
+  report.reviewedById = actor?.id || '';
+  report.updatedAt = new Date().toISOString();
+  if (report.status === 'Resolved') report.resolvedAt = new Date().toISOString();
+  await writeMaintenanceKey('managementReports', reports);
+  return managementReportsState(actor);
+}
+
 async function maintenanceLists() {
   const rows = await readMaintenanceKey('lists', []);
   const keys = {
@@ -2579,7 +2720,7 @@ exports.handler = async event => {
         throw Object.assign(new Error('No accessible location is assigned to this account'), { statusCode: 403 });
       }
       const historyScope = actor?.authMode === 'kiosk' ? 'location' : (query.historyScope || 'location');
-      const [day, history, overdue, taskTemplates, notices, alertSettings, notificationLogs, calendarEvents, users, locations] = await Promise.all([
+      const [day, history, overdue, taskTemplates, notices, alertSettings, notificationLogs, calendarEvents, managementReports, users, locations] = await Promise.all([
         readDay(locationId, date),
         readHistory(historyScope === 'all' ? null : locationId),
         readOverdue(date),
@@ -2588,6 +2729,7 @@ exports.handler = async event => {
         readAlertSettings().catch(() => ({ rules: [], logs: [] })),
         readNotificationLogs(actor).catch(() => []),
         calendarState(actor).catch(() => ({ events: [] })),
+        managementReportsState(actor).catch(() => ({ reports: [] })),
         readUsers(),
         readLocations()
       ]);
@@ -2602,6 +2744,7 @@ exports.handler = async event => {
         alertSettings,
         notificationLogs,
         calendarEvents,
+        managementReports,
         users: actor?.authMode === 'kiosk' ? users.filter(user => user.id === actor.id) : users,
         locations
       });
@@ -2624,6 +2767,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/receipts/state') return json(200, await receiptState(actor));
     if (method === 'GET' && apiPath === '/inspections/state') return json(200, await inspectionState(actor));
     if (method === 'GET' && apiPath === '/smallwares/state') return json(200, await smallwaresState());
+    if (method === 'GET' && apiPath === '/management-reports/state') return json(200, await managementReportsState(actor));
 
     if (method === 'POST' && apiPath === '/day') {
       const locationId = body.locationId || DEFAULT_LOCATION_ID;
@@ -2727,6 +2871,8 @@ exports.handler = async event => {
     if (method === 'POST' && apiPath === '/smallwares/request/update') {
       return json(200, await updateSmallwaresRequest(body, actor));
     }
+    if (method === 'POST' && apiPath === '/management-reports/report') return json(200, await saveManagementReport(body, actor));
+    if (method === 'POST' && apiPath === '/management-reports/update') return json(200, await updateManagementReport(body, actor));
 
     if (method === 'POST' && apiPath === '/maintenance/work-order') {
       const workOrder = await writeWorkOrder(body);

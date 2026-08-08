@@ -480,10 +480,32 @@ nav button[data-view="manageView"]{order:12}
   font-size:13px;
 }
 
+.management-report-form textarea{resize:vertical}
+.management-report-form .form-grid.three-col{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.management-report-toolbar{display:flex;align-items:center;justify-content:space-between;gap:1rem}
+.management-report-toolbar p{margin:.25rem 0 0}
+.management-report-card{border-left:5px solid #94a3b8;margin-bottom:1rem}
+.management-report-card.severity-high{border-left-color:#f59e0b}
+.management-report-card.severity-critical{border-left-color:#dc2626}
+.management-report-card.severity-low{border-left-color:#16a34a}
+.management-report-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}
+.management-report-heading h3{margin:.2rem 0}
+.management-report-badges{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:.45rem}
+.management-report-amount{font-size:1.1rem;font-weight:800;color:#9f1239}
+.management-follow-up{margin-top:1rem;padding:.85rem 1rem;border-radius:12px;background:#f1f5f9}
+.management-follow-up p{margin:.35rem 0;white-space:pre-wrap}
+.management-review-controls{display:grid;grid-template-columns:minmax(140px,.35fr) minmax(260px,1fr) auto;align-items:end;gap:.75rem;margin-top:1rem;padding-top:1rem;border-top:1px solid #dbe3ee}
+.management-review-controls label{margin:0}
+.management-review-controls textarea{min-height:72px;resize:vertical}
+
 @media(max-width:760px){
   .help-contents-grid{
     grid-template-columns:repeat(2,minmax(0,1fr));
   }
+  .management-report-toolbar,.management-report-heading{align-items:stretch;flex-direction:column}
+  .management-report-form .form-grid.three-col{grid-template-columns:1fr}
+  .management-report-badges{justify-content:flex-start}
+  .management-review-controls{grid-template-columns:1fr}
 }
 
 @media(max-width:480px){

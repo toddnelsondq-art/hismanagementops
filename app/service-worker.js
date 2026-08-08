@@ -1,4 +1,4 @@
-const CACHE_NAME = 'his-ops-v12-help';
+const CACHE_NAME = 'his-ops-v13-management-reports';
 const APP_SHELL = [
   '/',
   '/index.html',
