@@ -2044,6 +2044,7 @@ function applyRoleAccess(user) {
   document.querySelectorAll('[data-view="taskListsView"], [data-view="tempLogsView"], [data-view="todayView"]').forEach(button => button.style.display = canUseDailyOps(user) ? '' : 'none');
   document.querySelectorAll('[data-view="historyView"]').forEach(button => button.style.display = showHistory && !tech ? '' : 'none');
   document.querySelectorAll('[data-view="manageView"]').forEach(button => button.style.display = showManage && !tech ? '' : 'none');
+  document.querySelectorAll('[data-view="helpView"]').forEach(button => button.style.display = showManage && !tech ? '' : 'none');
   document.querySelectorAll('[data-view="locationsView"]').forEach(button => button.style.display = showLocations ? '' : 'none');
   document.querySelectorAll('[data-view="receiptsView"], [data-view="inspectionsView"]').forEach(button => button.style.display = canAddStoreDocuments(user) ? '' : 'none');
   document.querySelectorAll('#manageSectionHub [data-section-view="locationsView"]').forEach(button => button.style.display = showLocations ? '' : 'none');
@@ -2056,6 +2057,7 @@ function applyRoleAccess(user) {
   if (!showHub && ($('#homeView').classList.contains('active') || $('#maintenanceView').classList.contains('active') || $('#fpcView').classList.contains('active') || $('#calendarView').classList.contains('active') || $('#storeDocsView').classList.contains('active') || $('#smallwaresView').classList.contains('active'))) switchView('todayView');
   if (!showHistory && $('#historyView').classList.contains('active')) switchView('todayView');
   if (!showManage && $('#manageView').classList.contains('active')) switchView('todayView');
+  if (!showManage && $('#helpView').classList.contains('active')) switchView('todayView');
   if (!showLocations && $('#locationsView').classList.contains('active')) switchView('todayView');
   if (!canAddStoreDocuments(user) && ($('#receiptsView').classList.contains('active') || $('#inspectionsView').classList.contains('active'))) switchView('todayView');
 }
@@ -3144,6 +3146,7 @@ document.addEventListener('click', async event => {
     if ((targetView === 'homeView' || targetView === 'maintenanceView' || targetView === 'fpcView' || targetView === 'calendarView' || targetView === 'storeDocsView' || targetView === 'smallwaresView') && !canUseHub()) return toast('Only managers and above can access this section');
     if ((targetView === 'receiptsView' || targetView === 'inspectionsView') && !canAddStoreDocuments()) return toast('Only Area Managers and above can access this section');
     if (targetView === 'locationsView' && !canViewLocations()) return toast('Only managers and above can access locations');
+    if (targetView === 'helpView' && !canUseManage()) return toast('Only managers and above can access Help');
     if (isMaintenanceTech() && !['homeView', 'maintenanceView', 'fpcView'].includes(targetView)) return toast('This role can only access Dashboard, Maintenance, and FPC');
     switchView(targetView);
     return;
