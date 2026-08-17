@@ -1343,6 +1343,23 @@ button.danger{
   }
 }
 
+#maintenanceLogView .form-grid.three-col{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.maintenance-log-entry{margin-top:14px}
+.maintenance-log-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:18px}
+.maintenance-log-heading h3,.maintenance-log-heading p{margin:0}
+.maintenance-time-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:16px 0}
+.maintenance-time-grid p{display:flex;flex-direction:column;gap:4px;margin:0;padding:12px;border-radius:12px;background:#f3f6fa}
+.maintenance-log-copy{margin-top:12px;padding-top:12px;border-top:1px solid #dbe3ee}
+.maintenance-log-copy p{margin:5px 0 0;white-space:pre-wrap}
+.maintenance-log-copy.accomplishments{border-left:4px solid #18845b;padding-left:12px}
+.maintenance-hours-row{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:12px}
+.maintenance-hours-row p{margin:4px 0 0;color:#607089}
+
+@media(max-width:700px){
+  #maintenanceLogView .form-grid.three-col,.maintenance-time-grid{grid-template-columns:1fr}
+  .maintenance-log-heading,.maintenance-hours-row{align-items:flex-start;flex-direction:column}
+}
+
 /* Section hubs, private receipts, and Area Manager store visits */
 .section-hub-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-bottom:20px}
 .section-hub-card{display:grid;grid-template-columns:48px 1fr;grid-template-rows:auto auto;gap:2px 12px;align-items:center;min-height:104px;padding:18px;text-align:left;background:linear-gradient(135deg,#fff,#eef4fb);color:var(--ink);border:1px solid var(--line);box-shadow:0 2px 8px #102b5110}

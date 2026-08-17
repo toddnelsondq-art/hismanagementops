@@ -9,7 +9,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const DEFAULT_TENANT_ID = safeName(process.env.APP_TENANT_ID || 'his-management');
 const DEFAULT_TENANT_NAME = process.env.APP_TENANT_NAME || 'HIS Management Group Inc';
@@ -2417,6 +2417,122 @@ async function resetDashboardPreferences(actor) {
   return { preferences: defaultDashboardPreferences(), customizable: true };
 }
 
+async function readMaintenanceWorkLogs() {
+  const entries = await readMaintenanceKey('maintenanceWorkLogs', []);
+  return Array.isArray(entries) ? entries : [];
+}
+
+async function readMaintenanceHoursPermissions() {
+  const stored = await readMaintenanceKey('maintenanceHoursPermissions', { areaManagerIds: [] });
+  return { areaManagerIds: Array.isArray(stored?.areaManagerIds) ? [...new Set(stored.areaManagerIds.map(String))] : [] };
+}
+
+function canViewMaintenanceHours(actor, permissions) {
+  if (!AUTH_REQUIRED) return true;
+  if (isFullAccess(actor) || actor?.role === MAINTENANCE_ROLE) return true;
+  return actor?.role === 'Area Manager' && permissions.areaManagerIds.includes(String(actor.id));
+}
+
+function calculateWorkHours(date, start, end, breakMinutes = 0) {
+  if (!date || !start || !end) return null;
+  const startAt = new Date(`${date}T${start}:00`);
+  let endAt = new Date(`${date}T${end}:00`);
+  if (!Number.isFinite(startAt.getTime()) || !Number.isFinite(endAt.getTime())) return null;
+  if (endAt <= startAt) endAt = new Date(endAt.getTime() + 24 * 60 * 60 * 1000);
+  const hours = (endAt - startAt) / 3600000 - Math.max(0, Number(breakMinutes) || 0) / 60;
+  return Math.max(0, Math.round(hours * 100) / 100);
+}
+
+function maintenanceHoursOnlyEntry(entry = {}) {
+  return {
+    id: entry.id,
+    date: entry.date,
+    technicianId: entry.technicianId,
+    technicianName: entry.technicianName,
+    actualHours: entry.actualHours,
+    status: entry.status
+  };
+}
+
+async function maintenanceWorkLogState(actor) {
+  const permissions = await readMaintenanceHoursPermissions();
+  if (AUTH_REQUIRED && !canViewMaintenanceHours(actor, permissions)) throw Object.assign(new Error('Maintenance hours access has not been granted'), { statusCode: 403 });
+  const allEntries = (await readMaintenanceWorkLogs()).filter(entry => entry.active !== false);
+  const users = await readUsers();
+  const technicians = users.filter(user => user.role === MAINTENANCE_ROLE).map(user => ({ id: user.id, name: user.name }));
+  const areaManagers = isFullAccess(actor) ? users.filter(user => user.role === 'Area Manager').map(user => ({ id: user.id, name: user.name, locationIds: user.locationIds || [] })) : [];
+  const mode = actor?.role === 'Area Manager' ? 'hours-only' : 'full';
+  const scoped = actor?.role === MAINTENANCE_ROLE ? allEntries.filter(entry => entry.technicianId === actor.id) : allEntries;
+  const entries = (mode === 'hours-only' ? scoped.map(maintenanceHoursOnlyEntry) : scoped).sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+  return {
+    mode,
+    canEdit: actor?.role === MAINTENANCE_ROLE || !AUTH_REQUIRED,
+    canManagePermissions: isFullAccess(actor) || !AUTH_REQUIRED,
+    entries,
+    technicians,
+    areaManagers,
+    permissions: isFullAccess(actor) || !AUTH_REQUIRED ? permissions : { areaManagerIds: [] }
+  };
+}
+
+async function saveMaintenanceWorkLog(payload, actor) {
+  if (AUTH_REQUIRED && actor?.role !== MAINTENANCE_ROLE) throw Object.assign(new Error('Only Maintenance Techs can save their schedule and daily work log'), { statusCode: 403 });
+  const date = String(payload.date || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw Object.assign(new Error('A valid work date is required'), { statusCode: 400 });
+  const scheduledStart = String(payload.scheduledStart || '').trim();
+  const scheduledEnd = String(payload.scheduledEnd || '').trim();
+  const actualStart = String(payload.actualStart || '').trim();
+  const actualEnd = String(payload.actualEnd || '').trim();
+  if ((scheduledStart && !scheduledEnd) || (!scheduledStart && scheduledEnd)) throw Object.assign(new Error('Enter both scheduled start and end times'), { statusCode: 400 });
+  if ((actualStart && !actualEnd) || (!actualStart && actualEnd)) throw Object.assign(new Error('Enter both actual start and end times'), { statusCode: 400 });
+  const breakMinutes = Math.max(0, Math.min(1440, Number(payload.breakMinutes) || 0));
+  const locationIds = Array.isArray(payload.locationIds) ? [...new Set(payload.locationIds.map(String).filter(Boolean))] : [];
+  if (AUTH_REQUIRED && locationIds.some(locationId => !canAccessLocation(actor, locationId))) throw Object.assign(new Error('You can only log assigned locations'), { statusCode: 403 });
+  const entries = await readMaintenanceWorkLogs();
+  let entry = payload.id ? entries.find(item => item.id === payload.id && item.active !== false) : null;
+  if (payload.id && (!entry || (AUTH_REQUIRED && entry.technicianId !== actor.id))) throw Object.assign(new Error('Work-log entry not found'), { statusCode: 404 });
+  const now = new Date().toISOString();
+  const values = {
+    date,
+    scheduledStart,
+    scheduledEnd,
+    scheduledHours: calculateWorkHours(date, scheduledStart, scheduledEnd, 0),
+    actualStart,
+    actualEnd,
+    breakMinutes,
+    actualHours: calculateWorkHours(date, actualStart, actualEnd, breakMinutes),
+    locationIds,
+    plannedWork: String(payload.plannedWork || '').trim(),
+    accomplishments: String(payload.accomplishments || '').trim(),
+    notes: String(payload.notes || '').trim(),
+    status: actualStart && actualEnd ? 'Completed' : 'Scheduled',
+    updatedAt: now
+  };
+  if (entry) Object.assign(entry, values);
+  else {
+    entry = {
+      id: `MWL-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      technicianId: actor?.id || payload.technicianId || '',
+      technicianName: actor?.name || payload.technicianName || 'Maintenance Tech',
+      createdAt: now,
+      active: true,
+      ...values
+    };
+    entries.unshift(entry);
+  }
+  await writeMaintenanceKey('maintenanceWorkLogs', entries.slice(0, 5000));
+  return maintenanceWorkLogState(actor);
+}
+
+async function saveMaintenanceHoursPermissions(payload, actor) {
+  if (AUTH_REQUIRED && !isFullAccess(actor)) throw Object.assign(new Error('Only the Director of Operations or Owner can grant maintenance-hours access'), { statusCode: 403 });
+  const users = await readUsers();
+  const validAreaManagerIds = new Set(users.filter(user => user.role === 'Area Manager').map(user => String(user.id)));
+  const areaManagerIds = Array.isArray(payload.areaManagerIds) ? [...new Set(payload.areaManagerIds.map(String).filter(id => validAreaManagerIds.has(id)))] : [];
+  await writeMaintenanceKey('maintenanceHoursPermissions', { areaManagerIds, updatedBy: actor?.name || '', updatedAt: new Date().toISOString() });
+  return maintenanceWorkLogState(actor);
+}
+
 async function maintenanceLists() {
   const rows = await readMaintenanceKey('lists', []);
   const keys = {
@@ -2815,6 +2931,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/overdue') return json(200, { overdue: await readOverdue(query.date) });
     if (method === 'GET' && apiPath === '/dashboard') return json(200, await dashboardSummary(actor, query.range || 'day', query.locationId || 'all'));
     if (method === 'GET' && apiPath === '/maintenance/state') return json(200, await maintenanceState(query.locationId || 'all'));
+    if (method === 'GET' && apiPath === '/maintenance-log/state') return json(200, await maintenanceWorkLogState(actor));
     if (method === 'GET' && apiPath === '/notices') return json(200, { notices: await readNotices(actor) });
     if (method === 'GET' && apiPath === '/notification-logs') return json(200, { logs: await readNotificationLogs(actor) });
     if (method === 'GET' && apiPath === '/calendar/state') return json(200, await calendarState(actor));
@@ -2971,6 +3088,8 @@ exports.handler = async event => {
       return json(200, await importMaintenanceWorkbook(body));
     }
     if (method === 'POST' && apiPath === '/maintenance/attachment') return json(200, { url: await saveAttachment(body) });
+    if (method === 'POST' && apiPath === '/maintenance-log/entry') return json(200, await saveMaintenanceWorkLog(body, actor));
+    if (method === 'POST' && apiPath === '/maintenance-log/permissions') return json(200, await saveMaintenanceHoursPermissions(body, actor));
 
     return json(404, { error: `Unknown route: ${method} ${apiPath}` });
   } catch (error) {

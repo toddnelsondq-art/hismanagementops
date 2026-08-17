@@ -203,6 +203,9 @@ let apiOnline = false;
 let selectedReportDate = null;
 let selectedReportLocationId = null;
 let maintenance = { locations: [], equipment: [], workOrders: [], pmSchedule: [], vendors: [], lists: {} };
+let maintenanceWorkLog = { mode: 'none', canEdit: false, canManagePermissions: false, entries: [], technicians: [], areaManagers: [], permissions: { areaManagerIds: [] } };
+let maintenanceLogPeriod = 'month';
+let maintenanceTechnicianFilter = 'all';
 let maintenanceLocationId = localStorage.getItem('maintenance-location') || 'all';
 let maintenanceFilter = 'open';
 let selectedTaskSection = localStorage.getItem('dailyops-task-section') || 'Opening';
@@ -508,6 +511,10 @@ function isMaintenanceTech(user = currentUser()) {
   return user.role === maintenanceRole;
 }
 
+function canUseMaintenanceWorkLog(user = currentUser()) {
+  return isMaintenanceTech(user) || isFullAccess(user) || (user.role === 'Area Manager' && maintenanceWorkLog.mode === 'hours-only');
+}
+
 function usesAssignedLocations(user = currentUser()) {
   return isAboveStore(user) || isMaintenanceTech(user);
 }
@@ -693,6 +700,7 @@ async function loadState() {
 
   filterScopedRecords();
   await loadMaintenanceState();
+  await loadMaintenanceWorkLogState();
   await loadFpcState();
   await loadCalendarState();
   await loadStoreDocumentsState();
@@ -1331,6 +1339,7 @@ function render() {
   renderNotices();
   renderDashboardAlerts(visibleLocations);
   renderMaintenance();
+  renderMaintenanceWorkLog();
   renderFpc();
   renderStoreDocuments();
   renderResources();
@@ -1338,6 +1347,16 @@ function render() {
   renderInspections();
   renderSmallwares();
   renderManagementReports();
+}
+
+async function loadMaintenanceWorkLogState() {
+  const user = currentUser();
+  if (!apiOnline || ![maintenanceRole, 'Area Manager', 'Director of Operations', 'Owner'].includes(user.role)) return;
+  try {
+    maintenanceWorkLog = await api('/api/maintenance-log/state');
+  } catch {
+    maintenanceWorkLog = { mode: 'none', canEdit: false, canManagePermissions: false, entries: [], technicians: [], areaManagers: [], permissions: { areaManagerIds: [] } };
+  }
 }
 
 function setPie(selector, percent) {
@@ -1813,6 +1832,129 @@ function scopedSmallwaresRequests() {
   const requests = (smallwares.requests || []).filter(request => request.active !== false && allowed.includes(request.locationId));
   const scoped = smallwaresLocationId === 'all' ? requests : requests.filter(request => request.locationId === smallwaresLocationId);
   return scoped.filter(request => showApprovedSmallwares ? request.status === 'Approved' : request.status !== 'Approved');
+}
+
+function maintenanceLogRangeStart() {
+  if (maintenanceLogPeriod === 'all') return null;
+  const date = new Date();
+  date.setDate(date.getDate() - (maintenanceLogPeriod === 'week' ? 6 : 29));
+  return date.toISOString().slice(0, 10);
+}
+
+function filteredMaintenanceLogEntries() {
+  const start = maintenanceLogRangeStart();
+  return (maintenanceWorkLog.entries || []).filter(entry => (!start || entry.date >= start) && (maintenanceTechnicianFilter === 'all' || entry.technicianId === maintenanceTechnicianFilter));
+}
+
+function maintenanceTimeLabel(start, end) {
+  if (!start || !end) return 'Not recorded';
+  const format = value => new Date(`2000-01-01T${value}:00`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return `${format(start)}–${format(end)}`;
+}
+
+function resetMaintenanceLogForm() {
+  if (!$('#maintenanceLogId')) return;
+  $('#maintenanceLogId').value = '';
+  $('#maintenanceLogDate').value = dateKey;
+  $('#maintenanceScheduledStart').value = '';
+  $('#maintenanceScheduledEnd').value = '';
+  $('#maintenanceActualStart').value = '';
+  $('#maintenanceActualEnd').value = '';
+  $('#maintenanceBreakMinutes').value = '0';
+  $('#maintenancePlannedWork').value = '';
+  $('#maintenanceAccomplishments').value = '';
+  $('#maintenanceLogNotes').value = '';
+  document.querySelectorAll('#maintenanceLogLocations input').forEach(input => { input.checked = false; });
+  $('#maintenanceLogFormTitle').textContent = 'Plan or record a workday';
+  $('#cancelMaintenanceLogBtn').hidden = true;
+}
+
+function editMaintenanceLogEntry(id) {
+  const entry = (maintenanceWorkLog.entries || []).find(item => item.id === id);
+  if (!entry || !maintenanceWorkLog.canEdit) return;
+  $('#maintenanceLogId').value = entry.id;
+  $('#maintenanceLogDate').value = entry.date || dateKey;
+  $('#maintenanceScheduledStart').value = entry.scheduledStart || '';
+  $('#maintenanceScheduledEnd').value = entry.scheduledEnd || '';
+  $('#maintenanceActualStart').value = entry.actualStart || '';
+  $('#maintenanceActualEnd').value = entry.actualEnd || '';
+  $('#maintenanceBreakMinutes').value = entry.breakMinutes || 0;
+  $('#maintenancePlannedWork').value = entry.plannedWork || '';
+  $('#maintenanceAccomplishments').value = entry.accomplishments || '';
+  $('#maintenanceLogNotes').value = entry.notes || '';
+  document.querySelectorAll('#maintenanceLogLocations input').forEach(input => { input.checked = (entry.locationIds || []).includes(input.value); });
+  $('#maintenanceLogFormTitle').textContent = `Edit ${prettyDate(entry.date)}`;
+  $('#cancelMaintenanceLogBtn').hidden = false;
+  $('#maintenanceLogFormCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderMaintenanceWorkLog() {
+  if (!$('#maintenanceLogView')) return;
+  const allowed = canUseMaintenanceWorkLog();
+  document.querySelectorAll('[data-view="maintenanceLogView"]').forEach(button => { button.style.display = allowed ? '' : 'none'; });
+  if (!allowed) return;
+  const fullView = maintenanceWorkLog.mode === 'full';
+  $('#maintenanceLogFormCard').style.display = maintenanceWorkLog.canEdit ? '' : 'none';
+  $('#maintenanceHoursPermissionCard').style.display = maintenanceWorkLog.canManagePermissions ? '' : 'none';
+  $('#maintenanceTechnicianFilterWrap').style.display = fullView && (maintenanceWorkLog.technicians || []).length > 1 ? '' : 'none';
+  if (maintenanceWorkLog.canEdit) {
+    const allowedLocations = locations.filter(location => isFullAccess() || userLocationIds().includes(location.id));
+    const selected = [...document.querySelectorAll('#maintenanceLogLocations input:checked')].map(input => input.value);
+    $('#maintenanceLogLocations').innerHTML = allowedLocations.map(location => `<label class="location-check"><input type="checkbox" value="${escapeHtml(location.id)}" ${selected.includes(location.id) ? 'checked' : ''}> ${escapeHtml(location.name)}</label>`).join('');
+    if (!$('#maintenanceLogDate').value) $('#maintenanceLogDate').value = dateKey;
+  }
+  $('#maintenanceTechnicianFilter').innerHTML = ['<option value="all">All maintenance team members</option>', ...(maintenanceWorkLog.technicians || []).map(user => `<option value="${escapeHtml(user.id)}">${escapeHtml(user.name)}</option>`)].join('');
+  if (![...$('#maintenanceTechnicianFilter').options].some(option => option.value === maintenanceTechnicianFilter)) maintenanceTechnicianFilter = 'all';
+  $('#maintenanceTechnicianFilter').value = maintenanceTechnicianFilter;
+  $('#maintenanceLogPeriod').value = maintenanceLogPeriod;
+  if (maintenanceWorkLog.canManagePermissions) {
+    const granted = maintenanceWorkLog.permissions?.areaManagerIds || [];
+    $('#maintenanceHoursPermissionList').innerHTML = (maintenanceWorkLog.areaManagers || []).length ? maintenanceWorkLog.areaManagers.map(user => `<label class="location-check"><input type="checkbox" value="${escapeHtml(user.id)}" ${granted.includes(user.id) ? 'checked' : ''}> ${escapeHtml(user.name)}</label>`).join('') : '<p class="hint">No Area Manager accounts are available.</p>';
+  }
+  const entries = filteredMaintenanceLogEntries();
+  const hours = entries.reduce((sum, entry) => sum + (Number(entry.actualHours) || 0), 0);
+  $('#maintenanceLogTotal').textContent = `${hours.toFixed(2).replace(/\.00$/, '')} hours`;
+  $('#maintenanceLogList').innerHTML = entries.length ? entries.map(entry => fullView ? `
+    <article class="card maintenance-log-entry">
+      <div class="maintenance-log-heading"><div><p class="eyebrow">${escapeHtml(entry.technicianName || 'Maintenance Tech')}</p><h3>${escapeHtml(prettyDate(entry.date))}</h3></div><div class="maintenance-report-badges"><span class="status">${escapeHtml(entry.status || 'Scheduled')}</span><strong>${entry.actualHours === null || entry.actualHours === undefined ? '—' : `${Number(entry.actualHours).toFixed(2).replace(/\.00$/, '')} hrs`}</strong></div></div>
+      <div class="maintenance-time-grid"><p><b>Scheduled</b><span>${escapeHtml(maintenanceTimeLabel(entry.scheduledStart, entry.scheduledEnd))}${entry.scheduledHours !== null && entry.scheduledHours !== undefined ? ` · ${escapeHtml(entry.scheduledHours)} hrs` : ''}</span></p><p><b>Actual</b><span>${escapeHtml(maintenanceTimeLabel(entry.actualStart, entry.actualEnd))}${entry.breakMinutes ? ` · ${escapeHtml(entry.breakMinutes)} min break` : ''}</span></p><p><b>Locations</b><span>${(entry.locationIds || []).map(locationName).map(escapeHtml).join(', ') || 'Not specified'}</span></p></div>
+      ${entry.plannedWork ? `<div class="maintenance-log-copy"><b>Planned work</b><p>${escapeHtml(entry.plannedWork)}</p></div>` : ''}
+      ${entry.accomplishments ? `<div class="maintenance-log-copy accomplishments"><b>Accomplishments</b><p>${escapeHtml(entry.accomplishments)}</p></div>` : ''}
+      ${entry.notes ? `<div class="maintenance-log-copy"><b>Additional notes</b><p>${escapeHtml(entry.notes)}</p></div>` : ''}
+      ${maintenanceWorkLog.canEdit ? `<button class="ghost" data-maintenance-log-edit="${escapeHtml(entry.id)}" type="button">Edit workday</button>` : ''}
+    </article>` : `
+    <article class="card maintenance-hours-row"><div><b>${escapeHtml(entry.technicianName || 'Maintenance Tech')}</b><p>${escapeHtml(prettyDate(entry.date))}</p></div><strong>${entry.actualHours === null || entry.actualHours === undefined ? 'Not submitted' : `${Number(entry.actualHours).toFixed(2).replace(/\.00$/, '')} hours`}</strong></article>`).join('') : '<div class="empty">No maintenance schedule or work-log entries match this period.</div>';
+}
+
+async function saveMaintenanceLogEntry() {
+  const date = $('#maintenanceLogDate').value;
+  if (!date) return toast('Choose a work date');
+  try {
+    maintenanceWorkLog = await api('/api/maintenance-log/entry', { method: 'POST', body: JSON.stringify({
+      id: $('#maintenanceLogId').value || undefined,
+      date,
+      scheduledStart: $('#maintenanceScheduledStart').value,
+      scheduledEnd: $('#maintenanceScheduledEnd').value,
+      actualStart: $('#maintenanceActualStart').value,
+      actualEnd: $('#maintenanceActualEnd').value,
+      breakMinutes: $('#maintenanceBreakMinutes').value,
+      locationIds: [...document.querySelectorAll('#maintenanceLogLocations input:checked')].map(input => input.value),
+      plannedWork: $('#maintenancePlannedWork').value.trim(),
+      accomplishments: $('#maintenanceAccomplishments').value.trim(),
+      notes: $('#maintenanceLogNotes').value.trim()
+    }) });
+    resetMaintenanceLogForm();
+    renderMaintenanceWorkLog();
+    toast('Maintenance workday saved');
+  } catch (error) { toast(`Workday did not save: ${error.message}`); }
+}
+
+async function saveMaintenanceHoursPermissions() {
+  try {
+    maintenanceWorkLog = await api('/api/maintenance-log/permissions', { method: 'POST', body: JSON.stringify({ areaManagerIds: [...document.querySelectorAll('#maintenanceHoursPermissionList input:checked')].map(input => input.value) }) });
+    renderMaintenanceWorkLog();
+    toast('Maintenance hours access updated');
+  } catch (error) { toast(`Access permissions did not save: ${error.message}`); }
 }
 
 function renderMaintenance() {
@@ -2298,9 +2440,11 @@ function applyRoleAccess(user) {
   const showManage = canUseManage(user);
   const showLocations = canViewLocations(user);
   const tech = isMaintenanceTech(user);
+  const showMaintenanceLog = canUseMaintenanceWorkLog(user);
   document.querySelectorAll('[data-view="homeView"]').forEach(button => button.style.display = showHub ? '' : 'none');
   document.querySelectorAll('[data-view="maintenanceView"]').forEach(button => button.style.display = showHub ? '' : 'none');
   document.querySelectorAll('[data-view="fpcView"]').forEach(button => button.style.display = showHub ? '' : 'none');
+  document.querySelectorAll('[data-view="maintenanceLogView"]').forEach(button => button.style.display = showMaintenanceLog ? '' : 'none');
   document.querySelectorAll('[data-view="calendarView"]').forEach(button => button.style.display = showHub && !tech ? '' : 'none');
   document.querySelectorAll('[data-view="storeDocsView"]').forEach(button => button.style.display = showHub && !tech ? '' : 'none');
   document.querySelectorAll('[data-view="resourcesView"]').forEach(button => button.style.display = '');
@@ -2320,6 +2464,7 @@ function applyRoleAccess(user) {
   $('#sideUserRole').textContent = user.role;
   if (tech && ($('#taskListsView').classList.contains('active') || $('#tempLogsView').classList.contains('active') || $('#todayView').classList.contains('active') || $('#calendarView').classList.contains('active') || $('#storeDocsView').classList.contains('active') || $('#smallwaresView').classList.contains('active') || $('#managementReportsView').classList.contains('active') || $('#historyView').classList.contains('active') || $('#manageView').classList.contains('active') || $('#receiptsView').classList.contains('active') || $('#inspectionsView').classList.contains('active'))) switchView('homeView');
   if (!showHub && ($('#homeView').classList.contains('active') || $('#maintenanceView').classList.contains('active') || $('#fpcView').classList.contains('active') || $('#calendarView').classList.contains('active') || $('#storeDocsView').classList.contains('active') || $('#smallwaresView').classList.contains('active'))) switchView('todayView');
+  if (!showMaintenanceLog && $('#maintenanceLogView').classList.contains('active')) switchView(canUseDailyOps(user) ? 'todayView' : 'homeView');
   if (!showHistory && $('#historyView').classList.contains('active')) switchView('todayView');
   if (!showManage && $('#manageView').classList.contains('active')) switchView('todayView');
   if (!showManage && $('#helpView').classList.contains('active')) switchView('todayView');
@@ -3436,6 +3581,8 @@ function switchView(viewId) {
 }
 
 document.addEventListener('click', async event => {
+  const maintenanceLogEdit = event.target.closest('[data-maintenance-log-edit]');
+  if (maintenanceLogEdit) return editMaintenanceLogEntry(maintenanceLogEdit.dataset.maintenanceLogEdit);
   const dashboardMove = event.target.closest('[data-dashboard-widget-move]');
   if (dashboardMove) {
     const [id, direction] = dashboardMove.dataset.dashboardWidgetMove.split('|');
@@ -3485,7 +3632,7 @@ document.addEventListener('click', async event => {
     if ((targetView === 'receiptsView' || targetView === 'inspectionsView') && !canAddStoreDocuments()) return toast('Only Area Managers and above can access this section');
     if (targetView === 'locationsView' && !canViewLocations()) return toast('Only managers and above can access locations');
     if (targetView === 'helpView' && !canUseManage()) return toast('Only managers and above can access Help');
-    if (isMaintenanceTech() && !['homeView', 'maintenanceView', 'fpcView'].includes(targetView)) return toast('This role can only access Dashboard, Maintenance, and FPC');
+    if (isMaintenanceTech() && !['homeView', 'maintenanceView', 'fpcView', 'maintenanceLogView'].includes(targetView)) return toast('This role can only access Dashboard, Maintenance, FPC, and Work Log');
     switchView(targetView);
     return;
   }
@@ -3714,6 +3861,14 @@ async function changeWorkingLocation(locationId) {
 }
 
 document.addEventListener('change', async event => {
+  if (event.target.matches('#maintenanceLogPeriod')) {
+    maintenanceLogPeriod = event.target.value;
+    renderMaintenanceWorkLog();
+  }
+  if (event.target.matches('#maintenanceTechnicianFilter')) {
+    maintenanceTechnicianFilter = event.target.value;
+    renderMaintenanceWorkLog();
+  }
   if (event.target.matches('#taskLocationSelect, #tempLocationSelect')) {
     await changeWorkingLocation(event.target.value);
   }
@@ -4756,7 +4911,7 @@ $('#finishBtn').onclick = async () => {
 
 document.querySelectorAll('nav button, .ops-sidebar button[data-view]').forEach(button => {
   button.onclick = () => {
-    if (isMaintenanceTech() && !['homeView', 'maintenanceView', 'fpcView'].includes(button.dataset.view)) return toast('This role can only access Dashboard, Maintenance, and FPC');
+    if (isMaintenanceTech() && !['homeView', 'maintenanceView', 'fpcView', 'maintenanceLogView'].includes(button.dataset.view)) return toast('This role can only access Dashboard, Maintenance, FPC, and Work Log');
     switchView(button.dataset.view);
   };
 });
@@ -4816,6 +4971,12 @@ $('#saveResourceBtn').onclick = saveResource;
 $('#cancelResourceEditBtn').onclick = resetResourceForm;
 $('#submitSmallwaresBtn').onclick = submitSmallwaresRequest;
 $('#submitManagementReportBtn').onclick = submitManagementReport;
+$('#saveMaintenanceLogBtn').onclick = saveMaintenanceLogEntry;
+$('#cancelMaintenanceLogBtn').onclick = () => {
+  resetMaintenanceLogForm();
+  renderMaintenanceWorkLog();
+};
+$('#saveMaintenanceHoursPermissionsBtn').onclick = saveMaintenanceHoursPermissions;
 $('#customizeDashboardBtn').onclick = openDashboardCustomization;
 $('#saveDashboardBtn').onclick = saveDashboardCustomization;
 $('#resetDashboardBtn').onclick = resetDashboardCustomization;

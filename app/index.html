@@ -353,6 +353,46 @@
       </article>
     </section>
 
+    <section id="maintenanceLogView" class="view">
+      <div class="date">
+        <div><p>MAINTENANCE TEAM</p><h2>Schedule &amp; Daily Log</h2></div>
+        <span class="status" id="maintenanceLogTotal">0 hours</span>
+      </div>
+
+      <article class="card form-card" id="maintenanceLogFormCard">
+        <h3 id="maintenanceLogFormTitle">Plan or record a workday</h3>
+        <p class="hint">Add the schedule in advance, then return to the same entry to record actual time and accomplishments.</p>
+        <input id="maintenanceLogId" type="hidden">
+        <div class="form-grid three-col">
+          <label>Work date<input id="maintenanceLogDate" type="date"></label>
+          <label>Scheduled start<input id="maintenanceScheduledStart" type="time"></label>
+          <label>Scheduled end<input id="maintenanceScheduledEnd" type="time"></label>
+          <label>Actual start<input id="maintenanceActualStart" type="time"></label>
+          <label>Actual end<input id="maintenanceActualEnd" type="time"></label>
+          <label>Unpaid break (minutes)<input id="maintenanceBreakMinutes" type="number" min="0" max="1440" step="1" value="0"></label>
+        </div>
+        <div><b>Locations worked or planned</b><div id="maintenanceLogLocations" class="location-checks"></div></div>
+        <label>Planned work<textarea id="maintenancePlannedWork" rows="3" maxlength="3000" placeholder="Appointments, PM work, repairs, or locations planned for the day"></textarea></label>
+        <label>Accomplishments<textarea id="maintenanceAccomplishments" rows="5" maxlength="5000" placeholder="Describe completed repairs, inspections, parts installed, follow-up, or other work accomplished"></textarea></label>
+        <label>Additional notes<textarea id="maintenanceLogNotes" rows="3" maxlength="3000" placeholder="Optional notes, delays, parts needed, or work that must continue"></textarea></label>
+        <div class="row-actions"><button id="cancelMaintenanceLogBtn" class="ghost" type="button" hidden>Cancel edit</button><button id="saveMaintenanceLogBtn" type="button">Save workday</button></div>
+      </article>
+
+      <article class="card toolbar" id="maintenanceLogFilters">
+        <label id="maintenanceTechnicianFilterWrap">Team member<select id="maintenanceTechnicianFilter"></select></label>
+        <label>Time period<select id="maintenanceLogPeriod"><option value="week">Last 7 days</option><option value="month" selected>Last 30 days</option><option value="all">All entries</option></select></label>
+      </article>
+
+      <article class="card" id="maintenanceHoursPermissionCard">
+        <h3>Area Manager hours access</h3>
+        <p class="hint">Only the Director of Operations or Owner can grant this permission. Authorized Area Managers see dates and worked-hour totals only.</p>
+        <div id="maintenanceHoursPermissionList" class="location-checks"></div>
+        <button id="saveMaintenanceHoursPermissionsBtn" type="button">Save access permissions</button>
+      </article>
+
+      <div id="maintenanceLogList"></div>
+    </section>
+
     <section id="todayView" class="view">
       <div class="date">
         <div>
@@ -904,6 +944,7 @@
           <a href="#help-task-lists">Task Lists</a>
           <a href="#help-temp-logs">Temp Logs</a>
           <a href="#help-maintenance">Maintenance</a>
+          <a href="#help-maintenance-log">Maintenance Work Log</a>
           <a href="#help-resources">Resources</a>
           <a href="#help-fpc">FPC</a>
           <a href="#help-documents">Documents</a>
@@ -950,6 +991,12 @@
         <article class="card help-section" id="help-maintenance">
           <h3>Maintenance</h3>
           <p>Create and follow work orders, review preventive-maintenance tasks, and find equipment or vendor information. Include a useful description, priority, assignment, target date, and photo whenever possible. Update the status as work progresses.</p>
+          <a href="#helpContents">Back to contents</a>
+        </article>
+
+        <article class="card help-section" id="help-maintenance-log">
+          <h3>Maintenance Schedule &amp; Daily Log</h3>
+          <p>Maintenance team members can enter a planned work schedule and later update the same day with actual start and end time, unpaid break minutes, locations, accomplishments, and follow-up notes. Worked hours are calculated automatically. The Director of Operations and Owner can review full entries and decide which Area Managers may see hours-only summaries.</p>
           <a href="#helpContents">Back to contents</a>
         </article>
 
@@ -1309,6 +1356,7 @@
     <button data-view="taskListsView"><span class="nav-icon">✓</span><span>Task Lists</span></button>
     <button data-view="tempLogsView"><span class="nav-icon">◒</span><span>Temp Logs</span></button>
     <button data-view="maintenanceView"><span class="nav-icon">🔧</span><span>Maintenance</span></button>
+    <button data-view="maintenanceLogView"><span class="nav-icon">🕒</span><span>Work Log</span></button>
     <button data-view="resourcesView"><span class="nav-icon">🔗</span><span>Resources</span></button>
     <button data-view="smallwaresView"><span class="nav-icon">🧺</span><span>Smallwares</span></button>
     <button data-view="managementReportsView"><span class="nav-icon">!</span><span>Incidents</span></button>
@@ -1323,6 +1371,7 @@
   <nav>
     <button data-view="tempLogsView">◒<span>Temps</span></button>
     <button data-view="maintenanceView">🔧<span>Maint.</span></button>
+    <button data-view="maintenanceLogView">🕒<span>Work Log</span></button>
     <button data-view="resourcesView">🔗<span>Resources</span></button>
     <button data-view="smallwaresView">🧺<span>Items</span></button>
     <button data-view="managementReportsView">!<span>Incidents</span></button>
@@ -1701,9 +1750,9 @@
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-07-1"></script>
+  <script src="version.js?v=2026-08-16-1"></script>
   <script src="auth.js?v=2026-07-29-kiosk-pin"></script>
-  <script src="app.js?v=2026-08-07-visible-version"></script>
+  <script src="app.js?v=2026-08-16-maintenance-log"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>
