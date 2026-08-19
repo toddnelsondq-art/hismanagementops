@@ -1166,8 +1166,10 @@ async function hasSmsConsent(phone) {
 
 async function unifiProtectRequest(pathname, accept = 'application/json') {
   if (!UNIFI_API_KEY || !UNIFI_CONSOLE_ID) throw Object.assign(new Error('UniFi integration is not configured in Netlify'), { statusCode: 503 });
-  const url = `https://api.ui.com/v1/connector/consoles/${encodeURIComponent(UNIFI_CONSOLE_ID)}/proxy/protect/integration/v1${pathname}`;
-  const response = await fetch(url, { headers: { Accept: accept, 'X-API-Key': UNIFI_API_KEY } });
+  const apiKey = UNIFI_API_KEY.trim().replace(/^["']|["']$/g, '');
+  const consoleId = UNIFI_CONSOLE_ID.trim().replace(/^["']|["']$/g, '');
+  const url = `https://api.ui.com/v1/connector/consoles/${encodeURI(consoleId)}/proxy/protect/integration/v1${pathname}`;
+  const response = await fetch(url, { headers: { Accept: accept, 'X-API-Key': apiKey } });
   if (!response.ok) {
     const detail = await response.text();
     throw Object.assign(new Error(`UniFi Protect returned ${response.status}${detail ? `: ${detail.slice(0, 240)}` : ''}`), { statusCode: response.status === 401 || response.status === 403 ? 502 : response.status });
