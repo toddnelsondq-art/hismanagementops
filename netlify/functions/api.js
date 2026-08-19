@@ -9,8 +9,10 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.1.1';
+const APP_VERSION = '1.2.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
+const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
+const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
 const DEFAULT_TENANT_ID = safeName(process.env.APP_TENANT_ID || 'his-management');
 const DEFAULT_TENANT_NAME = process.env.APP_TENANT_NAME || 'HIS Management Group Inc';
 const DEFAULT_TENANT_LOGO = process.env.APP_TENANT_LOGO || 'assets/his-management.png';
@@ -1160,6 +1162,71 @@ async function hasSmsConsent(phone) {
   const records = await readMaintenanceKey('smsConsentRecords', []);
   const latest = (Array.isArray(records) ? records : []).find(record => normalizeSmsPhone(record.phone) === normalized);
   return latest?.consent === true;
+}
+
+async function unifiProtectRequest(pathname, accept = 'application/json') {
+  if (!UNIFI_API_KEY || !UNIFI_CONSOLE_ID) throw Object.assign(new Error('UniFi integration is not configured in Netlify'), { statusCode: 503 });
+  const url = `https://api.ui.com/v1/connector/consoles/${encodeURIComponent(UNIFI_CONSOLE_ID)}/proxy/protect/integration/v1${pathname}`;
+  const response = await fetch(url, { headers: { Accept: accept, 'X-API-Key': UNIFI_API_KEY } });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw Object.assign(new Error(`UniFi Protect returned ${response.status}${detail ? `: ${detail.slice(0, 240)}` : ''}`), { statusCode: response.status === 401 || response.status === 403 ? 502 : response.status });
+  }
+  return response;
+}
+
+function unifiCameraName(camera = {}) {
+  if (typeof camera.name === 'string') return camera.name;
+  return camera.name?.name || camera.name?.value || camera.displayName || camera.modelKey || 'UniFi camera';
+}
+
+async function unifiCameraState(actor) {
+  if (AUTH_REQUIRED && !canAreaManage(actor)) throw Object.assign(new Error('Only Area Managers and above can view Location Health cameras'), { statusCode: 403 });
+  if (!UNIFI_API_KEY || !UNIFI_CONSOLE_ID) return { configured: false, cameras: [], mappings: {}, canManage: isFullAccess(actor), message: 'Add UNIFI_API_KEY and UNIFI_CONSOLE_ID in Netlify.' };
+  const [response, storedMappings] = await Promise.all([
+    unifiProtectRequest('/cameras'),
+    readMaintenanceKey('unifiCameraLocations', {})
+  ]);
+  const payload = await response.json();
+  const rows = Array.isArray(payload) ? payload : (payload.data || []);
+  const mappings = storedMappings && typeof storedMappings === 'object' && !Array.isArray(storedMappings) ? storedMappings : {};
+  const allowedLocations = userLocationIds(actor);
+  const cameras = rows.map(camera => ({
+    id: String(camera.id || ''),
+    name: unifiCameraName(camera),
+    model: camera.modelKey || '',
+    state: camera.state || 'UNKNOWN',
+    mac: camera.mac || '',
+    microphoneEnabled: Boolean(camera.isMicEnabled),
+    locationId: String(mappings[camera.id] || '')
+  })).filter(camera => camera.id && (isFullAccess(actor) || (camera.locationId && allowedLocations.includes(camera.locationId))));
+  return { configured: true, cameras, mappings: isFullAccess(actor) ? mappings : {}, canManage: isFullAccess(actor), refreshedAt: new Date().toISOString() };
+}
+
+async function saveUnifiCameraMappings(payload, actor) {
+  if (AUTH_REQUIRED && !isFullAccess(actor)) throw Object.assign(new Error('Only the Director of Operations or Owner can assign cameras to locations'), { statusCode: 403 });
+  const locationIds = new Set((await readLocations()).map(location => String(location.id)));
+  const mappings = {};
+  for (const [cameraId, locationId] of Object.entries(payload.mappings || {})) {
+    const cleanCameraId = String(cameraId || '').trim();
+    const cleanLocationId = String(locationId || '').trim();
+    if (cleanCameraId && (!cleanLocationId || locationIds.has(cleanLocationId))) mappings[cleanCameraId] = cleanLocationId;
+  }
+  await writeMaintenanceKey('unifiCameraLocations', mappings);
+  return unifiCameraState(actor);
+}
+
+async function unifiCameraSnapshot(cameraId, actor) {
+  if (AUTH_REQUIRED && !canAreaManage(actor)) throw Object.assign(new Error('Only Area Managers and above can view camera snapshots'), { statusCode: 403 });
+  const state = await unifiCameraState(actor);
+  if (!state.cameras.some(camera => camera.id === cameraId)) throw Object.assign(new Error('Camera not found or not assigned to an accessible location'), { statusCode: 404 });
+  const response = await unifiProtectRequest(`/cameras/${encodeURIComponent(cameraId)}/snapshot?channel=main&highQuality=false`, 'image/jpeg');
+  return {
+    statusCode: 200,
+    headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, no-store' },
+    body: Buffer.from(await response.arrayBuffer()).toString('base64'),
+    isBase64Encoded: true
+  };
 }
 
 async function readNotificationLogs(actor = null) {
@@ -2855,7 +2922,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/version') {
       return json(200, {
         version: APP_VERSION,
-        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.19.1'
+        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.19.2'
       });
     }
 
@@ -2945,6 +3012,8 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/dashboard') return json(200, await dashboardSummary(actor, query.range || 'day', query.locationId || 'all'));
     if (method === 'GET' && apiPath === '/maintenance/state') return json(200, await maintenanceState(query.locationId || 'all'));
     if (method === 'GET' && apiPath === '/maintenance-log/state') return json(200, await maintenanceWorkLogState(actor));
+    if (method === 'GET' && apiPath === '/location-health/cameras') return json(200, await unifiCameraState(actor));
+    if (method === 'GET' && apiPath === '/location-health/camera-snapshot') return unifiCameraSnapshot(String(query.cameraId || ''), actor);
     if (method === 'GET' && apiPath === '/notices') return json(200, { notices: await readNotices(actor) });
     if (method === 'GET' && apiPath === '/notification-logs') return json(200, { logs: await readNotificationLogs(actor) });
     if (method === 'GET' && apiPath === '/calendar/state') return json(200, await calendarState(actor));
@@ -3103,6 +3172,7 @@ exports.handler = async event => {
     if (method === 'POST' && apiPath === '/maintenance/attachment') return json(200, { url: await saveAttachment(body) });
     if (method === 'POST' && apiPath === '/maintenance-log/entry') return json(200, await saveMaintenanceWorkLog(body, actor));
     if (method === 'POST' && apiPath === '/maintenance-log/permissions') return json(200, await saveMaintenanceHoursPermissions(body, actor));
+    if (method === 'POST' && apiPath === '/location-health/camera-mappings') return json(200, await saveUnifiCameraMappings(body, actor));
 
     return json(404, { error: `Unknown route: ${method} ${apiPath}` });
   } catch (error) {

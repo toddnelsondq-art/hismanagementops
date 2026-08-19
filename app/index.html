@@ -354,6 +354,19 @@
       </article>
     </section>
 
+    <section id="locationHealthView" class="view">
+      <div class="date">
+        <div><p>CONNECTED LOCATIONS</p><h2>Location Health</h2></div>
+        <button id="refreshLocationHealthBtn" class="ghost" type="button">Refresh cameras</button>
+      </div>
+      <article class="card">
+        <h3>UniFi Protect cameras</h3>
+        <p class="hint">Camera snapshots remain protected by your DQ OPS sign-in. Directors and Owners can assign each camera to a DQ OPS location.</p>
+        <p id="locationHealthStatus" class="hint">Loading camera status…</p>
+      </article>
+      <div id="locationHealthCameraList"></div>
+    </section>
+
     <section id="maintenanceLogView" class="view">
       <div class="date">
         <div><p>MAINTENANCE TEAM</p><h2>Schedule &amp; Daily Log</h2></div>
@@ -945,6 +958,7 @@
           <a href="#help-task-lists">Task Lists</a>
           <a href="#help-temp-logs">Temp Logs</a>
           <a href="#help-maintenance">Maintenance</a>
+          <a href="#help-location-health">Location Health</a>
           <a href="#help-maintenance-log">Maintenance Work Log</a>
           <a href="#help-resources">Resources</a>
           <a href="#help-fpc">FPC</a>
@@ -992,6 +1006,13 @@
         <article class="card help-section" id="help-maintenance">
           <h3>Maintenance</h3>
           <p>Create and follow work orders, review preventive-maintenance tasks, and find equipment or vendor information. Include a useful description, priority, assignment, target date, and photo whenever possible. Update the status as work progresses.</p>
+          <a href="#helpContents">Back to contents</a>
+        </article>
+
+        <article class="card help-section" id="help-location-health">
+          <h3>Location Health</h3>
+          <p>Area Managers and above can review assigned UniFi Protect cameras, connection status, and current snapshots. Directors and Owners assign cameras to DQ OPS locations. Select Refresh cameras to retrieve the latest status and images.</p>
+          <p class="hint">DQ OPS does not store recordings. Use UniFi Protect for live video, playback, and exporting clips.</p>
           <a href="#helpContents">Back to contents</a>
         </article>
 
@@ -1358,6 +1379,7 @@
     <button data-view="taskListsView"><span class="nav-icon">✓</span><span>Task Lists</span></button>
     <button data-view="tempLogsView"><span class="nav-icon">◒</span><span>Temp Logs</span></button>
     <button data-view="maintenanceView"><span class="nav-icon">🔧</span><span>Maintenance</span></button>
+    <button data-view="locationHealthView"><span class="nav-icon">●</span><span>Location Health</span></button>
     <button data-view="maintenanceLogView"><span class="nav-icon">🕒</span><span>Work Log</span></button>
     <button data-view="resourcesView"><span class="nav-icon">🔗</span><span>Resources</span></button>
     <button data-view="smallwaresView"><span class="nav-icon">🧺</span><span>Smallwares</span></button>
@@ -1373,6 +1395,7 @@
   <nav>
     <button data-view="tempLogsView">◒<span>Temps</span></button>
     <button data-view="maintenanceView">🔧<span>Maint.</span></button>
+    <button data-view="locationHealthView">●<span>Health</span></button>
     <button data-view="maintenanceLogView">🕒<span>Work Log</span></button>
     <button data-view="resourcesView">🔗<span>Resources</span></button>
     <button data-view="smallwaresView">🧺<span>Items</span></button>
@@ -1755,9 +1778,9 @@
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-19-1"></script>
+  <script src="version.js?v=2026-08-19-2"></script>
   <script src="auth.js?v=2026-07-29-kiosk-pin"></script>
-  <script src="app.js?v=2026-08-19-maintenance-update-sms"></script>
+  <script src="app.js?v=2026-08-19-unifi-location-health"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>

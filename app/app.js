@@ -204,6 +204,8 @@ let selectedReportDate = null;
 let selectedReportLocationId = null;
 let maintenance = { locations: [], equipment: [], workOrders: [], pmSchedule: [], vendors: [], lists: {} };
 let maintenanceWorkLog = { mode: 'none', canEdit: false, canManagePermissions: false, entries: [], technicians: [], areaManagers: [], permissions: { areaManagerIds: [] } };
+let locationHealth = { configured: false, cameras: [], mappings: {}, canManage: false, message: '' };
+const locationHealthSnapshots = new Map();
 let maintenanceLogPeriod = 'month';
 let maintenanceTechnicianFilter = 'all';
 let maintenanceLocationId = localStorage.getItem('maintenance-location') || 'all';
@@ -511,8 +513,28 @@ function isMaintenanceTech(user = currentUser()) {
   return user.role === maintenanceRole;
 }
 
+async function apiBlob(path) {
+  if (window.dailyOpsAuthReady) await window.dailyOpsAuthReady;
+  let authToken = window.dailyOpsAuth?.token;
+  if (window.dailyOpsAuth?.authMode === 'password' && window.dailyOpsAuth?.client) {
+    const { data, error } = await window.dailyOpsAuth.client.auth.getSession();
+    if (error) throw new Error('Your sign-in could not be refreshed. Please sign in again.');
+    authToken = data.session?.access_token || '';
+  }
+  const response = await fetch(path, { headers: authToken ? { Authorization: `Bearer ${authToken}` } : {} });
+  if (!response.ok) {
+    const text = await response.text();
+    try { throw new Error(JSON.parse(text).error || text); } catch (error) { if (error instanceof SyntaxError) throw new Error(text || 'Request failed'); throw error; }
+  }
+  return response.blob();
+}
+
 function canUseMaintenanceWorkLog(user = currentUser()) {
   return isMaintenanceTech(user) || isFullAccess(user) || (user.role === 'Area Manager' && maintenanceWorkLog.mode === 'hours-only');
+}
+
+function canUseLocationHealth(user = currentUser()) {
+  return ['Area Manager', 'Director of Operations', 'Owner'].includes(user.role);
 }
 
 function usesAssignedLocations(user = currentUser()) {
@@ -701,6 +723,7 @@ async function loadState() {
   filterScopedRecords();
   await loadMaintenanceState();
   await loadMaintenanceWorkLogState();
+  await loadLocationHealthState(true);
   await loadFpcState();
   await loadCalendarState();
   await loadStoreDocumentsState();
@@ -1340,6 +1363,7 @@ function render() {
   renderDashboardAlerts(visibleLocations);
   renderMaintenance();
   renderMaintenanceWorkLog();
+  renderLocationHealth();
   renderFpc();
   renderStoreDocuments();
   renderResources();
@@ -1347,6 +1371,30 @@ function render() {
   renderInspections();
   renderSmallwares();
   renderManagementReports();
+}
+
+async function loadLocationHealthState(loadSnapshots = false) {
+  if (!apiOnline || !canUseLocationHealth()) {
+    locationHealth = { configured: false, cameras: [], mappings: {}, canManage: false, message: '' };
+    return;
+  }
+  try {
+    locationHealth = await api('/api/location-health/cameras');
+    if (loadSnapshots && locationHealth.configured) {
+      await Promise.all((locationHealth.cameras || []).map(async camera => {
+        try {
+          const blob = await apiBlob(`/api/location-health/camera-snapshot?cameraId=${encodeURIComponent(camera.id)}&v=${Date.now()}`);
+          const previous = locationHealthSnapshots.get(camera.id);
+          if (previous) URL.revokeObjectURL(previous);
+          locationHealthSnapshots.set(camera.id, URL.createObjectURL(blob));
+        } catch {
+          locationHealthSnapshots.delete(camera.id);
+        }
+      }));
+    }
+  } catch (error) {
+    locationHealth = { configured: true, cameras: [], mappings: {}, canManage: false, message: error.message || 'UniFi cameras did not load.' };
+  }
 }
 
 async function loadMaintenanceWorkLogState() {
@@ -1926,6 +1974,50 @@ function renderMaintenanceWorkLog() {
     <article class="card maintenance-hours-row"><div><b>${escapeHtml(entry.technicianName || 'Maintenance Tech')}</b><p>${escapeHtml(prettyDate(entry.date))}</p></div><strong>${entry.actualHours === null || entry.actualHours === undefined ? 'Not submitted' : `${Number(entry.actualHours).toFixed(2).replace(/\.00$/, '')} hours`}</strong></article>`).join('') : '<div class="empty">No maintenance schedule or work-log entries match this period.</div>';
 }
 
+function renderLocationHealth() {
+  if (!$('#locationHealthView')) return;
+  const allowed = canUseLocationHealth();
+  document.querySelectorAll('[data-view="locationHealthView"]').forEach(button => { button.style.display = allowed ? '' : 'none'; });
+  if (!allowed) return;
+  const cameras = locationHealth.cameras || [];
+  const online = cameras.filter(camera => camera.state === 'CONNECTED').length;
+  $('#locationHealthStatus').textContent = locationHealth.message || (locationHealth.configured
+    ? `${online} of ${cameras.length} camera${cameras.length === 1 ? '' : 's'} connected${locationHealth.refreshedAt ? ` · Refreshed ${new Date(locationHealth.refreshedAt).toLocaleString()}` : ''}`
+    : 'UniFi is not configured yet. Add the API key and console ID in Netlify.');
+  $('#locationHealthCameraList').innerHTML = cameras.length ? cameras.map(camera => {
+    const snapshot = locationHealthSnapshots.get(camera.id);
+    const locationOptions = ['<option value="">Unassigned</option>', ...locations.map(location => `<option value="${escapeHtml(location.id)}" ${camera.locationId === String(location.id) ? 'selected' : ''}>${escapeHtml(location.name)}</option>`)].join('');
+    return `<article class="card unifi-camera-card">
+      <div class="unifi-camera-image">${snapshot ? `<img src="${escapeHtml(snapshot)}" alt="Current snapshot from ${escapeHtml(camera.name)}">` : '<div class="unifi-snapshot-empty">Snapshot unavailable</div>'}</div>
+      <div class="unifi-camera-details">
+        <div class="maintenance-log-heading"><div><p class="eyebrow">${escapeHtml(camera.model || 'UNIFI PROTECT')}</p><h3>${escapeHtml(camera.name)}</h3></div><span class="status ${camera.state === 'CONNECTED' ? 'camera-online' : 'camera-offline'}">${escapeHtml(camera.state)}</span></div>
+        <p>${camera.locationId ? escapeHtml(locationName(camera.locationId)) : 'Not assigned to a DQ OPS location'}</p>
+        ${locationHealth.canManage ? `<label>DQ OPS location<select data-unifi-camera-location="${escapeHtml(camera.id)}">${locationOptions}</select></label>` : ''}
+        <div class="row-actions"><a class="button-link ghost" href="https://unifi.ui.com" target="_blank" rel="noopener">Open UniFi Protect</a></div>
+      </div>
+    </article>`;
+  }).join('') + (locationHealth.canManage ? '<button id="saveUnifiCameraMappingsBtn" type="button">Save camera locations</button>' : '') : '<div class="empty">No cameras are available for your assigned locations.</div>';
+  $('#saveUnifiCameraMappingsBtn')?.addEventListener('click', saveUnifiCameraMappings);
+}
+
+async function saveUnifiCameraMappings() {
+  const mappings = {};
+  document.querySelectorAll('[data-unifi-camera-location]').forEach(select => { mappings[select.dataset.unifiCameraLocation] = select.value; });
+  try {
+    locationHealth = await api('/api/location-health/camera-mappings', { method: 'POST', body: JSON.stringify({ mappings }) });
+    renderLocationHealth();
+    toast('Camera locations saved');
+  } catch (error) { toast(`Camera locations did not save: ${error.message}`); }
+}
+
+async function refreshLocationHealth() {
+  $('#refreshLocationHealthBtn').disabled = true;
+  $('#locationHealthStatus').textContent = 'Refreshing UniFi cameras and snapshots…';
+  await loadLocationHealthState(true);
+  renderLocationHealth();
+  $('#refreshLocationHealthBtn').disabled = false;
+}
+
 async function saveMaintenanceLogEntry() {
   const date = $('#maintenanceLogDate').value;
   if (!date) return toast('Choose a work date');
@@ -2446,10 +2538,12 @@ function applyRoleAccess(user) {
   const showLocations = canViewLocations(user);
   const tech = isMaintenanceTech(user);
   const showMaintenanceLog = canUseMaintenanceWorkLog(user);
+  const showLocationHealth = canUseLocationHealth(user);
   document.querySelectorAll('[data-view="homeView"]').forEach(button => button.style.display = showHub ? '' : 'none');
   document.querySelectorAll('[data-view="maintenanceView"]').forEach(button => button.style.display = showHub ? '' : 'none');
   document.querySelectorAll('[data-view="fpcView"]').forEach(button => button.style.display = showHub ? '' : 'none');
   document.querySelectorAll('[data-view="maintenanceLogView"]').forEach(button => button.style.display = showMaintenanceLog ? '' : 'none');
+  document.querySelectorAll('[data-view="locationHealthView"]').forEach(button => button.style.display = showLocationHealth ? '' : 'none');
   document.querySelectorAll('[data-view="calendarView"]').forEach(button => button.style.display = showHub && !tech ? '' : 'none');
   document.querySelectorAll('[data-view="storeDocsView"]').forEach(button => button.style.display = showHub && !tech ? '' : 'none');
   document.querySelectorAll('[data-view="resourcesView"]').forEach(button => button.style.display = '');
@@ -2470,6 +2564,7 @@ function applyRoleAccess(user) {
   if (tech && ($('#taskListsView').classList.contains('active') || $('#tempLogsView').classList.contains('active') || $('#todayView').classList.contains('active') || $('#calendarView').classList.contains('active') || $('#storeDocsView').classList.contains('active') || $('#smallwaresView').classList.contains('active') || $('#managementReportsView').classList.contains('active') || $('#historyView').classList.contains('active') || $('#manageView').classList.contains('active') || $('#receiptsView').classList.contains('active') || $('#inspectionsView').classList.contains('active'))) switchView('homeView');
   if (!showHub && ($('#homeView').classList.contains('active') || $('#maintenanceView').classList.contains('active') || $('#fpcView').classList.contains('active') || $('#calendarView').classList.contains('active') || $('#storeDocsView').classList.contains('active') || $('#smallwaresView').classList.contains('active'))) switchView('todayView');
   if (!showMaintenanceLog && $('#maintenanceLogView').classList.contains('active')) switchView(canUseDailyOps(user) ? 'todayView' : 'homeView');
+  if (!showLocationHealth && $('#locationHealthView').classList.contains('active')) switchView(canUseDailyOps(user) ? 'todayView' : 'homeView');
   if (!showHistory && $('#historyView').classList.contains('active')) switchView('todayView');
   if (!showManage && $('#manageView').classList.contains('active')) switchView('todayView');
   if (!showManage && $('#helpView').classList.contains('active')) switchView('todayView');
@@ -4983,6 +5078,7 @@ $('#saveResourceBtn').onclick = saveResource;
 $('#cancelResourceEditBtn').onclick = resetResourceForm;
 $('#submitSmallwaresBtn').onclick = submitSmallwaresRequest;
 $('#submitManagementReportBtn').onclick = submitManagementReport;
+$('#refreshLocationHealthBtn').onclick = refreshLocationHealth;
 $('#saveMaintenanceLogBtn').onclick = saveMaintenanceLogEntry;
 $('#cancelMaintenanceLogBtn').onclick = () => {
   resetMaintenanceLogForm();
