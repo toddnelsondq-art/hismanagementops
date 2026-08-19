@@ -9,7 +9,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.1.1';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const DEFAULT_TENANT_ID = safeName(process.env.APP_TENANT_ID || 'his-management');
 const DEFAULT_TENANT_NAME = process.env.APP_TENANT_NAME || 'HIS Management Group Inc';
@@ -2629,11 +2629,14 @@ async function writeWorkOrder(payload) {
   return item;
 }
 
-async function updateWorkOrder(payload) {
+async function updateWorkOrder(payload, actor) {
   const workOrders = await readMaintenanceKey('workOrders', []);
   const row = workOrders.find(entry => entry['Work Order ID'] === payload.workOrderId);
   if (!row) throw Object.assign(new Error('Work order not found'), { statusCode: 404 });
-  const mapping = {
+  const technician = actor?.role === MAINTENANCE_ROLE;
+  if (AUTH_REQUIRED && technician && !canAccessLocation(actor, String(row['Location ID'] || ''))) throw Object.assign(new Error('You do not have access to this work order location'), { statusCode: 403 });
+  if (AUTH_REQUIRED && !technician && !canManage(actor)) throw Object.assign(new Error('You do not have permission to update work orders'), { statusCode: 403 });
+  const managerMapping = {
     status: 'Status',
     assignedTo: 'Assigned To',
     assignmentType: 'assignmentType',
@@ -2656,13 +2659,23 @@ async function updateWorkOrder(payload) {
     issueDescription: 'Issue Description',
     priority: 'Priority'
   };
+  const technicianMapping = {
+    status: 'Status',
+    dateCompleted: 'Date Completed',
+    laborHours: 'Labor Hours',
+    resolutionNotes: 'Resolution Notes',
+    photoLink: 'Photo Link',
+    manualLink: 'Manual Link'
+  };
+  const mapping = technician ? technicianMapping : managerMapping;
   for (const [source, destination] of Object.entries(mapping)) {
     if (payload[source] !== undefined && payload[source] !== null && payload[source] !== '') row[destination] = payload[source];
   }
-  if (payload.vendorId !== undefined) row.vendorId = payload.vendorId;
+  if (!technician && payload.vendorId !== undefined) row.vendorId = payload.vendorId;
+  if (row.Status === 'Completed' && !row['Date Completed']) row['Date Completed'] = today();
   row['Total Cost'] = Number(row['Parts Cost'] || 0) + Number(row['Vendor Cost'] || 0);
   row['Last Updated'] = today();
-  row.assignmentEmail = await sendAssignmentEmail({ ...row, title: row['Issue Description'], locationName: row['Location Name'] }, 'work order');
+  if (!technician) row.assignmentEmail = await sendAssignmentEmail({ ...row, title: row['Issue Description'], locationName: row['Location Name'] }, 'work order');
   await writeMaintenanceKey('workOrders', workOrders);
   return row;
 }
@@ -2842,7 +2855,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/version') {
       return json(200, {
         version: APP_VERSION,
-        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.07.1'
+        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.19.1'
       });
     }
 
@@ -3058,7 +3071,7 @@ exports.handler = async event => {
       return json(200, { workOrder, state: await maintenanceState('all') });
     }
     if (method === 'POST' && apiPath === '/maintenance/work-order/update') {
-      const workOrder = await updateWorkOrder(body);
+      const workOrder = await updateWorkOrder(body, actor);
       return json(200, { workOrder, state: await maintenanceState('all') });
     }
     if (method === 'POST' && apiPath === '/maintenance/equipment') {

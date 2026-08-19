@@ -2385,6 +2385,11 @@ function openWorkOrderDialog(workOrderId) {
   $('#editWoVendorCost').value = order['Vendor Cost'] || '';
   $('#editWoPhoto').value = '';
   $('#editWoManual').value = '';
+  const technician = isMaintenanceTech();
+  ['#editWoPriority', '#editWoAssignmentType', '#editWoAssigneeUser', '#editWoVendor', '#editWoAssignmentNotify', '#editWoIssue', '#editWoTargetDate', '#editWoParts', '#editWoVendorCost'].forEach(selector => {
+    $(selector).closest('label').style.display = technician ? 'none' : '';
+  });
+  $('#saveWorkOrderBtn').textContent = technician ? 'Save notes and status' : 'Save work order';
   $('#workOrderDialog').showModal();
 }
 
@@ -4080,20 +4085,23 @@ $('#addPmBtn').onclick = async () => {
   }
 };
 
-$('#saveWorkOrderBtn').onclick = async () => {
+async function saveWorkOrderChanges(forceComplete = false) {
+  const technician = isMaintenanceTech();
   const payload = {
     workOrderId: $('#editWoId').value,
     locationId: $('#editWoLocationId').value,
-    status: $('#editWoStatus').value,
-    priority: $('#editWoPriority').value,
-    ...assignmentPayload('editWo'),
-    issueDescription: $('#editWoIssue').value.trim(),
+    status: forceComplete ? 'Completed' : $('#editWoStatus').value,
     resolutionNotes: $('#editWoResolution').value.trim(),
-    targetDate: $('#editWoTargetDate').value,
-    dateCompleted: $('#editWoCompletedDate').value,
+    dateCompleted: forceComplete ? new Date().toISOString().slice(0, 10) : $('#editWoCompletedDate').value,
     laborHours: $('#editWoLabor').value,
-    partsCost: $('#editWoParts').value,
-    vendorCost: $('#editWoVendorCost').value
+    ...(technician ? {} : {
+      priority: $('#editWoPriority').value,
+      ...assignmentPayload('editWo'),
+      issueDescription: $('#editWoIssue').value.trim(),
+      targetDate: $('#editWoTargetDate').value,
+      partsCost: $('#editWoParts').value,
+      vendorCost: $('#editWoVendorCost').value
+    })
   };
   const photoLink = await uploadMaintenanceFile('#editWoPhoto', 'work-order-photo');
   const manualLink = await uploadMaintenanceFile('#editWoManual', 'work-order-manual');
@@ -4104,11 +4112,15 @@ $('#saveWorkOrderBtn').onclick = async () => {
     maintenance = saved.state;
     filterMaintenanceScope();
     renderMaintenance();
+    $('#workOrderDialog').close();
     toast(`Updated ${saved.workOrder['Work Order ID']}`);
-  } catch {
-    toast('Work order did not update — restart the backend server');
+  } catch (error) {
+    toast(`Work order did not update: ${error.message}`);
   }
-};
+}
+
+$('#saveWorkOrderBtn').onclick = () => saveWorkOrderChanges(false);
+$('#completeWorkOrderBtn').onclick = () => saveWorkOrderChanges(true);
 
 async function completePmTask(pmId) {
   try {

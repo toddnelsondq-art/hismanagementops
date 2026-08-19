@@ -23,6 +23,7 @@
       </div>
     </div>
     <div class="header-actions">
+      <a id="smsOptInLink" class="button-link ghost" href="sms-consent.html" target="_blank" rel="noopener">SMS opt-in</a>
       <button id="noticesBtn" class="ghost notice-button">Notices <span id="noticeBadge">0</span></button>
       <button id="changePasswordBtn" class="ghost">Change password</button>
       <button id="signOutBtn" class="ghost">Sign out</button>
@@ -1084,6 +1085,7 @@
           <h3>Users, tablets, and alerts</h3>
           <p>Add each person with the correct role and assigned locations. Employees use a four-digit PIN on a tablet locked to their store; managers use email and password. Alert rules can monitor overdue checklists or temperature logs and send email or opted-in text notifications.</p>
           <p class="hint">Only assign access a person needs. Text messages require the user’s separate voluntary SMS opt-in.</p>
+          <p><a href="sms-consent.html" target="_blank" rel="noopener">Open the SMS opt-in form</a>. Each person must enter the same mobile number saved in their HIS OPS user profile, check the consent box, and save their preference.</p>
           <a href="#helpContents">Back to contents</a>
         </article>
       </div>
@@ -1232,7 +1234,7 @@
             <label class="location-check"><input type="checkbox" id="alertChannelEmail" checked> Email</label>
             <label class="location-check"><input type="checkbox" id="alertChannelSms"> Text message</label>
           </div>
-          <p class="hint">Text messages require phone numbers for users and Twilio setup in Netlify. Email requires an email provider key.</p>
+          <p class="hint">Text messages require phone numbers for users, voluntary consent through the <a href="sms-consent.html" target="_blank" rel="noopener">SMS opt-in form</a>, and Twilio setup in Netlify. Email requires an email provider key.</p>
         </div>
         <label class="check"><input type="checkbox" id="alertRuleActive" checked> Rule is active</label>
         <div class="row-actions">
@@ -1743,16 +1745,19 @@
       <label>Add service manual / document
         <input id="editWoManual" type="file" accept="application/pdf,image/*">
       </label>
-      <button id="saveWorkOrderBtn" value="default">Save work order</button>
+      <div class="dialog-actions">
+        <button id="completeWorkOrderBtn" type="button">Mark completed</button>
+        <button id="saveWorkOrderBtn" type="button">Save work order</button>
+      </div>
     </form>
   </dialog>
 
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-16-1"></script>
+  <script src="version.js?v=2026-08-19-1"></script>
   <script src="auth.js?v=2026-07-29-kiosk-pin"></script>
-  <script src="app.js?v=2026-08-16-maintenance-log"></script>
+  <script src="app.js?v=2026-08-19-maintenance-update-sms"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>
