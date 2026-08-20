@@ -1884,3 +1884,9 @@ header .header-actions{width:auto!important;margin-left:auto!important;overflow:
 .side-account-actions{display:grid;gap:4px;padding-top:7px}
 .side-account-actions a,.side-account-actions button{width:100%;display:flex!important;align-items:center!important;justify-content:flex-start!important;gap:12px!important;padding:11px 14px!important;border:0;border-radius:11px;background:transparent!important;color:#dbeafe!important;font:inherit;font-size:15px!important;text-align:left;text-decoration:none;cursor:pointer}
 .side-account-actions a:hover,.side-account-actions button:hover{background:#26364f!important;color:#fff!important}
+
+/* Simple listed-product entry plus optional non-listed readings. */
+.additional-temp-list:empty{display:none}
+.additional-temp-list{margin-top:18px;padding-top:8px;border-top:1px solid var(--line,#d9e1ea)}
+.additional-temp-group h4{color:var(--muted,#607087)}
+.additional-temp-entry{cursor:default!important;background:#f8fafc!important;border:1px solid #e2e8f0!important;border-radius:10px!important;padding:10px!important;margin-top:7px!important}

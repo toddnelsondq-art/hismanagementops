@@ -10,7 +10,7 @@ const defaultTemperatureItems = {
   Grill: {
     requiredDaily: true,
     areas: {
-      'Cook temperatures': [
+      'Products and equipment': [
         'Hamburger Patties',
         'Grilled Chicken',
         'Crispy Chicken',
@@ -19,24 +19,11 @@ const defaultTemperatureItems = {
         'Fish Fillets / Shrimp',
         'Hot Dogs',
         'Chili',
-        'Gravy'
-      ],
-      'Hot holding / heated products': [
-        'Hamburger Patties - Hold',
-        'Grilled Chicken - Hold',
-        'Crispy Chicken - Hold',
-        'Chicken Strips - Hold',
-        'Other Proteins - Hold',
-        'Fish Fillets / Shrimp - Hold',
-        'Hot Dogs - Hold',
-        'Chili - Hold',
-        'Barbecue - Hold',
-        'Mushroom Sauce - Hold',
-        'Gravy - Hold',
+        'Gravy',
+        'Barbecue',
+        'Mushroom Sauce',
         'Reheated Queso',
-        'Queso Heated First Time'
-      ],
-      'Cold holding - grill': [
+        'Queso Heated First Time',
         'Cheese Sliced',
         'Cheese Shredded',
         'Iron Grill Set-ups',
@@ -51,23 +38,19 @@ const defaultTemperatureItems = {
   Chill: {
     requiredDaily: true,
     areas: {
-      'Hot products': [
+      'Products and equipment': [
         'Hot Fudge',
         'Hot Caramel',
         'Waffle Coating',
         'Novelty Cone Coat',
         'Cocoa Fudge',
-        'Cone Coating'
-      ],
-      'Cold products': [
+        'Cone Coating',
         'DQ Mix in Bag',
         'Milk',
         'Open Topping',
         'Frozen Soft Serve',
         'Overrun',
-        'DQ Bakes Desserts'
-      ],
-      'Chill equipment': [
+        'DQ Bakes Desserts',
         'Topping Cabinet Cooler Ambient',
         'Walk-in Cooler Ambient',
         'Topping Cabinet Freezer #1 Ambient',
@@ -216,6 +199,7 @@ let editingTemplateId = null;
 let templateScope = localStorage.getItem('dailyops-template-scope') || 'all';
 let selectedTempList = localStorage.getItem('dailyops-temp-list') || 'Grill';
 let selectedTempSession = localStorage.getItem('dailyops-temp-session') || 'Day';
+let tempEntryMode = 'listed';
 let dashboardRange = localStorage.getItem('dailyops-dashboard-range') || 'day';
 let dashboardLocationId = localStorage.getItem('dailyops-dashboard-location') || 'all';
 const dashboardWidgetCatalog = [
@@ -373,16 +357,6 @@ function setupDailyOpsLayout() {
     `);
   }
 
-  const tempItemLabel = $('#tempItem')?.closest('label');
-  if (tempItemLabel && !$('#tempSession')) {
-    tempItemLabel.insertAdjacentHTML('afterend', `
-      <label>Session
-        <select id="tempSession">
-          ${tempSessions.map(session => `<option>${session}</option>`).join('')}
-        </select>
-      </label>
-    `);
-  }
 }
 
 function setupCustomizableDashboard() {
@@ -1473,6 +1447,11 @@ function render() {
       }).join('')}
     </div>
   `).join('');
+  const additionalReadings = (day.temps || []).filter(temp => readingList(temp) === 'Additional' && readingSession(temp) === selectedTempSession);
+  $('#additionalTempList').innerHTML = additionalReadings.length ? `
+    <div class="temp-group additional-temp-group"><h4>Additional / non-listed temperatures</h4>
+      ${additionalReadings.map(reading => `<div class="temp-entry additional-temp-entry"><span>${escapeHtml(reading.item)}</span><div class="reading-chips"><span class="reading-chip">${escapeHtml(reading.value)}°F · ${escapeHtml(reading.time)}${reading.userName ? ` · ${escapeHtml(reading.userName)}` : ''}</span></div></div>`).join('')}
+    </div>` : '';
 
   const done = day.tasks.filter(task => task.done).length;
   const percent = Math.round(done / day.tasks.length * 100) || 0;
@@ -4049,31 +4028,40 @@ document.addEventListener('click', async event => {
 });
 
 function fillTempItems() {
-  const area = $('#tempArea').value;
   const areas = temperatureAreasForList();
-  $('#tempItem').innerHTML = (areas[area] || []).map(item => `<option>${escapeHtml(item)}</option>`).join('');
+  $('#tempItem').innerHTML = Object.entries(areas).flatMap(([area, items]) => items.map(item => `<option value="${escapeHtml(item)}" data-area="${escapeHtml(area)}">${escapeHtml(item)}</option>`)).join('');
 }
 
 function openTempDialog(area = $('#tempArea').value, item = null, list = selectedTempList) {
+  tempEntryMode = 'listed';
   $('#tempValue').value = '';
   if (list) {
     selectedTempList = list;
     localStorage.setItem('dailyops-temp-list', selectedTempList);
   }
-  const areas = temperatureAreasForList();
-  const firstArea = Object.keys(areas)[0] || area;
-  $('#tempArea').innerHTML = Object.keys(areas).map(entry => `<option>${escapeHtml(entry)}</option>`).join('');
-  area = areas[area] ? area : firstArea;
-  $('#tempArea').value = area;
-  $('#tempSession').value = selectedTempSession;
   fillTempItems();
-  if (item) $('#tempItem').value = item;
+  const option = [...$('#tempItem').options].find(entry => entry.value === item && entry.dataset.area === area);
+  if (option) option.selected = true;
+  $('#tempDialogTitle').textContent = `${selectedTempSession} temperature`;
+  $('#tempItemLabel').hidden = false;
+  $('#additionalTempItemLabel').hidden = true;
+  $('#additionalTempItem').value = '';
   $('#tempDialog').showModal();
   $('#tempValue').focus();
 }
 
-$('#tempArea').onchange = fillTempItems;
-$('#addTempBtn').onclick = () => openTempDialog();
+function openAdditionalTempDialog() {
+  tempEntryMode = 'additional';
+  $('#tempValue').value = '';
+  $('#additionalTempItem').value = '';
+  $('#tempDialogTitle').textContent = `Additional ${selectedTempSession.toLowerCase()} temperature`;
+  $('#tempItemLabel').hidden = true;
+  $('#additionalTempItemLabel').hidden = false;
+  $('#tempDialog').showModal();
+  $('#additionalTempItem').focus();
+}
+
+$('#addTempBtn').onclick = openAdditionalTempDialog;
 $('#newUserRole').onchange = renderNewUserLocationChecks;
 $('#newUserLocation').onchange = renderNewUserLocationChecks;
 
@@ -4460,20 +4448,22 @@ $('#saveVendorBtn').onclick = async () => {
 $('#saveTempBtn').onclick = async event => {
   event.preventDefault();
   if (!$('#tempValue').value) {
-    return;
+    return toast('Enter the temperature');
   }
-  selectedTempSession = $('#tempSession').value;
-  localStorage.setItem('dailyops-temp-session', selectedTempSession);
+  const additionalItem = $('#additionalTempItem').value.trim();
+  if (tempEntryMode === 'additional' && !additionalItem) return toast('Enter the additional product or item');
+  const selectedProduct = $('#tempItem').selectedOptions[0];
   day.temps.push({
-    list: selectedTempList,
-    area: $('#tempArea').value,
-    item: $('#tempItem').value,
-    session: $('#tempSession').value,
+    list: tempEntryMode === 'additional' ? 'Additional' : selectedTempList,
+    area: tempEntryMode === 'additional' ? 'Additional / non-listed' : (selectedProduct?.dataset.area || ''),
+    item: tempEntryMode === 'additional' ? additionalItem : $('#tempItem').value,
+    session: selectedTempSession,
     value: $('#tempValue').value,
     time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
     userId: currentUser().id,
     userName: currentUser().name
   });
+  $('#tempDialog').close();
   await persistAndRender('Temperature saved');
 };
 

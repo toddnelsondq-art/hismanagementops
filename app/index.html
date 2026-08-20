@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="assets/pwa-icon-180.png">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="temperature.css">
-  <link rel="stylesheet" href="his-theme.css?v=2026-08-19-header-account-menu">
+  <link rel="stylesheet" href="his-theme.css?v=2026-08-20-simple-temperature-entry">
 </head>
 <body>
   <header>
@@ -427,8 +427,9 @@
             <p>Two readings required for every listed item</p>
           </div>
         </div>
-        <button id="addTempBtn">+ Log temp</button>
+        <button id="addTempBtn" class="ghost" type="button">+ Additional temperature</button>
         <div id="tempList" class="temp-list"></div>
+        <div id="additionalTempList" class="additional-temp-list"></div>
       </article>
 
       <div class="section-title">
@@ -1420,23 +1421,26 @@
   <dialog id="tempDialog">
     <form method="dialog">
       <div class="modal-head">
-        <h3>Log temperature</h3>
+        <h3 id="tempDialogTitle">Log temperature</h3>
         <button value="cancel" class="x">×</button>
       </div>
-      <label>Area
+      <label id="tempAreaLabel" hidden>Area
         <select id="tempArea">
           <option>Grill Area</option>
           <option>Chill Area</option>
         </select>
       </label>
-      <label>Item
+      <label id="tempItemLabel">Product / item
         <select id="tempItem"></select>
+      </label>
+      <label id="additionalTempItemLabel" hidden>Additional product / item
+        <input id="additionalTempItem" autocomplete="off" placeholder="Enter a non-listed product or item">
       </label>
       <label>Temperature (°F)
         <input id="tempValue" type="number" step="0.1" inputmode="decimal" placeholder="165.0">
       </label>
       <p class="hint">Recorded with the selected user and current time.</p>
-      <button id="saveTempBtn" value="default">Save temperature</button>
+      <button id="saveTempBtn" value="default">OK</button>
     </form>
   </dialog>
 
@@ -1792,9 +1796,9 @@
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-19-6"></script>
+  <script src="version.js?v=2026-08-20-1"></script>
   <script src="auth.js?v=2026-07-29-kiosk-pin"></script>
-  <script src="app.js?v=2026-08-19-header-account-menu"></script>
+  <script src="app.js?v=2026-08-20-simple-temperature-entry"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>

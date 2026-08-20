@@ -9,7 +9,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.3.2';
+const APP_VERSION = '1.3.3';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -36,7 +36,7 @@ const TEMPERATURE_ITEMS = {
   Grill: {
     requiredDaily: true,
     areas: {
-      'Cook temperatures': [
+      'Products and equipment': [
         'Hamburger Patties',
         'Grilled Chicken',
         'Crispy Chicken',
@@ -45,24 +45,11 @@ const TEMPERATURE_ITEMS = {
         'Fish Fillets / Shrimp',
         'Hot Dogs',
         'Chili',
-        'Gravy'
-      ],
-      'Hot holding / heated products': [
-        'Hamburger Patties - Hold',
-        'Grilled Chicken - Hold',
-        'Crispy Chicken - Hold',
-        'Chicken Strips - Hold',
-        'Other Proteins - Hold',
-        'Fish Fillets / Shrimp - Hold',
-        'Hot Dogs - Hold',
-        'Chili - Hold',
-        'Barbecue - Hold',
-        'Mushroom Sauce - Hold',
-        'Gravy - Hold',
+        'Gravy',
+        'Barbecue',
+        'Mushroom Sauce',
         'Reheated Queso',
-        'Queso Heated First Time'
-      ],
-      'Cold holding - grill': [
+        'Queso Heated First Time',
         'Cheese Sliced',
         'Cheese Shredded',
         'Iron Grill Set-ups',
@@ -77,23 +64,19 @@ const TEMPERATURE_ITEMS = {
   Chill: {
     requiredDaily: true,
     areas: {
-      'Hot products': [
+      'Products and equipment': [
         'Hot Fudge',
         'Hot Caramel',
         'Waffle Coating',
         'Novelty Cone Coat',
         'Cocoa Fudge',
-        'Cone Coating'
-      ],
-      'Cold products': [
+        'Cone Coating',
         'DQ Mix in Bag',
         'Milk',
         'Open Topping',
         'Frozen Soft Serve',
         'Overrun',
-        'DQ Bakes Desserts'
-      ],
-      'Chill equipment': [
+        'DQ Bakes Desserts',
         'Topping Cabinet Cooler Ambient',
         'Walk-in Cooler Ambient',
         'Topping Cabinet Freezer #1 Ambient',
@@ -3028,7 +3011,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/version') {
       return json(200, {
         version: APP_VERSION,
-        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.19.6'
+        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.20.1'
       });
     }
 
