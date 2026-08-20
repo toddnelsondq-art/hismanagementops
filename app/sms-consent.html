@@ -21,6 +21,7 @@
     .choice input { width: 20px; height: 20px; margin: 3px 0 0; }
     button { margin-top: 18px; border: 0; border-radius: 10px; padding: 12px 18px; background: #092b55; color: #fff; font: inherit; font-weight: 800; cursor: pointer; }
     button:disabled { opacity: .55; cursor: wait; }
+    .back-link { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 20px; border-radius: 10px; padding: 11px 15px; background: #e9f0f8; text-decoration: none; }
     #formMessage { min-height: 24px; margin-top: 12px; font-weight: 700; }
     .honeypot { position: absolute; left: -9999px; }
     @media (max-width: 600px) { main { margin: 0; border-radius: 0; padding: 24px 18px; } }
@@ -28,6 +29,7 @@
 </head>
 <body>
   <main>
+    <a class="back-link" href="index.html">← Back to DQ OPS</a>
     <div class="brand">
       <img src="assets/his-management.png" alt="HIS OPS logo">
       <div>
@@ -62,6 +64,7 @@
 
       <button id="saveConsentBtn" type="submit">Save SMS preference</button>
       <p id="formMessage" role="status" aria-live="polite"></p>
+      <p><a href="index.html">Return to DQ OPS without changing anything</a></p>
     </form>
 
     <h2>What Happens Next</h2>
@@ -79,7 +82,7 @@
       <li>HIS OPS weekly assignments: 3 open items. Sign in for details. Reply STOP to opt out.</li>
     </ul>
 
-    <p><a href="privacy.html">Privacy Policy</a> · <a href="terms.html">Terms of Service</a></p>
+    <p><a href="index.html">← Back to DQ OPS</a> · <a href="privacy.html">Privacy Policy</a> · <a href="terms.html">Terms of Service</a></p>
   </main>
   <script>
     document.querySelector('#smsConsentForm').addEventListener('submit', async event => {

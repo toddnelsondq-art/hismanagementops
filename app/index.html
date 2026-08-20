@@ -23,7 +23,7 @@
       </div>
     </div>
     <div class="header-actions">
-      <a id="smsOptInLink" class="button-link ghost" href="sms-consent.html" target="_blank" rel="noopener">SMS opt-in</a>
+      <a id="smsOptInLink" class="button-link ghost" href="sms-consent.html">SMS opt-in</a>
       <button id="noticesBtn" class="ghost notice-button">Notices <span id="noticeBadge">0</span></button>
       <button id="changePasswordBtn" class="ghost">Change password</button>
       <button id="signOutBtn" class="ghost">Sign out</button>
@@ -980,7 +980,7 @@
       <div class="help-guide">
         <article class="card help-section" id="help-navigation">
           <h3>Getting around</h3>
-          <p>On a computer, use the menu on the left. On a phone or tablet, use the menu along the bottom and scroll it sideways if needed. Select your location near the top of a page whenever a location selector is available.</p>
+          <p>Use the menu on the left on computers, phones, and tablets. On a smaller screen it appears as a compact icon rail; select the menu button to expand the labels. Select your location near the top of a page whenever a location selector is available.</p>
           <p class="hint">Your role controls which menu choices and locations are visible.</p>
           <a href="#helpContents">Back to contents</a>
         </article>
@@ -1375,7 +1375,9 @@
         <span>Daily operations</span>
       </div>
     </div>
+    <button id="sideMenuToggle" class="side-menu-toggle" type="button" aria-expanded="false" aria-label="Expand navigation"><span class="nav-icon">☰</span><span>Menu</span></button>
     <button data-view="homeView" class="active" id="sideHomeNav"><span class="nav-icon">▦</span><span>Dashboard</span></button>
+    <button data-view="noticesView"><span class="nav-icon">◆</span><span>Notices</span></button>
     <button data-view="taskListsView"><span class="nav-icon">✓</span><span>Task Lists</span></button>
     <button data-view="tempLogsView"><span class="nav-icon">◒</span><span>Temp Logs</span></button>
     <button data-view="maintenanceView"><span class="nav-icon">🔧</span><span>Maintenance</span></button>
@@ -1778,9 +1780,9 @@
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-19-2"></script>
+  <script src="version.js?v=2026-08-19-3"></script>
   <script src="auth.js?v=2026-07-29-kiosk-pin"></script>
-  <script src="app.js?v=2026-08-19-unifi-location-health"></script>
+  <script src="app.js?v=2026-08-19-left-navigation"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>

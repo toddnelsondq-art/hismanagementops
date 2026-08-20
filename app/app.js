@@ -443,6 +443,26 @@ function setupCollapsibleCards() {
 
 setupCollapsibleCards();
 
+const wideSidebarQuery = window.matchMedia('(min-width: 840px)');
+let sidebarExpanded = localStorage.getItem('dqops-sidebar-expanded');
+sidebarExpanded = sidebarExpanded === null ? wideSidebarQuery.matches : sidebarExpanded === 'true';
+
+function setSidebarExpanded(expanded, remember = true) {
+  sidebarExpanded = Boolean(expanded);
+  document.body.classList.toggle('menu-expanded', sidebarExpanded);
+  document.body.classList.toggle('menu-collapsed', !sidebarExpanded && wideSidebarQuery.matches);
+  $('#sideMenuToggle').setAttribute('aria-expanded', String(sidebarExpanded));
+  $('#sideMenuToggle').setAttribute('aria-label', sidebarExpanded ? 'Collapse navigation' : 'Expand navigation');
+  if (remember) localStorage.setItem('dqops-sidebar-expanded', String(sidebarExpanded));
+}
+
+setSidebarExpanded(sidebarExpanded, false);
+$('#sideMenuToggle').onclick = () => setSidebarExpanded(!sidebarExpanded);
+wideSidebarQuery.addEventListener('change', event => {
+  if (localStorage.getItem('dqops-sidebar-expanded') === null) setSidebarExpanded(event.matches, false);
+  else setSidebarExpanded(sidebarExpanded, false);
+});
+
 function applyTenantBranding() {
   const tenant = window.dailyOpsAuth?.tenant || {};
   const appName = tenant.appName || 'HIS OPS';
@@ -2540,6 +2560,7 @@ function applyRoleAccess(user) {
   const showMaintenanceLog = canUseMaintenanceWorkLog(user);
   const showLocationHealth = canUseLocationHealth(user);
   document.querySelectorAll('[data-view="homeView"]').forEach(button => button.style.display = showHub ? '' : 'none');
+  document.querySelectorAll('[data-view="noticesView"]').forEach(button => button.style.display = '');
   document.querySelectorAll('[data-view="maintenanceView"]').forEach(button => button.style.display = showHub ? '' : 'none');
   document.querySelectorAll('[data-view="fpcView"]').forEach(button => button.style.display = showHub ? '' : 'none');
   document.querySelectorAll('[data-view="maintenanceLogView"]').forEach(button => button.style.display = showMaintenanceLog ? '' : 'none');
@@ -3732,7 +3753,7 @@ document.addEventListener('click', async event => {
     if ((targetView === 'receiptsView' || targetView === 'inspectionsView') && !canAddStoreDocuments()) return toast('Only Area Managers and above can access this section');
     if (targetView === 'locationsView' && !canViewLocations()) return toast('Only managers and above can access locations');
     if (targetView === 'helpView' && !canUseManage()) return toast('Only managers and above can access Help');
-    if (isMaintenanceTech() && !['homeView', 'maintenanceView', 'fpcView', 'maintenanceLogView'].includes(targetView)) return toast('This role can only access Dashboard, Maintenance, FPC, and Work Log');
+    if (isMaintenanceTech() && !['homeView', 'maintenanceView', 'fpcView', 'maintenanceLogView', 'noticesView'].includes(targetView)) return toast('This role can only access Dashboard, Notices, Maintenance, FPC, and Work Log');
     switchView(targetView);
     return;
   }
@@ -5018,8 +5039,9 @@ $('#finishBtn').onclick = async () => {
 
 document.querySelectorAll('nav button, .ops-sidebar button[data-view]').forEach(button => {
   button.onclick = () => {
-    if (isMaintenanceTech() && !['homeView', 'maintenanceView', 'fpcView', 'maintenanceLogView'].includes(button.dataset.view)) return toast('This role can only access Dashboard, Maintenance, FPC, and Work Log');
+    if (isMaintenanceTech() && !['homeView', 'maintenanceView', 'fpcView', 'maintenanceLogView', 'noticesView'].includes(button.dataset.view)) return toast('This role can only access Dashboard, Notices, Maintenance, FPC, and Work Log');
     switchView(button.dataset.view);
+    if (!wideSidebarQuery.matches) setSidebarExpanded(false);
   };
 });
 

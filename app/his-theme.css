@@ -1728,6 +1728,58 @@ header h1{
   font-size:22px;
 }
 
+/* Persistent, expandable left navigation on every screen size. */
+.ops-sidebar,header,main{transition:left .2s ease,width .2s ease,margin-left .2s ease}
+.side-menu-toggle{border:1px solid #40516b!important;background:#172842!important;color:#fff!important}
+
+@media(min-width:840px){
+  body.menu-collapsed header{left:84px}
+  body.menu-collapsed main{margin-left:84px}
+  body.menu-collapsed .ops-sidebar{width:84px;align-items:center;padding:20px 8px}
+  body.menu-collapsed .side-brand{justify-content:center;margin-bottom:10px}
+  body.menu-collapsed .side-brand .app-logo{width:54px;height:54px}
+  body.menu-collapsed .side-brand div,
+  body.menu-collapsed .ops-sidebar button span:not(.nav-icon),
+  body.menu-collapsed .side-user{display:none}
+  body.menu-collapsed .ops-sidebar button{justify-content:center;padding:13px 8px}
+}
+
+@media(min-width:680px) and (max-width:839px){
+  body.menu-expanded .ops-sidebar{width:292px;align-items:stretch;padding:24px 18px;box-shadow:18px 0 40px #07142655}
+  body.menu-expanded .side-brand{display:flex;align-items:center;gap:12px;margin:8px 0 18px}
+  body.menu-expanded .side-brand div{display:block}
+  body.menu-expanded .side-brand span{display:block}
+  body.menu-expanded .ops-sidebar button{flex-direction:row;justify-content:flex-start;gap:13px;padding:13px 14px;font-size:17px;text-align:left}
+  body.menu-expanded .ops-sidebar button span:not(.nav-icon){display:inline;font-size:17px;line-height:1.2}
+  body.menu-expanded .side-user{display:block}
+}
+
+@media(max-width:679px){
+  body{padding-bottom:0;background:#f3f6fa}
+  header{position:fixed;top:0;left:72px;right:0;z-index:4;min-height:74px;height:74px;padding:10px 10px;border-bottom:1px solid #dbe3ee}
+  header .brand{display:none}
+  .header-actions{width:100%;flex-wrap:nowrap;justify-content:flex-start;overflow-x:auto;scrollbar-width:thin}
+  .header-actions>*{flex:0 0 auto;font-size:14px;padding:9px 10px}
+  main{max-width:none;margin:0 0 0 72px;padding:94px 14px 32px}
+  nav{display:none!important}
+  .ops-sidebar{position:fixed;inset:0 auto 0 0;z-index:6;width:72px;display:flex;flex-direction:column;align-items:center;gap:5px;padding:12px 6px;background:#0b1930;color:#dbeafe;overflow-y:auto;overscroll-behavior:contain;box-shadow:5px 0 16px #07142622}
+  .side-brand{display:flex;justify-content:center;margin:3px 0 7px}
+  .side-brand .app-logo{width:50px;height:50px;border-radius:13px;object-fit:cover;background:#fff}
+  .side-brand div,.side-brand span,.side-user{display:none}
+  .ops-sidebar button{width:100%;display:flex;flex:0 0 auto;align-items:center;justify-content:center;padding:11px 5px;border-radius:12px;background:transparent;color:#cfe2ff}
+  .ops-sidebar button span:not(.nav-icon){display:none}
+  .ops-sidebar button.active,.ops-sidebar button:hover{background:#26364f;color:#fff}
+  .ops-sidebar .nav-icon{width:24px;font-size:20px}
+  body.menu-expanded .ops-sidebar{width:min(292px,88vw);align-items:stretch;padding:16px 14px;box-shadow:18px 0 40px #07142666}
+  body.menu-expanded .side-brand{justify-content:flex-start;align-items:center;gap:12px;margin-bottom:10px}
+  body.menu-expanded .side-brand div{display:block}
+  body.menu-expanded .side-brand b{display:block;color:#fff;font-size:22px}
+  body.menu-expanded .side-brand span{display:block;margin-top:3px;color:#bfdbfe;font-size:13px}
+  body.menu-expanded .ops-sidebar button{justify-content:flex-start;gap:12px;padding:12px 14px;text-align:left}
+  body.menu-expanded .ops-sidebar button span:not(.nav-icon){display:inline;font-size:17px}
+  body.menu-expanded .side-user{display:block;margin-top:auto;border-top:1px solid #334155;padding:14px 8px;color:#fff}
+}
+
 main{
   max-width:none;
   margin:0 0 0 84px;
