@@ -2890,6 +2890,8 @@ function renderNotices() {
   $('#noticeBadge').textContent = unreadCount;
   $('#noticeBadge').style.display = unreadCount ? 'inline-flex' : 'none';
   $('#noticesBtn').classList.toggle('has-unread', unreadCount > 0);
+  $('#noticesBtn').setAttribute('aria-label', unreadCount ? `Notices, ${unreadCount} unread` : 'Notices');
+  $('#noticesBtn').title = unreadCount ? `${unreadCount} unread notice${unreadCount === 1 ? '' : 's'}` : 'Notices';
   if (!$('#noticeList')) return;
   $('#noticeList').innerHTML = notices.length ? notices.map(notice => `
     <article class="card notice-card ${notice.unread ? 'unread' : ''}">

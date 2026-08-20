@@ -12,21 +12,12 @@
   <link rel="apple-touch-icon" href="assets/pwa-icon-180.png">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="temperature.css">
-  <link rel="stylesheet" href="his-theme.css?v=2026-08-19-portrait-menu">
+  <link rel="stylesheet" href="his-theme.css?v=2026-08-19-header-account-menu">
 </head>
 <body>
   <header>
-    <div class="brand">
-      <div>
-        <span class="eyebrow">HIS MANAGEMENT GROUP INC</span>
-        <h1>HIS OPS</h1>
-      </div>
-    </div>
     <div class="header-actions">
-      <a id="smsOptInLink" class="button-link ghost" href="sms-consent.html">SMS opt-in</a>
-      <button id="noticesBtn" class="ghost notice-button">Notices <span id="noticeBadge">0</span></button>
-      <button id="changePasswordBtn" class="ghost">Change password</button>
-      <button id="signOutBtn" class="ghost">Sign out</button>
+      <button id="noticesBtn" class="notice-button" type="button" aria-label="Notices" title="Notices"><span class="notice-icon" aria-hidden="true">◆</span><span id="noticeBadge">0</span></button>
     </div>
   </header>
 
@@ -1390,7 +1381,6 @@
     </div>
     <button id="sideMenuToggle" class="side-menu-toggle" type="button" aria-expanded="false" aria-label="Expand navigation"><span class="nav-icon">☰</span><span>Menu</span></button>
     <button data-view="homeView" class="active" id="sideHomeNav"><span class="nav-icon">▦</span><span>Dashboard</span></button>
-    <button data-view="noticesView"><span class="nav-icon">◆</span><span>Notices</span></button>
     <button data-view="taskListsView"><span class="nav-icon">✓</span><span>Task Lists</span></button>
     <button data-view="tempLogsView"><span class="nav-icon">◒</span><span>Temp Logs</span></button>
     <button data-view="maintenanceView"><span class="nav-icon">🔧</span><span>Maintenance</span></button>
@@ -1402,8 +1392,14 @@
     <button data-view="manageView" id="sideManageNav"><span class="nav-icon">⚙</span><span>Manage</span></button>
     <button data-view="calendarView"><span class="nav-icon">📅</span><span>Calendar</span></button>
     <div class="side-user">
-      <b id="sideUserName">Current user</b>
-      <span id="sideUserRole">role</span>
+      <details class="side-account-menu">
+        <summary><span class="nav-icon" aria-hidden="true">●</span><span class="side-user-copy"><b id="sideUserName">Current user</b><span id="sideUserRole">role</span></span></summary>
+        <div class="side-account-actions">
+          <a id="smsOptInLink" href="sms-consent.html" target="_blank" rel="noopener"><span class="nav-icon" aria-hidden="true">✉</span><span>SMS opt-in</span></a>
+          <button id="changePasswordBtn" type="button"><span class="nav-icon" aria-hidden="true">⚿</span><span>Change password</span></button>
+          <button id="signOutBtn" type="button"><span class="nav-icon" aria-hidden="true">↪</span><span>Sign out</span></button>
+        </div>
+      </details>
     </div>
   </aside>
 
@@ -1796,12 +1792,11 @@
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-19-5"></script>
+  <script src="version.js?v=2026-08-19-6"></script>
   <script src="auth.js?v=2026-07-29-kiosk-pin"></script>
-  <script src="app.js?v=2026-08-19-portrait-menu"></script>
+  <script src="app.js?v=2026-08-19-header-account-menu"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>
 </body>
 </html>
-

@@ -1865,3 +1865,22 @@ main{margin-left:0!important}
   header{left:0!important;padding-left:70px!important}
   main{margin-left:0!important;padding-left:14px!important;padding-right:14px!important}
 }
+
+/* Compact header notice bubble and tucked-away account controls. */
+header .header-actions{width:auto!important;margin-left:auto!important;overflow:visible!important;justify-content:flex-end!important}
+.notice-button{position:relative!important;width:44px!important;height:44px!important;min-width:44px!important;display:grid!important;place-items:center!important;padding:0!important;border:1px solid #d8e1ec!important;border-radius:999px!important;background:#eef3f9!important;color:#0b2f5b!important;box-shadow:0 4px 12px #0f172a12;font-weight:900!important}
+.notice-button .notice-icon{font-size:18px;line-height:1}
+.notice-button.has-unread{border-color:#b42335!important;background:#c6283d!important;color:#fff!important;box-shadow:0 0 0 4px #c6283d22}
+#noticeBadge{position:absolute;top:-7px;right:-7px;min-width:22px;height:22px;margin:0!important;padding:0 5px;border:2px solid #fff;background:#b42335!important;color:#fff;font-size:12px;font-weight:900}
+.notice-button.has-unread #noticeBadge{background:#fff!important;color:#b42335!important;border-color:#b42335}
+.side-account-menu{width:100%;color:#fff}
+.side-account-menu summary{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;cursor:pointer;list-style:none;background:#172842;color:#fff}
+.side-account-menu summary::-webkit-details-marker{display:none}
+.side-account-menu summary::after{content:'▾';margin-left:auto;color:#bfdbfe;transition:transform .18s ease}
+.side-account-menu[open] summary::after{transform:rotate(180deg)}
+.side-user-copy{min-width:0;text-align:left}
+.side-user-copy b,.side-user-copy span{display:block!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.side-user-copy b{font-size:16px!important}.side-user-copy span{margin-top:2px!important;font-size:13px!important;color:#bfdbfe!important}
+.side-account-actions{display:grid;gap:4px;padding-top:7px}
+.side-account-actions a,.side-account-actions button{width:100%;display:flex!important;align-items:center!important;justify-content:flex-start!important;gap:12px!important;padding:11px 14px!important;border:0;border-radius:11px;background:transparent!important;color:#dbeafe!important;font:inherit;font-size:15px!important;text-align:left;text-decoration:none;cursor:pointer}
+.side-account-actions a:hover,.side-account-actions button:hover{background:#26364f!important;color:#fff!important}
