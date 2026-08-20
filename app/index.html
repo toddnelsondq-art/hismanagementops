@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="assets/pwa-icon-180.png">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="temperature.css">
-  <link rel="stylesheet" href="his-theme.css">
+  <link rel="stylesheet" href="his-theme.css?v=2026-08-19-portrait-menu">
 </head>
 <body>
   <header>
@@ -1378,7 +1378,9 @@
     </section>
   </main>
 
-  <aside class="ops-sidebar">
+  <button id="menuOpenButton" class="menu-open-button" type="button" aria-label="Open navigation" aria-controls="primarySidebar" aria-expanded="false"><span aria-hidden="true">☰</span></button>
+  <div id="menuScrim" class="menu-scrim" hidden></div>
+  <aside class="ops-sidebar" id="primarySidebar">
     <div class="side-brand">
       <img class="app-logo" src="assets/his-management.png" alt="HIS Management Group Inc logo">
       <div>
@@ -1794,9 +1796,9 @@
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-19-4"></script>
+  <script src="version.js?v=2026-08-19-5"></script>
   <script src="auth.js?v=2026-07-29-kiosk-pin"></script>
-  <script src="app.js?v=2026-08-19-store-alarms"></script>
+  <script src="app.js?v=2026-08-19-portrait-menu"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>

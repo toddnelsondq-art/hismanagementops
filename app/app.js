@@ -458,11 +458,18 @@ function setSidebarExpanded(expanded, remember = true) {
   document.body.classList.toggle('menu-collapsed', !sidebarExpanded && wideSidebarQuery.matches);
   $('#sideMenuToggle').setAttribute('aria-expanded', String(sidebarExpanded));
   $('#sideMenuToggle').setAttribute('aria-label', sidebarExpanded ? 'Collapse navigation' : 'Expand navigation');
+  $('#menuOpenButton').setAttribute('aria-expanded', String(sidebarExpanded));
+  $('#menuScrim').hidden = !sidebarExpanded;
   if (remember) localStorage.setItem('dqops-sidebar-expanded', String(sidebarExpanded));
 }
 
 setSidebarExpanded(sidebarExpanded, false);
 $('#sideMenuToggle').onclick = () => setSidebarExpanded(!sidebarExpanded);
+$('#menuOpenButton').onclick = () => setSidebarExpanded(true);
+$('#menuScrim').onclick = () => setSidebarExpanded(false);
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && sidebarExpanded) setSidebarExpanded(false);
+});
 wideSidebarQuery.addEventListener('change', event => {
   if (localStorage.getItem('dqops-sidebar-expanded') === null) setSidebarExpanded(event.matches, false);
   else setSidebarExpanded(sidebarExpanded, false);
