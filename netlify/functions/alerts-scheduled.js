@@ -1,5 +1,5 @@
 exports.config = {
-  schedule: '*/15 * * * *'
+  schedule: '*/5 * * * *'
 };
 
 exports.handler = async () => {

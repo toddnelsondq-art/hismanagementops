@@ -242,6 +242,11 @@ let taskTemplates = baseTasks.map(task => ({ ...task, section: 'Opening', active
 let notices = [];
 let alertSettings = { rules: [], logs: [] };
 let notificationLogs = [];
+let storeAlarms = { canSend: false, active: [], history: [] };
+let storeAlarmAudioContext = null;
+let storeAlarmToneTimer = null;
+let lastStoreAlarmNotificationId = sessionStorage.getItem('dqops-last-store-alarm') || '';
+let storeAlarmPollBusy = false;
 let calendarEvents = { events: [] };
 let calendarLocationFilter = localStorage.getItem('calendar-location-filter') || 'all';
 let maintenancePriorityOrder = [];
@@ -754,7 +759,107 @@ async function loadState() {
   await loadManagementReportsState();
   await loadDashboardState();
   await loadKioskDevices();
+  await loadStoreAlarmState();
   render();
+}
+
+async function loadStoreAlarmState() {
+  if (!apiOnline || storeAlarmPollBusy) return;
+  storeAlarmPollBusy = true;
+  try {
+    storeAlarms = await api('/api/store-alarms/state');
+    renderStoreAlarms();
+  } catch (error) {
+    console.warn('Store alarm state did not load', error);
+  } finally {
+    storeAlarmPollBusy = false;
+  }
+}
+
+function storeAlarmLocationOptions() {
+  const allowed = isFullAccess() ? locations : locations.filter(location => userLocationIds().includes(location.id));
+  return allowed.map(location => `<option value="${escapeHtml(location.id)}">${escapeHtml(location.name)}</option>`).join('');
+}
+
+function stopStoreAlarmTone() {
+  clearInterval(storeAlarmToneTimer); storeAlarmToneTimer = null;
+}
+
+function unlockStoreAlarmAudio() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    storeAlarmAudioContext ||= new AudioCtx();
+    storeAlarmAudioContext.resume();
+  } catch { /* The visible Enable alarm sound button remains available. */ }
+}
+
+function soundStoreAlarmTone() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    storeAlarmAudioContext ||= new AudioCtx();
+    storeAlarmAudioContext.resume();
+    const oscillator = storeAlarmAudioContext.createOscillator();
+    const gain = storeAlarmAudioContext.createGain();
+    oscillator.frequency.value = 880; gain.gain.setValueAtTime(0.18, storeAlarmAudioContext.currentTime); gain.gain.exponentialRampToValueAtTime(0.001, storeAlarmAudioContext.currentTime + 0.7);
+    oscillator.connect(gain); gain.connect(storeAlarmAudioContext.destination); oscillator.start(); oscillator.stop(storeAlarmAudioContext.currentTime + 0.7);
+    $('#enableAlarmSoundBtn').hidden = true;
+  } catch { $('#enableAlarmSoundBtn').hidden = false; }
+}
+
+function startStoreAlarmTone() {
+  if (!storeAlarmToneTimer) { soundStoreAlarmTone(); storeAlarmToneTimer = setInterval(soundStoreAlarmTone, 5000); }
+}
+
+async function showStoreAlarmNotification(alarm) {
+  if (!alarm || alarm.id === lastStoreAlarmNotificationId || !('Notification' in window) || Notification.permission !== 'granted') return;
+  lastStoreAlarmNotificationId = alarm.id; sessionStorage.setItem('dqops-last-store-alarm', alarm.id);
+  const registration = await navigator.serviceWorker?.ready;
+  if (registration) registration.showNotification(`URGENT: ${alarm.locationName}`, { body: `${alarm.reason}. ${alarm.incomplete?.summary || ''}`, icon: '/assets/his-management.png', tag: alarm.id, requireInteraction: true, data: { url: '/' } });
+}
+
+function renderStoreAlarms() {
+  const admin = $('#storeAlarmAdminCard');
+  if (admin) {
+    admin.style.display = storeAlarms.canSend ? '' : 'none';
+    if (storeAlarms.canSend) {
+      const select = $('#storeAlarmLocation'); const selected = select.value; select.innerHTML = storeAlarmLocationOptions();
+      if ([...select.options].some(option => option.value === selected)) select.value = selected;
+      $('#storeAlarmHistory').innerHTML = (storeAlarms.history || []).length ? storeAlarms.history.map(alarm => `<article class="store-alarm-history-item"><div><b>${escapeHtml(alarm.locationName)} · ${escapeHtml(alarm.status)}</b><p>${escapeHtml(alarm.reason)} · ${new Date(alarm.sentAt).toLocaleString()}</p><small>Sent by ${escapeHtml(alarm.sentBy || '')}${alarm.acknowledgedBy ? ` · Acknowledged by ${escapeHtml(alarm.acknowledgedBy)} at ${new Date(alarm.acknowledgedAt).toLocaleString()}` : ''}${alarm.escalatedAt ? ' · Escalated' : ''}</small></div>${alarm.status === 'Active' ? `<button class="ghost" data-store-alarm-cancel="${escapeHtml(alarm.id)}" type="button">Cancel</button>` : ''}</article>`).join('') : '<p class="hint">No store alarms have been sent.</p>';
+    }
+  }
+  const alarm = storeAlarms.canSend ? null : (storeAlarms.active || []).find(item => item.locationId === currentLocationId) || (storeAlarms.active || [])[0];
+  const overlay = $('#storeAlarmOverlay');
+  if (!overlay) return;
+  overlay.hidden = !alarm;
+  document.body.classList.toggle('store-alarm-active', Boolean(alarm));
+  if (!alarm) return stopStoreAlarmTone();
+  overlay.dataset.alarmId = alarm.id; $('#storeAlarmOverlayTitle').textContent = alarm.reason; $('#storeAlarmOverlayLocation').textContent = alarm.locationName; $('#storeAlarmOverlayMessage').textContent = alarm.message || 'Please acknowledge this alarm and complete the required work.'; $('#storeAlarmOverlaySummary').textContent = alarm.incomplete?.summary || '';
+  $('#storeAlarmOverlayMissing').innerHTML = (alarm.incomplete?.missing || []).slice(0, 12).map(item => `<p>• ${escapeHtml(item.label)}</p>`).join('') + ((alarm.incomplete?.missing || []).length > 12 ? `<p><b>+ ${(alarm.incomplete.missing.length - 12)} more items</b></p>` : '');
+  startStoreAlarmTone(); showStoreAlarmNotification(alarm);
+}
+
+async function enableTabletNotifications() {
+  if (!('Notification' in window)) return toast('Notifications are not supported on this device');
+  const permission = await Notification.requestPermission();
+  toast(permission === 'granted' ? 'Tablet notifications enabled' : 'Notification permission was not enabled');
+}
+
+async function sendStoreAlarm() {
+  if (!confirm(`Push a blocking alarm to ${$('#storeAlarmLocation').selectedOptions[0]?.textContent || 'this store'} now?`)) return;
+  try {
+    storeAlarms = await api('/api/store-alarms/send', { method: 'POST', body: JSON.stringify({ locationId: $('#storeAlarmLocation').value, reason: $('#storeAlarmReason').value, message: $('#storeAlarmMessage').value, escalateAfterMinutes: Number($('#storeAlarmEscalation').value) }) });
+    $('#storeAlarmMessage').value = ''; renderStoreAlarms(); toast('Store tablet alarm pushed');
+  } catch (error) { toast(`Alarm was not sent: ${error.message}`); }
+}
+
+async function acknowledgeStoreAlarm() {
+  const id = $('#storeAlarmOverlay').dataset.alarmId;
+  try {
+    const alarm = (storeAlarms.active || []).find(item => item.id === id);
+    storeAlarms = await api('/api/store-alarms/acknowledge', { method: 'POST', body: JSON.stringify({ id }) });
+    renderStoreAlarms(); switchView('todayView'); toast(`Alarm acknowledged — please complete the remaining ${alarm?.incomplete?.missingTemps?.length ? 'temperature and checklist' : 'checklist'} work`);
+  } catch (error) { toast(`Alarm was not acknowledged: ${error.message}`); }
 }
 
 async function loadKioskDevices() {
@@ -1379,6 +1484,7 @@ function render() {
   renderTaskTemplates();
   renderAlertRules();
   renderNotificationLogs();
+  renderStoreAlarms();
   renderNotices();
   renderDashboardAlerts(visibleLocations);
   renderMaintenance();
@@ -3702,6 +3808,12 @@ function switchView(viewId) {
 }
 
 document.addEventListener('click', async event => {
+  const cancelStoreAlarmButton = event.target.closest('[data-store-alarm-cancel]');
+  if (cancelStoreAlarmButton) {
+    if (!confirm('Cancel this store alarm?')) return;
+    try { storeAlarms = await api('/api/store-alarms/cancel', { method: 'POST', body: JSON.stringify({ id: cancelStoreAlarmButton.dataset.storeAlarmCancel }) }); renderStoreAlarms(); toast('Store alarm cancelled'); } catch (error) { toast(`Alarm was not cancelled: ${error.message}`); }
+    return;
+  }
   const maintenanceLogEdit = event.target.closest('[data-maintenance-log-edit]');
   if (maintenanceLogEdit) return editMaintenanceLogEntry(maintenanceLogEdit.dataset.maintenanceLogEdit);
   const dashboardMove = event.target.closest('[data-dashboard-widget-move]');
@@ -5082,6 +5194,10 @@ $('#saveAlertRuleBtn').onclick = saveAlertRule;
 $('#cancelAlertRuleBtn').onclick = resetAlertRuleForm;
 $('#previewAlertsBtn').onclick = previewAlerts;
 $('#refreshNotificationLogsBtn').onclick = refreshNotificationLogs;
+$('#sendStoreAlarmBtn').onclick = sendStoreAlarm;
+$('#enableTabletNotificationsBtn').onclick = enableTabletNotifications;
+$('#acknowledgeStoreAlarmBtn').onclick = acknowledgeStoreAlarm;
+$('#enableAlarmSoundBtn').onclick = () => { soundStoreAlarmTone(); startStoreAlarmTone(); };
 $('#saveFpcInspectionBtn').onclick = saveFpcInspection;
 $('#saveFpcItemBtn').onclick = saveFpcItem;
 $('#saveFpcEditBtn').onclick = saveFpcEdit;
@@ -5161,4 +5277,6 @@ function renderHistory() {
 }
 
 setupAppUpdateFlow();
+document.addEventListener('pointerdown', unlockStoreAlarmAudio, { once: true });
 loadState();
+window.setInterval(loadStoreAlarmState, 20000);

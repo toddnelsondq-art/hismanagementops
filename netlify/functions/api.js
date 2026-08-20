@@ -9,7 +9,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.2.1';
+const APP_VERSION = '1.3.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -1265,6 +1265,109 @@ async function appendNotificationLogs(entries = []) {
   return next;
 }
 
+async function storeAlarmIncompleteState(locationId, date = localDate()) {
+  const day = await readDay(locationId, date);
+  const missingTasks = (day.tasks || []).filter(task => !task.done).map(task => ({ type: 'task', label: `${task.section || 'Checklist'}: ${task.name}` }));
+  const logged = new Set((day.temps || []).map(temp => `${readingList(temp)}|${readingSession(temp)}|${temp.area}|${temp.item}`));
+  const missingTemps = [];
+  Object.entries(TEMPERATURE_ITEMS).forEach(([listName, list]) => {
+    if (list?.requiredDaily === false || !list?.areas) return;
+    Object.entries(list.areas).forEach(([area, items]) => items.forEach(item => ['Day', 'Afternoon'].forEach(session => {
+      if (!logged.has(`${listName}|${session}|${area}|${item}`)) missingTemps.push({ type: 'temperature', label: `${listName} ${session}: ${item}` });
+    })));
+  });
+  return { missingTasks, missingTemps, missing: [...missingTasks, ...missingTemps], summary: `${missingTasks.length} checklist item${missingTasks.length === 1 ? '' : 's'} and ${missingTemps.length} temperature reading${missingTemps.length === 1 ? '' : 's'} remaining` };
+}
+
+async function readStoreAlarms() {
+  const stored = await readMaintenanceKey('storeAlarms', []);
+  return Array.isArray(stored) ? stored : [];
+}
+
+async function refreshStoreAlarmStatuses(alarms) {
+  let changed = false;
+  for (const alarm of alarms.filter(item => ['Active', 'Acknowledged'].includes(item.status))) {
+    const incomplete = await storeAlarmIncompleteState(alarm.locationId, alarm.date);
+    alarm.incomplete = incomplete;
+    if (!incomplete.missing.length) {
+      alarm.status = 'Resolved'; alarm.resolvedAt = new Date().toISOString(); alarm.resolvedBy = 'DQ OPS — required work completed'; changed = true;
+    }
+  }
+  if (changed) await writeMaintenanceKey('storeAlarms', alarms.slice(0, 1000));
+  return alarms;
+}
+
+function alarmVisibleTo(actor, alarm) {
+  return !AUTH_REQUIRED || isFullAccess(actor) || canAccessLocation(actor, alarm.locationId);
+}
+
+async function storeAlarmState(actor) {
+  const alarms = await refreshStoreAlarmStatuses(await readStoreAlarms());
+  const visible = alarms.filter(alarm => alarmVisibleTo(actor, alarm));
+  return { canSend: !AUTH_REQUIRED || canAreaManage(actor), active: visible.filter(alarm => alarm.status === 'Active'), history: canAreaManage(actor) || !AUTH_REQUIRED ? visible.slice(0, 100) : visible.filter(alarm => alarm.status === 'Acknowledged').slice(0, 20) };
+}
+
+async function sendStoreAlarm(payload, actor) {
+  if (AUTH_REQUIRED && !canAreaManage(actor)) throw Object.assign(new Error('Only Area Managers and above can send a store alarm'), { statusCode: 403 });
+  const locationId = String(payload.locationId || '');
+  if (!locationId || (AUTH_REQUIRED && !canAccessLocation(actor, locationId))) throw Object.assign(new Error('You do not have access to that location'), { statusCode: 403 });
+  const date = payload.date || localDate();
+  const incomplete = await storeAlarmIncompleteState(locationId, date);
+  if (!incomplete.missing.length) throw Object.assign(new Error('All required cleaning and temperature work is already complete'), { statusCode: 400 });
+  const locations = await readLocations();
+  const location = locations.find(item => item.id === locationId);
+  const alarms = await readStoreAlarms();
+  if (alarms.some(item => item.locationId === locationId && item.date === date && item.status === 'Active')) throw Object.assign(new Error('This location already has an active tablet alarm'), { statusCode: 409 });
+  const alarm = { id: `ALARM-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`, locationId, locationName: location?.name || locationId, date, reason: String(payload.reason || 'Required daily work is incomplete').trim(), message: String(payload.message || '').trim(), incomplete, status: 'Active', sentAt: new Date().toISOString(), sentBy: actor?.name || 'Area Manager', sentByRole: actor?.role || 'Area Manager', escalateAfterMinutes: Math.max(5, Math.min(60, Number(payload.escalateAfterMinutes) || 10)) };
+  alarms.unshift(alarm);
+  await writeMaintenanceKey('storeAlarms', alarms.slice(0, 1000));
+  await appendNotificationLogs([{ type: 'Store tablet alarm', channel: 'in-app', title: alarm.reason, detail: alarm.incomplete.summary, locationId, locationName: alarm.locationName, recipientName: 'Store tablet', delivered: true, status: 'Active' }]);
+  return storeAlarmState(actor);
+}
+
+async function acknowledgeStoreAlarm(payload, actor) {
+  const alarms = await readStoreAlarms();
+  const alarm = alarms.find(item => item.id === payload.id);
+  if (!alarm || !alarmVisibleTo(actor, alarm)) throw Object.assign(new Error('Alarm not found'), { statusCode: 404 });
+  if (alarm.status === 'Active') {
+    alarm.status = 'Acknowledged'; alarm.acknowledgedAt = new Date().toISOString(); alarm.acknowledgedBy = actor?.name || 'Store employee'; alarm.acknowledgedByRole = actor?.role || 'Employee';
+    await writeMaintenanceKey('storeAlarms', alarms.slice(0, 1000));
+    await appendNotificationLogs([{ type: 'Store tablet alarm', channel: 'in-app', title: 'Alarm acknowledged', detail: `${alarm.acknowledgedBy} acknowledged ${alarm.reason}`, locationId: alarm.locationId, locationName: alarm.locationName, recipientName: alarm.sentBy, delivered: true, status: 'Acknowledged' }]);
+  }
+  return storeAlarmState(actor);
+}
+
+async function cancelStoreAlarm(payload, actor) {
+  if (AUTH_REQUIRED && !canAreaManage(actor)) throw Object.assign(new Error('Only Area Managers and above can cancel a store alarm'), { statusCode: 403 });
+  const alarms = await readStoreAlarms();
+  const alarm = alarms.find(item => item.id === payload.id && alarmVisibleTo(actor, item));
+  if (!alarm) throw Object.assign(new Error('Alarm not found'), { statusCode: 404 });
+  alarm.status = 'Cancelled'; alarm.cancelledAt = new Date().toISOString(); alarm.cancelledBy = actor?.name || 'Area Manager';
+  await writeMaintenanceKey('storeAlarms', alarms.slice(0, 1000));
+  return storeAlarmState(actor);
+}
+
+async function escalateStoreAlarms(now = new Date()) {
+  const alarms = await refreshStoreAlarmStatuses(await readStoreAlarms());
+  const users = await readUsers();
+  const logs = []; let changed = false;
+  for (const alarm of alarms.filter(item => item.status === 'Active' && !item.escalatedAt)) {
+    if (now.getTime() - new Date(alarm.sentAt).getTime() < alarm.escalateAfterMinutes * 60000) continue;
+    const recipients = users.filter(user => user.role === 'Manager' && userLocationIds(user).includes(alarm.locationId));
+    const text = `HIS OPS URGENT: ${alarm.locationName} has not acknowledged the tablet alarm. ${alarm.reason}. ${alarm.incomplete?.summary || ''}`;
+    alarm.escalatedAt = now.toISOString(); alarm.escalationResults = [];
+    for (const recipient of recipients) {
+      const result = await sendTwilioSms(recipient.phone, text);
+      alarm.escalationResults.push({ recipientName: recipient.name, delivered: Boolean(result.delivered), reason: result.reason || '' });
+      logs.push({ type: 'Store alarm escalation', channel: 'sms', title: alarm.reason, detail: alarm.incomplete?.summary || '', locationId: alarm.locationId, locationName: alarm.locationName, recipientId: recipient.id, recipientName: recipient.name, to: recipient.phone, delivered: Boolean(result.delivered), skipped: Boolean(result.skipped), status: result.status ? String(result.status) : '', reason: result.reason || '' });
+    }
+    changed = true;
+  }
+  if (changed) await writeMaintenanceKey('storeAlarms', alarms.slice(0, 1000));
+  if (logs.length) await appendNotificationLogs(logs);
+  return alarms.filter(item => item.escalatedAt && item.status === 'Active');
+}
+
 function normalizeTaskTemplate(task = {}) {
   const name = String(task.name || '').trim();
   if (!name) throw Object.assign(new Error('Task name is required'), { statusCode: 400 });
@@ -1821,7 +1924,8 @@ async function checkAlerts(query = {}, actor = null) {
       reason: entry.reason
     }))));
   }
-  return { dryRun, date, alerts };
+  const storeAlarmEscalations = dryRun ? [] : await escalateStoreAlarms(now);
+  return { dryRun, date, alerts, storeAlarmEscalations };
 }
 
 async function readFpcRecords() {
@@ -2924,7 +3028,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/version') {
       return json(200, {
         version: APP_VERSION,
-        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.19.3'
+        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.19.4'
       });
     }
 
@@ -3018,6 +3122,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/location-health/camera-snapshot') return unifiCameraSnapshot(String(query.cameraId || ''), actor);
     if (method === 'GET' && apiPath === '/notices') return json(200, { notices: await readNotices(actor) });
     if (method === 'GET' && apiPath === '/notification-logs') return json(200, { logs: await readNotificationLogs(actor) });
+    if (method === 'GET' && apiPath === '/store-alarms/state') return json(200, await storeAlarmState(actor));
     if (method === 'GET' && apiPath === '/calendar/state') return json(200, await calendarState(actor));
     if (method === 'GET' && apiPath === '/alerts/state') return json(200, await readAlertSettings());
     if (method === 'GET' && apiPath === '/alerts/check') return json(200, await checkAlerts(query, actor));
@@ -3091,6 +3196,9 @@ exports.handler = async event => {
     if (method === 'POST' && apiPath === '/notice/read') {
       return json(200, { notices: await markNoticeRead(body.id, actor) });
     }
+    if (method === 'POST' && apiPath === '/store-alarms/send') return json(200, await sendStoreAlarm(body, actor));
+    if (method === 'POST' && apiPath === '/store-alarms/acknowledge') return json(200, await acknowledgeStoreAlarm(body, actor));
+    if (method === 'POST' && apiPath === '/store-alarms/cancel') return json(200, await cancelStoreAlarm(body, actor));
     if (method === 'POST' && apiPath === '/calendar/event') {
       return json(200, await saveCalendarEvent(body, actor));
     }

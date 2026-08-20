@@ -1079,7 +1079,7 @@
 
         <article class="card help-section" id="help-manage">
           <h3>Manage</h3>
-          <p>Contains manager-only setup tools. Use it to add a one-day task, maintain permanent checklist items and schedules, post notices, create alert rules, review notification attempts, manage tablets, and manage users.</p>
+          <p>Contains manager-only setup tools. Use it to add a one-day task, maintain permanent checklist items and schedules, post notices, create alert rules, review notification attempts, manage tablets, and manage users. Area Managers and above can also push a store-tablet alarm when required cleaning or temperature work is incomplete. DQ OPS records who sent and acknowledged it, resolves it when the work is completed, and texts the store manager if it is not acknowledged in time.</p>
           <p class="hint">Changes to permanent checklists affect future days. Check the editing scope before saving.</p>
           <a href="#helpContents">Back to contents</a>
         </article>
@@ -1221,6 +1221,17 @@
           <input id="noticeLink" type="url" placeholder="https://drive.google.com/...">
         </label>
         <button id="postNoticeBtn" type="button">Post notice</button>
+      </article>
+
+      <article class="card form-card collapsible-card" id="storeAlarmAdminCard">
+        <h3>Store tablet alarms</h3>
+        <p class="hint">Area Managers and above can push a blocking alarm when required cleaning or temperature work is incomplete. If nobody acknowledges it, DQ OPS texts the store manager.</p>
+        <label>Location<select id="storeAlarmLocation"></select></label>
+        <label>Reason<select id="storeAlarmReason"><option>Required temperature checks are incomplete</option><option>Required cleaning/checklists are incomplete</option><option>Temperature checks and cleaning are incomplete</option><option>Urgent manager follow-up required</option></select></label>
+        <label>Optional message<textarea id="storeAlarmMessage" rows="2" placeholder="Add a short instruction for the store"></textarea></label>
+        <label>Escalate if not acknowledged<select id="storeAlarmEscalation"><option value="5">After 5 minutes</option><option value="10" selected>After 10 minutes</option><option value="15">After 15 minutes</option><option value="30">After 30 minutes</option></select></label>
+        <div class="row-actions"><button id="sendStoreAlarmBtn" class="danger" type="button">Push alarm to tablet</button><button id="enableTabletNotificationsBtn" class="ghost" type="button">Enable notifications on this device</button></div>
+        <h4>Recent alarm activity</h4><div id="storeAlarmHistory"><p class="hint">No alarm activity loaded.</p></div>
       </article>
 
       <article class="card form-card collapsible-card" id="alertRulesCard">
@@ -1777,12 +1788,15 @@
     </form>
   </dialog>
 
+  <section id="storeAlarmOverlay" class="store-alarm-overlay" hidden role="alertdialog" aria-modal="true" aria-labelledby="storeAlarmOverlayTitle">
+    <div class="store-alarm-panel"><div class="store-alarm-beacon" aria-hidden="true">!</div><p class="eyebrow">URGENT STORE ALARM</p><h1 id="storeAlarmOverlayTitle">Required daily work is incomplete</h1><h2 id="storeAlarmOverlayLocation"></h2><p id="storeAlarmOverlayMessage"></p><p id="storeAlarmOverlaySummary" class="store-alarm-summary"></p><div id="storeAlarmOverlayMissing" class="store-alarm-missing"></div><p class="store-alarm-instruction">A signed-in employee must acknowledge this alarm. DQ OPS records the employee's name and the time.</p><div class="row-actions store-alarm-actions"><button id="acknowledgeStoreAlarmBtn" type="button">Acknowledge and open incomplete work</button><button id="enableAlarmSoundBtn" class="ghost" type="button">Enable alarm sound</button></div></div>
+  </section>
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-19-3"></script>
+  <script src="version.js?v=2026-08-19-4"></script>
   <script src="auth.js?v=2026-07-29-kiosk-pin"></script>
-  <script src="app.js?v=2026-08-19-left-navigation"></script>
+  <script src="app.js?v=2026-08-19-store-alarms"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>

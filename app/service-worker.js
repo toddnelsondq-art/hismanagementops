@@ -30,6 +30,14 @@ self.addEventListener('message', event => {
   if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  event.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windows => {
+    const open = windows.find(client => new URL(client.url).origin === self.location.origin);
+    return open ? open.focus() : clients.openWindow(event.notification.data?.url || '/');
+  }));
+});
+
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys()
