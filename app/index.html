@@ -13,6 +13,17 @@
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="temperature.css">
   <link rel="stylesheet" href="his-theme.css?v=2026-08-20-temperature-log-editor">
+  <style>
+    .receiving-issue-tools,.receiving-issue-list{width:100%;margin-top:12px}
+    .receiving-issue{border-top:1px solid var(--line);padding:10px 0}
+    .receiving-issue a{color:var(--green);font-weight:800}
+    #receivingIssuePreview{display:none;width:100%;max-height:250px;object-fit:cover;border-radius:10px;margin:10px 0}
+    .delivery-schedule-editor{margin:12px 0;border:1px solid var(--line);border-radius:10px;padding:10px}
+    .delivery-location-row{border-top:1px solid var(--line);padding:10px 0}
+    .delivery-day-checks{display:grid;grid-template-columns:repeat(7,minmax(58px,1fr));gap:4px;margin-top:6px}
+    .delivery-day-checks .location-check{font-size:12px}
+    @media(max-width:680px){.delivery-day-checks{grid-template-columns:repeat(4,1fr)}}
+  </style>
 </head>
 <body>
   <header>
@@ -430,6 +441,8 @@
         <button id="addTempBtn" class="ghost" type="button">+ Other Temp</button>
         <div id="tempList" class="temp-list"></div>
         <div id="additionalTempList" class="additional-temp-list"></div>
+        <div id="receivingIssueTools" class="receiving-issue-tools" hidden><button id="reportReceivingIssueBtn" class="ghost" type="button">📷 Report an issue</button></div>
+        <div id="receivingIssueList" class="receiving-issue-list"></div>
       </article>
 
       <div class="section-title">
@@ -1725,6 +1738,17 @@
       </div>
       <div id="dashboardWidgetSettings" class="dashboard-widget-settings"></div>
       <div class="dialog-actions"><button id="resetDashboardBtn" class="ghost" type="button">Reset to default</button><button id="saveDashboardBtn" type="button">Save dashboard</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="receivingIssueDialog">
+    <form method="dialog">
+      <div class="modal-head"><h3>Report a receiving issue</h3><button value="cancel" class="x">×</button></div>
+      <p class="hint">Add a note, a photo, or both. You can report as many issues as needed.</p>
+      <label>Issue note<textarea id="receivingIssueNote" rows="4" placeholder="Describe damaged cases, thawing, missing items, or another concern"></textarea></label>
+      <label class="camera">📷<b>Take or choose photo</b><input id="receivingIssuePhoto" type="file" accept="image/*" capture="environment"></label>
+      <img id="receivingIssuePreview" alt="Receiving issue photo preview">
+      <button id="saveReceivingIssueBtn" value="default">Save issue</button>
     </form>
   </dialog>
 

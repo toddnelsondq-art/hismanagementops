@@ -9,7 +9,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.4.1';
+const APP_VERSION = '1.5.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -91,6 +91,7 @@ const TEMPERATURE_ITEMS = {
   },
   Receiving: {
     requiredDaily: false,
+    deliveryDaysByLocation: {},
     areas: {
       'Truck receiving': [
         'Hamburgers',
@@ -2100,7 +2101,11 @@ function cleanTemperatureDefinitions(input = {}) {
     const name = String(rawName || '').trim();
     if (!name || !rawList || typeof rawList !== 'object') return;
     const items = [...new Set(Object.values(rawList.areas || {}).flat().map(String).map(item => item.trim()).filter(Boolean))];
-    clean[name] = { requiredDaily: rawList.requiredDaily !== false, areas: { 'Products and equipment': items } };
+    const deliveryDaysByLocation = {};
+    Object.entries(rawList.deliveryDaysByLocation || {}).forEach(([locationId, days]) => {
+      deliveryDaysByLocation[String(locationId)] = Array.isArray(days) ? [...new Set(days.map(String).filter(day => ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].includes(day)))] : [];
+    });
+    clean[name] = { requiredDaily: rawList.requiredDaily !== false, areas: { 'Products and equipment': items }, ...(Object.keys(deliveryDaysByLocation).length ? { deliveryDaysByLocation } : {}) };
   });
   return clean;
 }
@@ -3075,7 +3080,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/version') {
       return json(200, {
         version: APP_VERSION,
-        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.20.3'
+        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.21.1'
       });
     }
 

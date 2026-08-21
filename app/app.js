@@ -65,6 +65,7 @@ const defaultTemperatureItems = {
   },
   Receiving: {
     requiredDaily: false,
+    deliveryDaysByLocation: {},
     areas: {
       'Truck receiving': [
         'Hamburgers',
@@ -1297,6 +1298,17 @@ function temperatureListNames() {
   return isTemperatureListFormat() ? Object.keys(temperatureItems) : ['Grill', 'Chill'];
 }
 
+function temperatureListScheduledToday(listName, locationId = currentLocationId, when = new Date()) {
+  const schedules = temperatureItems[listName]?.deliveryDaysByLocation;
+  if (!schedules || !Object.prototype.hasOwnProperty.call(schedules, locationId)) return true;
+  const scheduledDays = Array.isArray(schedules[locationId]) ? schedules[locationId] : [];
+  return scheduledDays.includes(weekdayOptions[when.getDay()]);
+}
+
+function visibleTemperatureListNames() {
+  return temperatureListNames().filter(list => temperatureListScheduledToday(list));
+}
+
 function temperatureAreasForList(listName = selectedTempList) {
   if (!isTemperatureListFormat()) return temperatureItems;
   return temperatureItems[listName]?.areas || {};
@@ -1431,7 +1443,7 @@ function render() {
   }).join('') : `<article class="card"><p class="hint">No ${escapeHtml(selectedTaskCategory.toLowerCase())} tasks are due in this time window.</p></article>`;
 
   if (!dayTempsAvailable(activeUser) && selectedTempSession === 'Day') selectedTempSession = 'Afternoon';
-  const tempLists = temperatureListNames();
+  const tempLists = visibleTemperatureListNames();
   if (!tempLists.includes(selectedTempList)) selectedTempList = tempLists[0] || 'Grill';
   $('#tempListTabs').innerHTML = tempLists.map(list => `
     <button class="${list === selectedTempList ? 'active' : ''}" data-temp-list="${escapeHtml(list)}">${escapeHtml(list)}</button>
@@ -1461,6 +1473,12 @@ function render() {
   $('#additionalTempList').innerHTML = additionalReadings.length ? `
     <div class="temp-group additional-temp-group"><h4>Additional / non-listed temperatures</h4>
       ${additionalReadings.map(reading => `<div class="temp-entry additional-temp-entry"><span>${escapeHtml(reading.item)}</span><div class="reading-chips"><span class="reading-chip">${escapeHtml(reading.value)}°F · ${escapeHtml(reading.time)}${reading.userName ? ` · ${escapeHtml(reading.userName)}` : ''}</span></div></div>`).join('')}
+    </div>` : '';
+  const receivingIssues = (day.receivingIssues || []).filter(issue => issue.list === selectedTempList);
+  if ($('#receivingIssueTools')) $('#receivingIssueTools').hidden = selectedTempList !== 'Receiving';
+  if ($('#receivingIssueList')) $('#receivingIssueList').innerHTML = selectedTempList === 'Receiving' && receivingIssues.length ? `
+    <div class="temp-group receiving-issue-group"><h4>Reported receiving issues</h4>
+      ${receivingIssues.map(issue => `<article class="receiving-issue"><b>${escapeHtml(issue.note || 'Photo-only issue')}</b><p>${escapeHtml(issue.time)} · ${escapeHtml(issue.userName || '')}</p>${issue.photoUrl ? `<a href="${escapeHtml(fullPhotoUrl(issue.photoUrl))}" target="_blank" rel="noopener">View photo</a>` : issue.photoData ? `<a href="${escapeHtml(issue.photoData)}" target="_blank" rel="noopener">View photo</a>` : ''}</article>`).join('')}
     </div>` : '';
 
   const done = day.tasks.filter(task => task.done).length;
@@ -1537,7 +1555,9 @@ function temperatureItemEditorHtml(list, area, item) {
 }
 
 function temperatureLogEditorHtml(list = '', required = true, items = []) {
-  return `<details class="temperature-log-editor" open><summary><b>${escapeHtml(list || 'New temperature log')}</b><span>${items.length} item${items.length === 1 ? '' : 's'}</span></summary><div class="temperature-log-editor-body"><div class="temperature-log-head"><label>Log name<input data-temp-log-name value="${escapeHtml(list)}" placeholder="e.g. Grill"></label><label class="check"><input data-temp-log-required type="checkbox" ${required ? 'checked' : ''}> Required Day and Afternoon</label><button class="danger" data-temp-log-remove type="button">Delete log</button></div><div data-temp-items>${items.map(({ area, item }) => temperatureItemEditorHtml(list, area, item)).join('')}</div><button class="ghost" data-temp-item-add type="button">+ Add item</button></div></details>`;
+  const schedules = temperatureItems[list]?.deliveryDaysByLocation || {};
+  const scheduleEditor = list === 'Receiving' ? `<details class="delivery-schedule-editor"><summary><b>Truck delivery days by location</b></summary><p class="hint">Receiving appears only on checked delivery days.</p>${locations.map(location => `<div class="delivery-location-row" data-delivery-location="${escapeHtml(location.id)}"><b>${escapeHtml(location.name)}</b><div class="delivery-day-checks">${weekdayOptions.map(dayName => `<label class="location-check"><input type="checkbox" value="${dayName}" ${(schedules[location.id] || []).includes(dayName) ? 'checked' : ''}> ${dayName.slice(0, 3)}</label>`).join('')}</div></div>`).join('')}</details>` : '';
+  return `<details class="temperature-log-editor" open><summary><b>${escapeHtml(list || 'New temperature log')}</b><span>${items.length} item${items.length === 1 ? '' : 's'}</span></summary><div class="temperature-log-editor-body"><div class="temperature-log-head"><label>Log name<input data-temp-log-name value="${escapeHtml(list)}" placeholder="e.g. Grill"></label><label class="check"><input data-temp-log-required type="checkbox" ${required ? 'checked' : ''}> Required Day and Afternoon</label><button class="danger" data-temp-log-remove type="button">Delete log</button></div>${scheduleEditor}<div data-temp-items>${items.map(({ area, item }) => temperatureItemEditorHtml(list, area, item)).join('')}</div><button class="ghost" data-temp-item-add type="button">+ Add item</button></div></details>`;
 }
 
 async function loadLocationHealthState(loadSnapshots = false) {
@@ -3157,6 +3177,7 @@ function reportMarkup(report) {
         </div>
       `).join('') : '<p class="hint">No temperature readings recorded.</p>'}
     </article>
+    ${(entry.receivingIssues || []).length ? `<article class="card report-card"><h3>Receiving issues</h3>${entry.receivingIssues.map(issue => `<div class="report-line"><span>!</span><div><b>${escapeHtml(issue.note || 'Photo-only issue')}</b><p>${escapeHtml(issue.time || '')}${issue.userName ? ` · ${escapeHtml(issue.userName)}` : ''}</p>${issue.photoUrl ? `<a href="${escapeHtml(fullPhotoUrl(issue.photoUrl))}" target="_blank" rel="noopener">View photo</a>` : issue.photoData ? `<a href="${escapeHtml(issue.photoData)}" target="_blank" rel="noopener">View photo</a>` : ''}</div></div>`).join('')}</article>` : ''}
   `;
 }
 
@@ -4131,6 +4152,49 @@ function openAdditionalTempDialog() {
 }
 
 $('#addTempBtn').onclick = openAdditionalTempDialog;
+$('#reportReceivingIssueBtn').onclick = () => {
+  $('#receivingIssueNote').value = '';
+  $('#receivingIssuePhoto').value = '';
+  $('#receivingIssuePreview').removeAttribute('src');
+  $('#receivingIssuePreview').style.display = 'none';
+  $('#receivingIssueDialog').showModal();
+  $('#receivingIssueNote').focus();
+};
+
+$('#receivingIssuePhoto').onchange = async event => {
+  const file = event.target.files[0];
+  if (!file) return;
+  try {
+    $('#receivingIssuePreview').src = await receiptFileToDataUrl(file);
+    $('#receivingIssuePreview').style.display = 'block';
+  } catch (error) {
+    event.target.value = '';
+    toast(error.message);
+  }
+};
+
+$('#saveReceivingIssueBtn').onclick = async event => {
+  event.preventDefault();
+  const note = $('#receivingIssueNote').value.trim();
+  const file = $('#receivingIssuePhoto').files[0];
+  if (!note && !file) return toast('Add a note, a photo, or both');
+  const issue = { id: `receiving-issue-${Date.now()}`, list: 'Receiving', note,
+    time: new Date().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }), createdAt: new Date().toISOString(),
+    userId: currentUser().id, userName: currentUser().name };
+  try {
+    if (file) {
+      const dataUrl = await receiptFileToDataUrl(file);
+      if (apiOnline) {
+        const photo = await api('/api/photo', { method: 'POST', body: JSON.stringify({ locationId: currentLocationId, date: dateKey, taskId: issue.id, userId: issue.userId, dataUrl }) });
+        issue.photoUrl = photo.url;
+      } else issue.photoData = dataUrl;
+    }
+    day.receivingIssues ??= [];
+    day.receivingIssues.push(issue);
+    $('#receivingIssueDialog').close();
+    await persistAndRender('Receiving issue reported');
+  } catch (error) { toast(`Issue did not save: ${error.message}`); }
+};
 $('#newUserRole').onchange = renderNewUserLocationChecks;
 $('#newUserLocation').onchange = renderNewUserLocationChecks;
 
@@ -4577,7 +4641,11 @@ async function saveTemperatureStandards() {
     const items = rows.map(row => row.querySelector('[data-temp-item-name]').value.trim()).filter(Boolean);
     if (items.length !== rows.length) invalid ||= `${name || 'Each log'} has a blank item name`;
     if (definitions[name]) invalid ||= `Temperature log names must be unique: ${name}`;
-    definitions[name] = { requiredDaily: log.querySelector('[data-temp-log-required]').checked, areas: { 'Products and equipment': items } };
+    const deliveryDaysByLocation = {};
+    log.querySelectorAll('[data-delivery-location]').forEach(row => {
+      deliveryDaysByLocation[row.dataset.deliveryLocation] = [...row.querySelectorAll('input:checked')].map(input => input.value);
+    });
+    definitions[name] = { requiredDaily: log.querySelector('[data-temp-log-required]').checked, areas: { 'Products and equipment': items }, ...(name === 'Receiving' ? { deliveryDaysByLocation } : {}) };
     rows.forEach(row => {
       const item = row.querySelector('[data-temp-item-name]').value.trim();
       standards[temperatureStandardKey(name, 'Products and equipment', item)] = { min: row.querySelector('[data-standard-min]').value, max: row.querySelector('[data-standard-max]').value, belowActions: row.querySelector('[data-standard-below]').value.split('\n'), aboveActions: row.querySelector('[data-standard-above]').value.split('\n') };
