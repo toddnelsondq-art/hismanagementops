@@ -9,7 +9,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.3.3';
+const APP_VERSION = '1.4.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -1372,7 +1372,19 @@ function normalizeTaskTemplate(task = {}) {
 }
 
 async function readTaskTemplates() {
-  const rows = await readMaintenanceKey('taskTemplates', DEFAULT_TASK_TEMPLATES);
+  let rows = await readMaintenanceKey('taskTemplates', DEFAULT_TASK_TEMPLATES);
+  const reset = await readMaintenanceKey('checklistItemsReset20260820', null);
+  if (!reset?.completedAt) {
+    const source = Array.isArray(rows) ? rows : DEFAULT_TASK_TEMPLATES;
+    const shells = [...new Map(source.map(task => [`${task.locationId || 'all'}|${task.section || 'Opening'}`, {
+      id: `checklist-shell-${safeName(task.locationId || 'all')}-${safeName(task.section || 'Opening')}`,
+      name: '', section: task.section || 'Opening', locationId: task.locationId || 'all', active: false, checklistShell: true,
+      scheduleDays: task.scheduleDays || ['daily'], locationSchedules: task.locationSchedules || {}
+    }])).values()];
+    rows = shells;
+    await writeMaintenanceKey('taskTemplates', shells);
+    await writeMaintenanceKey('checklistItemsReset20260820', { completedAt: new Date().toISOString(), sectionsPreserved: shells.length });
+  }
   const templates = Array.isArray(rows) && rows.length ? rows : DEFAULT_TASK_TEMPLATES;
   return templates.map(task => ({
     ...task,
@@ -1542,7 +1554,9 @@ async function saveAlertSettings(settings) {
 }
 
 async function saveAlertRule(payload = {}, actor) {
-  if (AUTH_REQUIRED && !isFullAccess(actor)) throw Object.assign(new Error('Only Director of Operations and Owner can manage alerts'), { statusCode: 403 });
+  if (AUTH_REQUIRED && !canManage(actor)) throw Object.assign(new Error('Only managers and above can manage alerts'), { statusCode: 403 });
+  if (AUTH_REQUIRED && payload.locationId !== 'all' && !canAccessLocation(actor, payload.locationId)) throw Object.assign(new Error('You can only create alerts for assigned locations'), { statusCode: 403 });
+  if (AUTH_REQUIRED && payload.locationId === 'all' && !canAreaManage(actor) && !isFullAccess(actor)) payload.locationId = userLocationIds(actor)[0];
   const name = String(payload.name || '').trim();
   if (!name) throw Object.assign(new Error('Alert rule name is required'), { statusCode: 400 });
   const settings = await readAlertSettings();
@@ -1567,7 +1581,7 @@ async function saveAlertRule(payload = {}, actor) {
 }
 
 async function deleteAlertRule(id, actor) {
-  if (AUTH_REQUIRED && !isFullAccess(actor)) throw Object.assign(new Error('Only Director of Operations and Owner can manage alerts'), { statusCode: 403 });
+  if (AUTH_REQUIRED && !canManage(actor)) throw Object.assign(new Error('Only managers and above can manage alerts'), { statusCode: 403 });
   const settings = await readAlertSettings();
   settings.rules = settings.rules.map(rule => rule.id === id ? { ...rule, active: false, updatedAt: new Date().toISOString() } : rule);
   return saveAlertSettings(settings);
@@ -1587,10 +1601,11 @@ function timeHasPassed(dueTime = '23:59', now = new Date()) {
 }
 
 function tempRequirementForTarget(target = '') {
-  const [listName, session = 'Day'] = String(target).split('|');
+  const [listName, session = 'Day', targetArea = '', targetItem = ''] = String(target).split('|');
   const list = TEMPERATURE_ITEMS[listName];
   if (!list?.areas) return [];
-  return Object.entries(list.areas).flatMap(([area, items]) => items.map(item => ({ listName, session, area, item })));
+  return Object.entries(list.areas).flatMap(([area, items]) => items.map(item => ({ listName, session, area, item })))
+    .filter(entry => (!targetArea || entry.area === targetArea) && (!targetItem || entry.item === targetItem));
 }
 
 function taskListIncomplete(dayPayload = {}, section = '') {
@@ -1846,7 +1861,7 @@ async function sendWeeklyAssignmentDigest(query = {}) {
 }
 
 async function checkAlerts(query = {}, actor = null) {
-  if (AUTH_REQUIRED && actor && !isFullAccess(actor)) throw Object.assign(new Error('Only Director of Operations and Owner can preview alerts'), { statusCode: 403 });
+  if (AUTH_REQUIRED && actor && !canManage(actor)) throw Object.assign(new Error('Only managers and above can preview alerts'), { statusCode: 403 });
   const dryRun = query.dryRun !== 'false';
   const date = query.date || localDate();
   const now = query.now ? new Date(query.now) : new Date();
@@ -2069,6 +2084,26 @@ async function saveStoreDocument(payload, actor) {
   });
   await writeMaintenanceKey('storeDocuments', documents);
   return storeDocumentsState();
+}
+
+async function readTemperatureStandards() {
+  const stored = await readMaintenanceKey('temperatureStandards', {});
+  return stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
+}
+
+async function saveTemperatureStandards(payload = {}, actor) {
+  if (AUTH_REQUIRED && !canManage(actor)) throw Object.assign(new Error('Only managers and above can set temperature standards'), { statusCode: 403 });
+  const incoming = payload.standards && typeof payload.standards === 'object' ? payload.standards : {};
+  const clean = {};
+  Object.entries(incoming).forEach(([key, value]) => {
+    const min = value.min === '' || value.min == null ? null : Number(value.min);
+    const max = value.max === '' || value.max == null ? null : Number(value.max);
+    clean[key] = { min: Number.isFinite(min) ? min : null, max: Number.isFinite(max) ? max : null,
+      belowActions: Array.isArray(value.belowActions) ? value.belowActions.map(String).map(item => item.trim()).filter(Boolean) : [],
+      aboveActions: Array.isArray(value.aboveActions) ? value.aboveActions.map(String).map(item => item.trim()).filter(Boolean) : [] };
+  });
+  await writeMaintenanceKey('temperatureStandards', clean);
+  return { standards: clean };
 }
 
 async function readReceipts() {
@@ -3011,7 +3046,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/version') {
       return json(200, {
         version: APP_VERSION,
-        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.20.1'
+        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.20.2'
       });
     }
 
@@ -3108,6 +3143,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/store-alarms/state') return json(200, await storeAlarmState(actor));
     if (method === 'GET' && apiPath === '/calendar/state') return json(200, await calendarState(actor));
     if (method === 'GET' && apiPath === '/alerts/state') return json(200, await readAlertSettings());
+    if (method === 'GET' && apiPath === '/temperature-standards') return json(200, { standards: await readTemperatureStandards() });
     if (method === 'GET' && apiPath === '/alerts/check') return json(200, await checkAlerts(query, actor));
     if (method === 'GET' && apiPath === '/fpc/state') return json(200, await fpcState());
     if (method === 'GET' && apiPath === '/store-documents/state') return json(200, await storeDocumentsState());
@@ -3194,6 +3230,7 @@ exports.handler = async event => {
     if (method === 'POST' && apiPath === '/alerts/rule/delete') {
       return json(200, await deleteAlertRule(body.id, actor));
     }
+    if (method === 'POST' && apiPath === '/temperature-standards') return json(200, await saveTemperatureStandards(body, actor));
     if (method === 'POST' && apiPath === '/fpc/inspection') {
       return json(200, await saveFpcInspection(body, actor));
     }

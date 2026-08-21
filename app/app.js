@@ -178,6 +178,8 @@ let day = { locationId: currentLocationId, tasks: baseTasks.map(task => ({ ...ta
 let history = [];
 let overdue = [];
 let temperatureItems = defaultTemperatureItems;
+let temperatureStandards = {};
+let pendingTemperatureReading = null;
 let users = [{ id: 'alex-rivera', name: 'Alex Rivera', role: 'Manager', locationId: 'store-01' }];
 let currentUserId = localStorage.getItem('dailyops-current-user') || 'alex-rivera';
 let historyScope = localStorage.getItem('dailyops-history-scope') || 'location';
@@ -314,6 +316,7 @@ function setupDailyOpsLayout() {
     </article>
     <div id="taskCategoryTabs" class="pill-row category-row"></div>
     <div id="taskSectionTabs" class="pill-row"></div>
+    <div id="taskInStoreReminders"></div>
   `;
 
   const tempLogsView = document.createElement('section');
@@ -335,6 +338,7 @@ function setupDailyOpsLayout() {
     </article>
     <div id="tempListTabs" class="pill-row"></div>
     <div id="tempSessionTabs" class="pill-row"></div>
+    <div id="tempInStoreReminders"></div>
   `;
 
   todayView.after(tempLogsView);
@@ -580,7 +584,7 @@ function canManageResources(user = currentUser()) {
 }
 
 function canManageAlerts(user = currentUser()) {
-  return ['Director of Operations', 'Owner'].includes(user.role);
+  return roleRank(user.role) >= roleRank('Manager');
 }
 
 function canManageCalendar(user = currentUser()) {
@@ -741,7 +745,13 @@ async function loadState() {
   await loadDashboardState();
   await loadKioskDevices();
   await loadStoreAlarmState();
+  await loadTemperatureStandards();
   render();
+}
+
+async function loadTemperatureStandards() {
+  if (!apiOnline) return;
+  try { temperatureStandards = (await api('/api/temperature-standards')).standards || {}; } catch { temperatureStandards = {}; }
 }
 
 async function loadStoreAlarmState() {
@@ -1421,12 +1431,13 @@ function render() {
     `;
   }).join('') : `<article class="card"><p class="hint">No ${escapeHtml(selectedTaskCategory.toLowerCase())} tasks are due in this time window.</p></article>`;
 
+  if (!dayTempsAvailable(activeUser) && selectedTempSession === 'Day') selectedTempSession = 'Afternoon';
   const tempLists = temperatureListNames();
   if (!tempLists.includes(selectedTempList)) selectedTempList = tempLists[0] || 'Grill';
   $('#tempListTabs').innerHTML = tempLists.map(list => `
     <button class="${list === selectedTempList ? 'active' : ''}" data-temp-list="${escapeHtml(list)}">${escapeHtml(list)}</button>
   `).join('');
-  $('#tempSessionTabs').innerHTML = tempSessions.map(session => `
+  $('#tempSessionTabs').innerHTML = tempSessions.filter(session => session !== 'Day' || dayTempsAvailable(activeUser)).map(session => `
     <button class="${session === selectedTempSession ? 'active' : ''}" data-temp-session="${escapeHtml(session)}">${escapeHtml(session)}</button>
   `).join('');
   $('#tempList').innerHTML = Object.entries(temperatureAreasForList()).map(([area, items]) => `
@@ -1439,7 +1450,7 @@ function render() {
             <span>${escapeHtml(item)}</span>
             <b>${Math.min(readings.length, 1)}/1</b>
             <div class="reading-chips">
-              ${readings.map(reading => `<span class="reading-chip">${escapeHtml(reading.value)}°F · ${escapeHtml(reading.time)}${reading.userName ? ` · ${escapeHtml(reading.userName)}` : ''}</span>`).join('')}
+              ${readings.map(reading => `<span class="reading-chip ${reading.correctiveAction ? 'reading-out-of-range' : ''}">${escapeHtml(reading.value)}°F · ${escapeHtml(reading.time)}${reading.userName ? ` · ${escapeHtml(reading.userName)}` : ''}${reading.correctiveAction ? ` · ${escapeHtml(reading.correctiveAction)}` : ''}</span>`).join('')}
               ${readings.length < 1 ? `<span class="reading-due">due for ${escapeHtml(selectedTempSession)}</span>` : ''}
             </div>
           </button>
@@ -1470,6 +1481,8 @@ function render() {
   renderTaskTemplates();
   renderAlertRules();
   renderNotificationLogs();
+  renderTemperatureStandards();
+  renderInStoreReminders();
   renderStoreAlarms();
   renderNotices();
   renderDashboardAlerts(visibleLocations);
@@ -1483,6 +1496,42 @@ function render() {
   renderInspections();
   renderSmallwares();
   renderManagementReports();
+}
+
+function temperatureStandardKey(list, area, item) { return `${list}|${area}|${item}`; }
+function temperatureStandard(list, area, item) { return temperatureStandards[temperatureStandardKey(list, area, item)] || {}; }
+function dayTempsAvailable(user = currentUser()) { return user.role !== 'Employee' || new Date().getHours() < 14; }
+
+function inStoreRuleIncomplete(rule) {
+  if (rule.type === 'task') return (day.tasks || []).some(task => task.section === rule.target && !task.done);
+  const [list, session, area = '', item = ''] = String(rule.target || '').split('|');
+  const required = Object.entries(temperatureAreasForList(list)).flatMap(([entryArea, items]) => items.map(entryItem => ({ area: entryArea, item: entryItem })))
+    .filter(entry => (!area || entry.area === area) && (!item || entry.item === item));
+  return required.some(entry => !(day.temps || []).some(temp => readingList(temp) === list && readingSession(temp) === session && temp.area === entry.area && temp.item === entry.item));
+}
+
+function renderInStoreReminders() {
+  const now = new Date(); const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const reminders = (alertSettings.rules || []).filter(rule => rule.active !== false && (rule.channels || []).includes('in-app'))
+    .filter(rule => rule.locationId === 'all' || rule.locationId === currentLocationId)
+    .filter(rule => !(rule.roles || []).length || rule.roles.includes(currentUser().role))
+    .filter(rule => { const [h, m] = String(rule.dueTime || '23:59').split(':').map(Number); return currentMinutes >= h * 60 + m; })
+    .filter(inStoreRuleIncomplete);
+  const html = reminders.map(rule => `<article class="card in-store-reminder"><h3>Reminder: ${escapeHtml(rule.name)}</h3><p>${escapeHtml(rule.targetLabel || rule.target)} was due by ${escapeHtml(rule.dueTime)} and is not complete.</p></article>`).join('');
+  if ($('#tempInStoreReminders')) $('#tempInStoreReminders').innerHTML = html;
+  if ($('#taskInStoreReminders')) $('#taskInStoreReminders').innerHTML = html;
+}
+
+function renderTemperatureStandards() {
+  if (!$('#temperatureStandardsList')) return;
+  $('#temperatureStandardsCard').style.display = canUseManage() ? '' : 'none';
+  if (!canUseManage()) return;
+  $('#temperatureStandardsList').innerHTML = temperatureListNames().filter(list => temperatureItems[list]?.requiredDaily !== false).flatMap(list =>
+    Object.entries(temperatureAreasForList(list)).flatMap(([area, items]) => items.map(item => {
+      const key = temperatureStandardKey(list, area, item); const standard = temperatureStandards[key] || {};
+      return `<div class="temperature-standard-row" data-temperature-standard="${escapeHtml(key)}"><strong>${escapeHtml(list)} · ${escapeHtml(item)}</strong><label>Minimum °F<input data-standard-min type="number" step="0.1" value="${standard.min ?? ''}"></label><label>Maximum °F<input data-standard-max type="number" step="0.1" value="${standard.max ?? ''}"></label><label>Actions when too cold<textarea data-standard-below placeholder="One action per line">${escapeHtml((standard.belowActions || []).join('\n'))}</textarea></label><label>Actions when too warm<textarea data-standard-above placeholder="One action per line">${escapeHtml((standard.aboveActions || []).join('\n'))}</textarea></label></div>`;
+    }))
+  ).join('');
 }
 
 async function loadLocationHealthState(loadSnapshots = false) {
@@ -2788,7 +2837,7 @@ function renderTaskTemplates() {
   $('#templateScope').value = templateScope;
   const scopedTemplates = scopedTaskTemplates();
   const allSections = allTaskSections();
-  const sections = [...new Set([...taskSections, ...scopedTemplates.map(task => task.section).filter(Boolean)])];
+  const sections = allSections;
   const selectedScheduleSection = $('#scheduleSection')?.value || allSections[0] || 'Opening';
   const selectedScheduleLocation = $('#scheduleLocation')?.value || 'default';
   $('#templateSection').innerHTML = allSections.map(section => `<option>${escapeHtml(section)}</option>`).join('');
@@ -2891,9 +2940,10 @@ function renderNotices() {
 
 function alertTargetOptions(type = $('#alertRuleType')?.value || 'task') {
   if (type === 'temperature') {
-    return temperatureListNames().flatMap(list =>
-      tempSessions.map(session => ({ value: `${list}|${session}`, label: `${list} temps · ${session}` }))
-    );
+    return temperatureListNames().filter(list => temperatureItems[list]?.requiredDaily !== false).flatMap(list => tempSessions.flatMap(session => [
+      { value: `${list}|${session}`, label: `${list} full temp log · ${session}` },
+      ...Object.entries(temperatureAreasForList(list)).flatMap(([area, items]) => items.map(item => ({ value: `${list}|${session}|${area}|${item}`, label: `${item} · ${session}` })))
+    ]));
   }
   return allTaskSections().map(section => ({ value: section, label: section }));
 }
@@ -2906,6 +2956,7 @@ function resetAlertRuleForm() {
   $('#alertRuleLocation').value = 'all';
   $('#alertChannelEmail').checked = true;
   $('#alertChannelSms').checked = false;
+  $('#alertChannelInApp').checked = false;
   $('#alertRuleActive').checked = true;
   $('#saveAlertRuleBtn').textContent = 'Save alert rule';
   renderAlertRules();
@@ -2924,6 +2975,7 @@ function editAlertRule(id) {
   document.querySelectorAll('#alertRuleRoles input').forEach(input => { input.checked = (rule.roles || []).includes(input.value); });
   $('#alertChannelEmail').checked = (rule.channels || []).includes('email');
   $('#alertChannelSms').checked = (rule.channels || []).includes('sms');
+  $('#alertChannelInApp').checked = (rule.channels || []).includes('in-app');
   $('#alertRuleActive').checked = rule.active !== false;
   $('#saveAlertRuleBtn').textContent = 'Save changes';
   $('#alertRulesCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -2946,7 +2998,7 @@ function renderAlertRules() {
   ].join('');
   $('#alertRuleLocation').value = [...$('#alertRuleLocation').options].some(option => option.value === selectedLocation) ? selectedLocation : 'all';
   const selectedRoles = [...document.querySelectorAll('#alertRuleRoles input:checked')].map(input => input.value);
-  const roles = ['Manager', 'Area Manager', 'Director of Operations', 'Owner'];
+  const roles = ['Employee', 'Shift Manager', 'Manager', 'Area Manager', 'Director of Operations', 'Owner'];
   $('#alertRuleRoles').innerHTML = roles.map(role => `<label class="location-check"><input type="checkbox" value="${escapeHtml(role)}" ${selectedRoles.includes(role) || (!selectedRoles.length && role !== 'Owner') ? 'checked' : ''}> ${escapeHtml(role)}</label>`).join('');
   $('#cancelAlertRuleBtn').style.display = $('#alertRuleId').value ? '' : 'none';
   const rules = (alertSettings.rules || []).filter(rule => rule.active !== false);
@@ -3417,7 +3469,7 @@ async function movePriorityTask(taskId, direction) {
 }
 
 async function saveAlertRule() {
-  if (!canManageAlerts()) return toast('Only Director of Operations and Owner can manage alerts');
+  if (!canManageAlerts()) return toast('Only managers and above can manage alerts');
   const name = $('#alertRuleName').value.trim();
   const type = $('#alertRuleType').value;
   const target = $('#alertRuleTarget').value;
@@ -3425,12 +3477,13 @@ async function saveAlertRule() {
   const roles = [...document.querySelectorAll('#alertRuleRoles input:checked')].map(input => input.value);
   const channels = [
     $('#alertChannelEmail').checked ? 'email' : '',
-    $('#alertChannelSms').checked ? 'sms' : ''
+    $('#alertChannelSms').checked ? 'sms' : '',
+    $('#alertChannelInApp').checked ? 'in-app' : ''
   ].filter(Boolean);
   if (!name) return toast('Enter an alert rule name');
   if (!target) return toast('Choose the list to watch');
   if (!roles.length) return toast('Choose at least one role to notify');
-  if (!channels.length) return toast('Choose email, text, or both');
+  if (!channels.length) return toast('Choose email, text, or an in-store reminder');
   try {
     alertSettings = await api('/api/alerts/rule', {
       method: 'POST',
@@ -3455,7 +3508,7 @@ async function saveAlertRule() {
 }
 
 async function deleteAlertRule(id) {
-  if (!canManageAlerts()) return toast('Only Director of Operations and Owner can remove alerts');
+  if (!canManageAlerts()) return toast('Only managers and above can remove alerts');
   if (!confirm('Remove this alert rule?')) return;
   try {
     alertSettings = await api('/api/alerts/rule/delete', {
@@ -3796,6 +3849,8 @@ function switchView(viewId) {
 }
 
 document.addEventListener('click', async event => {
+  const correctiveAction = event.target.closest('[data-corrective-action]');
+  if (correctiveAction) return saveCorrectiveTemperature(correctiveAction.dataset.correctiveAction);
   const cancelStoreAlarmButton = event.target.closest('[data-store-alarm-cancel]');
   if (cancelStoreAlarmButton) {
     if (!confirm('Cancel this store alarm?')) return;
@@ -4042,8 +4097,8 @@ function openTempDialog(area = $('#tempArea').value, item = null, list = selecte
   fillTempItems();
   const option = [...$('#tempItem').options].find(entry => entry.value === item && entry.dataset.area === area);
   if (option) option.selected = true;
-  $('#tempDialogTitle').textContent = `${selectedTempSession} temperature`;
-  $('#tempItemLabel').hidden = false;
+  $('#tempDialogTitle').textContent = item || `${selectedTempSession} temperature`;
+  $('#tempItemLabel').hidden = true;
   $('#additionalTempItemLabel').hidden = true;
   $('#additionalTempItem').value = '';
   $('#tempDialog').showModal();
@@ -4453,7 +4508,7 @@ $('#saveTempBtn').onclick = async event => {
   const additionalItem = $('#additionalTempItem').value.trim();
   if (tempEntryMode === 'additional' && !additionalItem) return toast('Enter the additional product or item');
   const selectedProduct = $('#tempItem').selectedOptions[0];
-  day.temps.push({
+  const reading = {
     list: tempEntryMode === 'additional' ? 'Additional' : selectedTempList,
     area: tempEntryMode === 'additional' ? 'Additional / non-listed' : (selectedProduct?.dataset.area || ''),
     item: tempEntryMode === 'additional' ? additionalItem : $('#tempItem').value,
@@ -4462,10 +4517,55 @@ $('#saveTempBtn').onclick = async event => {
     time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
     userId: currentUser().id,
     userName: currentUser().name
-  });
+  };
+  if (tempEntryMode !== 'additional') {
+    const standard = temperatureStandard(reading.list, reading.area, reading.item);
+    const value = Number(reading.value);
+    const tooCold = Number.isFinite(standard.min) && value < standard.min;
+    const tooWarm = Number.isFinite(standard.max) && value > standard.max;
+    if (tooCold || tooWarm) {
+      pendingTemperatureReading = reading;
+      const actions = (tooCold ? standard.belowActions : standard.aboveActions) || [];
+      const defaults = tooCold ? ['Continued the heating process', 'Equipment malfunction — removed from service'] : ['Notified manager of equipment issue', 'Discarded product'];
+      $('#correctiveActionSummary').textContent = `${reading.item} was entered at ${reading.value}°F. The ${tooCold ? `minimum is ${standard.min}°F` : `maximum is ${standard.max}°F`}.`;
+      $('#correctiveActionChoices').innerHTML = (actions.length ? actions : defaults).map(action => `<button type="button" data-corrective-action="${escapeHtml(action)}">${escapeHtml(action)}</button>`).join('');
+      $('#tempDialog').close();
+      $('#correctiveActionDialog').showModal();
+      return;
+    }
+  }
+  day.temps.push(reading);
   $('#tempDialog').close();
   await persistAndRender('Temperature saved');
 };
+
+async function saveCorrectiveTemperature(action) {
+  if (!pendingTemperatureReading) return;
+  day.temps.push({ ...pendingTemperatureReading, correctiveAction: action, outOfRange: true });
+  pendingTemperatureReading = null;
+  $('#correctiveActionDialog').close();
+  await persistAndRender('Temperature and corrective action saved');
+}
+
+function goBackToTemperature() {
+  $('#correctiveActionDialog').close();
+  $('#tempDialog').showModal();
+  $('#tempValue').focus();
+}
+
+async function saveTemperatureStandards() {
+  const standards = {};
+  document.querySelectorAll('[data-temperature-standard]').forEach(row => {
+    standards[row.dataset.temperatureStandard] = {
+      min: row.querySelector('[data-standard-min]').value,
+      max: row.querySelector('[data-standard-max]').value,
+      belowActions: row.querySelector('[data-standard-below]').value.split('\n'),
+      aboveActions: row.querySelector('[data-standard-above]').value.split('\n')
+    };
+  });
+  try { temperatureStandards = (await api('/api/temperature-standards', { method: 'POST', body: JSON.stringify({ standards }) })).standards || {}; renderTemperatureStandards(); toast('Temperature standards saved'); }
+  catch (error) { toast(`Temperature standards did not save: ${error.message}`); }
+}
 
 $('#photoInput').onchange = event => {
   const file = event.target.files[0];
@@ -5190,6 +5290,10 @@ $('#postNoticeBtn').onclick = postNotice;
 $('#saveCalendarEventBtn').onclick = saveCalendarEvent;
 $('#cancelCalendarEventBtn').onclick = resetCalendarEventForm;
 $('#saveAlertRuleBtn').onclick = saveAlertRule;
+$('#saveTemperatureStandardsBtn').onclick = saveTemperatureStandards;
+$('#correctiveGoBackBtn').onclick = goBackToTemperature;
+$('#correctiveGoBackX').onclick = goBackToTemperature;
+$('#correctiveActionDialog').addEventListener('cancel', event => { event.preventDefault(); goBackToTemperature(); });
 $('#cancelAlertRuleBtn').onclick = resetAlertRuleForm;
 $('#previewAlertsBtn').onclick = previewAlerts;
 $('#refreshNotificationLogsBtn').onclick = refreshNotificationLogs;
@@ -5279,3 +5383,7 @@ setupAppUpdateFlow();
 document.addEventListener('pointerdown', unlockStoreAlarmAudio, { once: true });
 loadState();
 window.setInterval(loadStoreAlarmState, 20000);
+window.setInterval(() => {
+  if (!dayTempsAvailable() && selectedTempSession === 'Day') render();
+  else renderInStoreReminders();
+}, 60000);

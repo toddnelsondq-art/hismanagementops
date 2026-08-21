@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="assets/pwa-icon-180.png">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="temperature.css">
-  <link rel="stylesheet" href="his-theme.css?v=2026-08-20-simple-temperature-entry">
+  <link rel="stylesheet" href="his-theme.css?v=2026-08-20-temperature-standards">
 </head>
 <body>
   <header>
@@ -427,7 +427,7 @@
             <p>Two readings required for every listed item</p>
           </div>
         </div>
-        <button id="addTempBtn" class="ghost" type="button">+ Additional temperature</button>
+        <button id="addTempBtn" class="ghost" type="button">+ Other Temp</button>
         <div id="tempList" class="temp-list"></div>
         <div id="additionalTempList" class="additional-temp-list"></div>
       </article>
@@ -1160,7 +1160,8 @@
         </label>
         <label class="check"><input type="checkbox" id="templatePhotoRequired"> Require a photo</label>
         <button id="addTemplateTaskBtn" type="button">Add permanent task</button>
-        <button id="loadAreaChecklistsBtn" class="ghost" type="button">Load DQ area checklists</button>
+        <button id="loadAreaChecklistsBtn" class="ghost" type="button" hidden>Load DQ area checklists</button>
+        <p class="hint">The prior imported items have been cleared while checklist names are preserved. Rebuild shorter lists here one item at a time; use spreadsheet import later only for large, reviewed batches.</p>
         <div class="schedule-box">
           <h4>Copy master checklist to one store</h4>
           <p class="hint">This creates a store-only copy. After copying, edits for that store will not change the company master or other stores.</p>
@@ -1226,6 +1227,13 @@
         <h4>Recent alarm activity</h4><div id="storeAlarmHistory"><p class="hint">No alarm activity loaded.</p></div>
       </article>
 
+      <article class="card form-card collapsible-card" id="temperatureStandardsCard">
+        <h3>Temperature standards</h3>
+        <p class="hint">Set a minimum, maximum, or both for each listed item. Separate corrective actions with a new line. Employees only see corrective actions when a reading is outside the standard.</p>
+        <div id="temperatureStandardsList"></div>
+        <button id="saveTemperatureStandardsBtn" type="button">Save temperature standards</button>
+      </article>
+
       <article class="card form-card collapsible-card" id="alertRulesCard">
         <h3>Alert rules</h3>
         <p class="hint">Set email/text alerts for task lists or temperature logs that are not completed by a set time.</p>
@@ -1257,6 +1265,7 @@
           <div class="location-checks">
             <label class="location-check"><input type="checkbox" id="alertChannelEmail" checked> Email</label>
             <label class="location-check"><input type="checkbox" id="alertChannelSms"> Text message</label>
+            <label class="location-check"><input type="checkbox" id="alertChannelInApp"> In-store reminder</label>
           </div>
           <p class="hint">Text messages require phone numbers for users, voluntary consent through the <a href="sms-consent.html" target="_blank" rel="noopener">SMS opt-in form</a>, and Twilio setup in Netlify. Email requires an email provider key.</p>
         </div>
@@ -1718,6 +1727,16 @@
     </form>
   </dialog>
 
+  <dialog id="correctiveActionDialog" class="corrective-action-dialog">
+    <form method="dialog">
+      <div class="modal-head"><h3>Temperature outside standard</h3><button id="correctiveGoBackX" value="cancel" class="x" type="button" aria-label="Go back">×</button></div>
+      <p id="correctiveActionSummary"></p>
+      <p class="hint">Choose the action taken before this reading can be saved.</p>
+      <div id="correctiveActionChoices" class="corrective-action-choices"></div>
+      <div class="dialog-actions"><button id="correctiveGoBackBtn" class="ghost" type="button">Go back and correct temperature</button></div>
+    </form>
+  </dialog>
+
   <dialog id="workOrderDialog">
     <form method="dialog">
       <div class="modal-head">
@@ -1796,9 +1815,9 @@
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-20-1"></script>
+  <script src="version.js?v=2026-08-20-2"></script>
   <script src="auth.js?v=2026-07-29-kiosk-pin"></script>
-  <script src="app.js?v=2026-08-20-simple-temperature-entry"></script>
+  <script src="app.js?v=2026-08-20-temperature-standards"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>
