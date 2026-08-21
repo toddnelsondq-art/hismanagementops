@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="assets/pwa-icon-180.png">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="temperature.css">
-  <link rel="stylesheet" href="his-theme.css?v=2026-08-20-temperature-standards">
+  <link rel="stylesheet" href="his-theme.css?v=2026-08-20-temperature-log-editor">
 </head>
 <body>
   <header>
@@ -1228,10 +1228,11 @@
       </article>
 
       <article class="card form-card collapsible-card" id="temperatureStandardsCard">
-        <h3>Temperature standards</h3>
-        <p class="hint">Set a minimum, maximum, or both for each listed item. Separate corrective actions with a new line. Employees only see corrective actions when a reading is outside the standard.</p>
+        <h3>Temperature Log Setup</h3>
+        <p class="hint">Create and rename logs, add or remove items, change their order, and set temperature standards. Separate corrective actions with a new line.</p>
+        <div class="row-actions"><button id="addTemperatureLogBtn" class="ghost" type="button">+ Add temperature log</button></div>
         <div id="temperatureStandardsList"></div>
-        <button id="saveTemperatureStandardsBtn" type="button">Save temperature standards</button>
+        <button id="saveTemperatureStandardsBtn" type="button">Save temperature log setup</button>
       </article>
 
       <article class="card form-card collapsible-card" id="alertRulesCard">
@@ -1815,9 +1816,9 @@
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-20-2"></script>
+  <script src="version.js?v=2026-08-20-3"></script>
   <script src="auth.js?v=2026-07-29-kiosk-pin"></script>
-  <script src="app.js?v=2026-08-20-temperature-standards"></script>
+  <script src="app.js?v=2026-08-20-temperature-log-editor"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>

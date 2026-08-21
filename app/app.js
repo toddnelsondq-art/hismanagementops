@@ -922,17 +922,18 @@ async function loadSmallwaresState() {
 }
 
 function tempRequirementTotal() {
-  return Object.values(dailyTemperatureAreas()).reduce((sum, items) => sum + items.length, 0) * tempSessions.length;
+  return temperatureListNames().filter(list => temperatureItems[list]?.requiredDaily !== false)
+    .reduce((sum, list) => sum + Object.values(temperatureAreasForList(list)).reduce((itemSum, items) => itemSum + items.length, 0), 0) * tempSessions.length;
 }
 
 function localDashboardMetrics() {
   const taskTotal = day.tasks.length || baseTasks.length;
   const taskDone = day.tasks.filter(task => task.done).length;
   const requiredTemps = new Set();
-  Object.entries(dailyTemperatureAreas()).forEach(([area, items]) => {
-    items.forEach(item => tempSessions.forEach(session => requiredTemps.add(`${area}|${item}|${session}`)));
-  });
-  const loggedTemps = new Set(day.temps.filter(temp => readingList(temp) !== 'Receiving').map(temp => `${temp.area}|${temp.item}|${readingSession(temp)}`));
+  temperatureListNames().filter(list => temperatureItems[list]?.requiredDaily !== false).forEach(list => Object.entries(temperatureAreasForList(list)).forEach(([area, items]) => {
+    items.forEach(item => tempSessions.forEach(session => requiredTemps.add(`${list}|${area}|${item}|${session}`)));
+  }));
+  const loggedTemps = new Set(day.temps.map(temp => `${readingList(temp)}|${temp.area}|${temp.item}|${readingSession(temp)}`));
   const tempDone = [...requiredTemps].filter(key => loggedTemps.has(key)).length;
   const opsTotal = taskTotal + tempRequirementTotal();
   const opsCompleted = taskDone + tempDone;
@@ -1329,12 +1330,10 @@ function taskSectionProgress(section) {
 }
 
 function tempRequirementComplete() {
-  return Object.entries(dailyTemperatureAreas()).every(([area, items]) =>
-    items.every(item =>
-      tempSessions.every(session =>
-        day.temps.some(temp => temp.area === area && temp.item === item && readingSession(temp) === session)
-      )
-    )
+  return temperatureListNames().filter(list => temperatureItems[list]?.requiredDaily !== false).every(list =>
+    Object.entries(temperatureAreasForList(list)).every(([area, items]) => items.every(item => tempSessions.every(session =>
+      day.temps.some(temp => readingList(temp) === list && temp.area === area && temp.item === item && readingSession(temp) === session)
+    )))
   );
 }
 
@@ -1526,12 +1525,19 @@ function renderTemperatureStandards() {
   if (!$('#temperatureStandardsList')) return;
   $('#temperatureStandardsCard').style.display = canUseManage() ? '' : 'none';
   if (!canUseManage()) return;
-  $('#temperatureStandardsList').innerHTML = temperatureListNames().filter(list => temperatureItems[list]?.requiredDaily !== false).flatMap(list =>
-    Object.entries(temperatureAreasForList(list)).flatMap(([area, items]) => items.map(item => {
-      const key = temperatureStandardKey(list, area, item); const standard = temperatureStandards[key] || {};
-      return `<div class="temperature-standard-row" data-temperature-standard="${escapeHtml(key)}"><strong>${escapeHtml(list)} · ${escapeHtml(item)}</strong><label>Minimum °F<input data-standard-min type="number" step="0.1" value="${standard.min ?? ''}"></label><label>Maximum °F<input data-standard-max type="number" step="0.1" value="${standard.max ?? ''}"></label><label>Actions when too cold<textarea data-standard-below placeholder="One action per line">${escapeHtml((standard.belowActions || []).join('\n'))}</textarea></label><label>Actions when too warm<textarea data-standard-above placeholder="One action per line">${escapeHtml((standard.aboveActions || []).join('\n'))}</textarea></label></div>`;
-    }))
-  ).join('');
+  $('#temperatureStandardsList').innerHTML = temperatureListNames().map(list => {
+    const items = Object.entries(temperatureAreasForList(list)).flatMap(([area, names]) => names.map(item => ({ area, item })));
+    return temperatureLogEditorHtml(list, temperatureItems[list]?.requiredDaily !== false, items);
+  }).join('');
+}
+
+function temperatureItemEditorHtml(list, area, item) {
+  const standard = temperatureStandard(list, area, item);
+  return `<div class="temperature-item-editor" data-temperature-item><label>Item name<input data-temp-item-name value="${escapeHtml(item)}" placeholder="Product or equipment"></label><label>Minimum °F<input data-standard-min type="number" step="0.1" value="${standard.min ?? ''}"></label><label>Maximum °F<input data-standard-max type="number" step="0.1" value="${standard.max ?? ''}"></label><label>Too-cold actions<textarea data-standard-below placeholder="One per line">${escapeHtml((standard.belowActions || []).join('\n'))}</textarea></label><label>Too-warm actions<textarea data-standard-above placeholder="One per line">${escapeHtml((standard.aboveActions || []).join('\n'))}</textarea></label><div class="temperature-item-actions"><button class="ghost" data-temp-item-move="up" type="button" aria-label="Move up">↑</button><button class="ghost" data-temp-item-move="down" type="button" aria-label="Move down">↓</button><button class="danger" data-temp-item-remove type="button">Remove</button></div></div>`;
+}
+
+function temperatureLogEditorHtml(list = '', required = true, items = []) {
+  return `<details class="temperature-log-editor" open><summary><b>${escapeHtml(list || 'New temperature log')}</b><span>${items.length} item${items.length === 1 ? '' : 's'}</span></summary><div class="temperature-log-editor-body"><div class="temperature-log-head"><label>Log name<input data-temp-log-name value="${escapeHtml(list)}" placeholder="e.g. Grill"></label><label class="check"><input data-temp-log-required type="checkbox" ${required ? 'checked' : ''}> Required Day and Afternoon</label><button class="danger" data-temp-log-remove type="button">Delete log</button></div><div data-temp-items>${items.map(({ area, item }) => temperatureItemEditorHtml(list, area, item)).join('')}</div><button class="ghost" data-temp-item-add type="button">+ Add item</button></div></details>`;
 }
 
 async function loadLocationHealthState(loadSnapshots = false) {
@@ -3849,6 +3855,14 @@ function switchView(viewId) {
 }
 
 document.addEventListener('click', async event => {
+  const removeTempLog = event.target.closest('[data-temp-log-remove]');
+  if (removeTempLog) { if (confirm('Delete this temperature log and all of its configured items?')) removeTempLog.closest('.temperature-log-editor').remove(); return; }
+  const addTempItem = event.target.closest('[data-temp-item-add]');
+  if (addTempItem) { const log = addTempItem.closest('.temperature-log-editor'); const list = log.querySelector('[data-temp-log-name]').value.trim(); log.querySelector('[data-temp-items]').insertAdjacentHTML('beforeend', temperatureItemEditorHtml(list, 'Products and equipment', '')); return; }
+  const removeTempItem = event.target.closest('[data-temp-item-remove]');
+  if (removeTempItem) { removeTempItem.closest('[data-temperature-item]').remove(); return; }
+  const moveTempItem = event.target.closest('[data-temp-item-move]');
+  if (moveTempItem) { const row = moveTempItem.closest('[data-temperature-item]'); const sibling = moveTempItem.dataset.tempItemMove === 'up' ? row.previousElementSibling : row.nextElementSibling; if (sibling) sibling[moveTempItem.dataset.tempItemMove === 'up' ? 'before' : 'after'](row); return; }
   const correctiveAction = event.target.closest('[data-corrective-action]');
   if (correctiveAction) return saveCorrectiveTemperature(correctiveAction.dataset.correctiveAction);
   const cancelStoreAlarmButton = event.target.closest('[data-store-alarm-cancel]');
@@ -4554,17 +4568,29 @@ function goBackToTemperature() {
 }
 
 async function saveTemperatureStandards() {
-  const standards = {};
-  document.querySelectorAll('[data-temperature-standard]').forEach(row => {
-    standards[row.dataset.temperatureStandard] = {
-      min: row.querySelector('[data-standard-min]').value,
-      max: row.querySelector('[data-standard-max]').value,
-      belowActions: row.querySelector('[data-standard-below]').value.split('\n'),
-      aboveActions: row.querySelector('[data-standard-above]').value.split('\n')
-    };
+  const definitions = {}; const standards = {}; let invalid = '';
+  document.querySelectorAll('.temperature-log-editor').forEach(log => {
+    const name = log.querySelector('[data-temp-log-name]').value.trim();
+    const rows = [...log.querySelectorAll('[data-temperature-item]')];
+    if (!name) invalid ||= 'Every temperature log needs a name';
+    if (!rows.length) invalid ||= `${name || 'Each log'} needs at least one item`;
+    const items = rows.map(row => row.querySelector('[data-temp-item-name]').value.trim()).filter(Boolean);
+    if (items.length !== rows.length) invalid ||= `${name || 'Each log'} has a blank item name`;
+    if (definitions[name]) invalid ||= `Temperature log names must be unique: ${name}`;
+    definitions[name] = { requiredDaily: log.querySelector('[data-temp-log-required]').checked, areas: { 'Products and equipment': items } };
+    rows.forEach(row => {
+      const item = row.querySelector('[data-temp-item-name]').value.trim();
+      standards[temperatureStandardKey(name, 'Products and equipment', item)] = { min: row.querySelector('[data-standard-min]').value, max: row.querySelector('[data-standard-max]').value, belowActions: row.querySelector('[data-standard-below]').value.split('\n'), aboveActions: row.querySelector('[data-standard-above]').value.split('\n') };
+    });
   });
-  try { temperatureStandards = (await api('/api/temperature-standards', { method: 'POST', body: JSON.stringify({ standards }) })).standards || {}; renderTemperatureStandards(); toast('Temperature standards saved'); }
-  catch (error) { toast(`Temperature standards did not save: ${error.message}`); }
+  if (invalid) return toast(invalid);
+  try {
+    const savedDefinitions = await api('/api/temperature-definitions', { method: 'POST', body: JSON.stringify({ definitions }) });
+    const savedStandards = await api('/api/temperature-standards', { method: 'POST', body: JSON.stringify({ standards }) });
+    temperatureItems = savedDefinitions.definitions || definitions; temperatureStandards = savedStandards.standards || standards;
+    if (!temperatureItems[selectedTempList]) selectedTempList = Object.keys(temperatureItems)[0];
+    render(); toast('Temperature log setup saved');
+  } catch (error) { toast(`Temperature log setup did not save: ${error.message}`); }
 }
 
 $('#photoInput').onchange = event => {
@@ -5291,6 +5317,7 @@ $('#saveCalendarEventBtn').onclick = saveCalendarEvent;
 $('#cancelCalendarEventBtn').onclick = resetCalendarEventForm;
 $('#saveAlertRuleBtn').onclick = saveAlertRule;
 $('#saveTemperatureStandardsBtn').onclick = saveTemperatureStandards;
+$('#addTemperatureLogBtn').onclick = () => $('#temperatureStandardsList').insertAdjacentHTML('beforeend', temperatureLogEditorHtml('', true, []));
 $('#correctiveGoBackBtn').onclick = goBackToTemperature;
 $('#correctiveGoBackX').onclick = goBackToTemperature;
 $('#correctiveActionDialog').addEventListener('cancel', event => { event.preventDefault(); goBackToTemperature(); });

@@ -9,7 +9,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.4.1';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -461,10 +461,10 @@ function dateRange(range = 'day') {
   return { start, end, dates };
 }
 
-function dailyTemperatureAreas() {
-  const entries = Object.entries(TEMPERATURE_ITEMS);
+function dailyTemperatureAreas(definitions = TEMPERATURE_ITEMS) {
+  const entries = Object.entries(definitions);
   const isNewFormat = entries.some(([, value]) => value?.areas);
-  if (!isNewFormat) return TEMPERATURE_ITEMS;
+  if (!isNewFormat) return definitions;
   return entries.reduce((areas, [, list]) => {
     if (list.requiredDaily === false) return areas;
     Object.entries(list.areas || {}).forEach(([area, items]) => {
@@ -484,25 +484,26 @@ function readingSession(reading) {
   return reading.session || 'Day';
 }
 
-function tempRequirementCount() {
-  return Object.values(dailyTemperatureAreas()).reduce((sum, items) => sum + items.length, 0) * 2;
+function tempRequirementCount(definitions = TEMPERATURE_ITEMS) {
+  return Object.values(definitions).filter(list => list.requiredDaily !== false)
+    .reduce((sum, list) => sum + Object.values(list.areas || {}).reduce((itemSum, items) => itemSum + items.length, 0), 0) * 2;
 }
 
-function dailyOpsCounts(payload = null, templates = DEFAULT_TASK_TEMPLATES, locationId = DEFAULT_LOCATION_ID, date = today()) {
+function dailyOpsCounts(payload = null, templates = DEFAULT_TASK_TEMPLATES, locationId = DEFAULT_LOCATION_ID, date = today(), definitions = TEMPERATURE_ITEMS) {
   const source = payload || newDay(locationId, templates, date);
   const scheduledTemplates = templates.filter(task => task.active !== false && taskScheduledForDate(task, locationId, date));
   const tasks = Array.isArray(source.tasks) ? source.tasks : scheduledTemplates;
   const taskTotal = tasks.length;
   const taskDone = tasks.filter(task => task.done).length;
   const requiredTemps = new Set();
-  Object.entries(dailyTemperatureAreas()).forEach(([area, items]) => {
-    items.forEach(item => ['Day', 'Afternoon'].forEach(session => requiredTemps.add(`${area}|${item}|${session}`)));
-  });
-  const loggedTemps = new Set(((source.temps || []).filter(temp => readingList(temp) !== 'Receiving')).map(temp => `${temp.area}|${temp.item}|${temp.session || 'Day'}`));
+  Object.entries(definitions).filter(([, list]) => list.requiredDaily !== false).forEach(([listName, list]) => Object.entries(list.areas || {}).forEach(([area, items]) => {
+    items.forEach(item => ['Day', 'Afternoon'].forEach(session => requiredTemps.add(`${listName}|${area}|${item}|${session}`)));
+  }));
+  const loggedTemps = new Set((source.temps || []).map(temp => `${readingList(temp)}|${temp.area}|${temp.item}|${temp.session || 'Day'}`));
   const tempDone = [...requiredTemps].filter(key => loggedTemps.has(key)).length;
   return {
     completed: taskDone + tempDone,
-    total: taskTotal + tempRequirementCount()
+    total: taskTotal + tempRequirementCount(definitions)
   };
 }
 
@@ -510,7 +511,7 @@ function dashboardPercent(completed, total) {
   return total ? Math.round((completed / total) * 100) : 0;
 }
 
-function dailyOpsBreakdown(payload = null, templates = DEFAULT_TASK_TEMPLATES, locationId = DEFAULT_LOCATION_ID, date = today()) {
+function dailyOpsBreakdown(payload = null, templates = DEFAULT_TASK_TEMPLATES, locationId = DEFAULT_LOCATION_ID, date = today(), definitions = TEMPERATURE_ITEMS) {
   const source = payload || newDay(locationId, templates, date);
   const scheduledTemplates = templates.filter(task => task.active !== false && taskScheduledForDate(task, locationId, date));
   const tasks = Array.isArray(source.tasks) ? source.tasks : scheduledTemplates;
@@ -521,7 +522,7 @@ function dailyOpsBreakdown(payload = null, templates = DEFAULT_TASK_TEMPLATES, l
     if (task.done) rows[label].completed += 1;
     return rows;
   }, {});
-  const tempRows = Object.entries(TEMPERATURE_ITEMS).reduce((rows, [listName, list]) => {
+  const tempRows = Object.entries(definitions).reduce((rows, [listName, list]) => {
     if (list.requiredDaily === false) return rows;
     const total = Object.values(list.areas || {}).reduce((sum, items) => sum + items.length, 0) * 2;
     const required = new Set();
@@ -594,15 +595,16 @@ async function dashboardSummary(actor, range = 'day', locationId = 'all') {
       progress: { mode: 'locations', rows: [] }
     };
   }
-  const [rows, taskTemplates] = await Promise.all([
+  const [rows, taskTemplates, temperatureDefinitions] = await Promise.all([
     supabase(`/rest/v1/days?${tenantQuery()}&date=gte.${start}&date=lte.${end}&select=location_id,date,payload`),
-    readTaskTemplates()
+    readTaskTemplates(),
+    readTemperatureDefinitions()
   ]);
   const rowMap = new Map(rows.map(row => [`${row.location_id}|${row.date}`, row.payload]));
   const locationNames = new Map(allLocations.map(location => [location.id, location.name]));
   const locationProgress = selectedLocations.map(scopedLocationId => {
     const totals = dates.reduce((dateTotals, date) => {
-      const counts = dailyOpsCounts(rowMap.get(`${scopedLocationId}|${date}`), taskTemplates, scopedLocationId, date);
+      const counts = dailyOpsCounts(rowMap.get(`${scopedLocationId}|${date}`), taskTemplates, scopedLocationId, date, temperatureDefinitions);
       dateTotals.completed += counts.completed;
       dateTotals.total += counts.total;
       return dateTotals;
@@ -624,7 +626,7 @@ async function dashboardSummary(actor, range = 'day', locationId = 'all') {
 
   const selectedBreakdown = selectedLocations.length === 1
     ? dates.reduce((rows, date) => {
-      dailyOpsBreakdown(rowMap.get(`${selectedLocations[0]}|${date}`), taskTemplates, selectedLocations[0], date).forEach(row => {
+      dailyOpsBreakdown(rowMap.get(`${selectedLocations[0]}|${date}`), taskTemplates, selectedLocations[0], date, temperatureDefinitions).forEach(row => {
         rows[row.label] ??= { label: row.label, completed: 0, total: 0 };
         rows[row.label].completed += row.completed;
         rows[row.label].total += row.total;
@@ -1250,10 +1252,11 @@ async function appendNotificationLogs(entries = []) {
 
 async function storeAlarmIncompleteState(locationId, date = localDate()) {
   const day = await readDay(locationId, date);
+  const definitions = await readTemperatureDefinitions();
   const missingTasks = (day.tasks || []).filter(task => !task.done).map(task => ({ type: 'task', label: `${task.section || 'Checklist'}: ${task.name}` }));
   const logged = new Set((day.temps || []).map(temp => `${readingList(temp)}|${readingSession(temp)}|${temp.area}|${temp.item}`));
   const missingTemps = [];
-  Object.entries(TEMPERATURE_ITEMS).forEach(([listName, list]) => {
+  Object.entries(definitions).forEach(([listName, list]) => {
     if (list?.requiredDaily === false || !list?.areas) return;
     Object.entries(list.areas).forEach(([area, items]) => items.forEach(item => ['Day', 'Afternoon'].forEach(session => {
       if (!logged.has(`${listName}|${session}|${area}|${item}`)) missingTemps.push({ type: 'temperature', label: `${listName} ${session}: ${item}` });
@@ -1600,9 +1603,9 @@ function timeHasPassed(dueTime = '23:59', now = new Date()) {
   return currentMinutes >= dueMinutes;
 }
 
-function tempRequirementForTarget(target = '') {
+function tempRequirementForTarget(target = '', definitions = TEMPERATURE_ITEMS) {
   const [listName, session = 'Day', targetArea = '', targetItem = ''] = String(target).split('|');
-  const list = TEMPERATURE_ITEMS[listName];
+  const list = definitions[listName];
   if (!list?.areas) return [];
   return Object.entries(list.areas).flatMap(([area, items]) => items.map(item => ({ listName, session, area, item })))
     .filter(entry => (!targetArea || entry.area === targetArea) && (!targetItem || entry.item === targetItem));
@@ -1615,8 +1618,8 @@ function taskListIncomplete(dayPayload = {}, section = '') {
   return { incomplete: remaining > 0, detail: `${remaining} of ${tasks.length} tasks remaining` };
 }
 
-function tempListIncomplete(dayPayload = {}, target = '') {
-  const required = tempRequirementForTarget(target);
+function tempListIncomplete(dayPayload = {}, target = '', definitions = TEMPERATURE_ITEMS) {
+  const required = tempRequirementForTarget(target, definitions);
   if (!required.length) return { incomplete: false, detail: 'No temperatures scheduled' };
   const logged = new Set((dayPayload.temps || []).map(temp => `${readingList(temp)}|${readingSession(temp)}|${temp.area}|${temp.item}`));
   const missing = required.filter(req => !logged.has(`${req.listName}|${req.session}|${req.area}|${req.item}`)).length;
@@ -1865,14 +1868,14 @@ async function checkAlerts(query = {}, actor = null) {
   const dryRun = query.dryRun !== 'false';
   const date = query.date || localDate();
   const now = query.now ? new Date(query.now) : new Date();
-  const [settings, locations, users] = await Promise.all([readAlertSettings(), readLocations(), readUsers()]);
+  const [settings, locations, users, temperatureDefinitions] = await Promise.all([readAlertSettings(), readLocations(), readUsers(), readTemperatureDefinitions()]);
   const activeRules = settings.rules.filter(rule => rule.active !== false && timeHasPassed(rule.dueTime, now));
   const alerts = [];
   for (const rule of activeRules) {
     const scopedLocations = locations.filter(location => rule.locationId === 'all' || rule.locationId === location.id);
     for (const location of scopedLocations) {
       const dayPayload = await readDay(location.id, date);
-      const status = rule.type === 'temperature' ? tempListIncomplete(dayPayload, rule.target) : taskListIncomplete(dayPayload, rule.target);
+      const status = rule.type === 'temperature' ? tempListIncomplete(dayPayload, rule.target, temperatureDefinitions) : taskListIncomplete(dayPayload, rule.target);
       if (!status.incomplete) continue;
       const alreadySent = !dryRun && (settings.logs || []).some(log =>
         log.ruleId === rule.id &&
@@ -2089,6 +2092,32 @@ async function saveStoreDocument(payload, actor) {
 async function readTemperatureStandards() {
   const stored = await readMaintenanceKey('temperatureStandards', {});
   return stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
+}
+
+function cleanTemperatureDefinitions(input = {}) {
+  const clean = {};
+  Object.entries(input || {}).forEach(([rawName, rawList]) => {
+    const name = String(rawName || '').trim();
+    if (!name || !rawList || typeof rawList !== 'object') return;
+    const items = [...new Set(Object.values(rawList.areas || {}).flat().map(String).map(item => item.trim()).filter(Boolean))];
+    clean[name] = { requiredDaily: rawList.requiredDaily !== false, areas: { 'Products and equipment': items } };
+  });
+  return clean;
+}
+
+async function readTemperatureDefinitions() {
+  const stored = await readMaintenanceKey('temperatureDefinitions', TEMPERATURE_ITEMS);
+  const clean = cleanTemperatureDefinitions(stored);
+  return Object.keys(clean).length ? clean : TEMPERATURE_ITEMS;
+}
+
+async function saveTemperatureDefinitions(payload = {}, actor) {
+  if (AUTH_REQUIRED && !canManage(actor)) throw Object.assign(new Error('Only managers and above can edit temperature logs'), { statusCode: 403 });
+  const definitions = cleanTemperatureDefinitions(payload.definitions);
+  if (!Object.keys(definitions).length) throw Object.assign(new Error('Keep at least one temperature log'), { statusCode: 400 });
+  if (Object.values(definitions).some(list => !Object.values(list.areas).flat().length)) throw Object.assign(new Error('Each temperature log needs at least one item'), { statusCode: 400 });
+  await writeMaintenanceKey('temperatureDefinitions', definitions);
+  return { definitions };
 }
 
 async function saveTemperatureStandards(payload = {}, actor) {
@@ -3046,7 +3075,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/version') {
       return json(200, {
         version: APP_VERSION,
-        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.20.2'
+        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.20.3'
       });
     }
 
@@ -3116,7 +3145,7 @@ exports.handler = async event => {
         day,
         history,
         overdue,
-        temperatureItems: TEMPERATURE_ITEMS,
+        temperatureItems: await readTemperatureDefinitions(),
         taskTemplates,
         notices,
         alertSettings,
@@ -3144,6 +3173,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/calendar/state') return json(200, await calendarState(actor));
     if (method === 'GET' && apiPath === '/alerts/state') return json(200, await readAlertSettings());
     if (method === 'GET' && apiPath === '/temperature-standards') return json(200, { standards: await readTemperatureStandards() });
+    if (method === 'GET' && apiPath === '/temperature-definitions') return json(200, { definitions: await readTemperatureDefinitions() });
     if (method === 'GET' && apiPath === '/alerts/check') return json(200, await checkAlerts(query, actor));
     if (method === 'GET' && apiPath === '/fpc/state') return json(200, await fpcState());
     if (method === 'GET' && apiPath === '/store-documents/state') return json(200, await storeDocumentsState());
@@ -3231,6 +3261,7 @@ exports.handler = async event => {
       return json(200, await deleteAlertRule(body.id, actor));
     }
     if (method === 'POST' && apiPath === '/temperature-standards') return json(200, await saveTemperatureStandards(body, actor));
+    if (method === 'POST' && apiPath === '/temperature-definitions') return json(200, await saveTemperatureDefinitions(body, actor));
     if (method === 'POST' && apiPath === '/fpc/inspection') {
       return json(200, await saveFpcInspection(body, actor));
     }
