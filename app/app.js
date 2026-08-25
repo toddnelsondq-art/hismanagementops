@@ -1572,7 +1572,7 @@ async function loadLocationHealthState(loadSnapshots = false) {
       api('/api/location-health/cameras').catch(error => ({ configured: true, cameras: [], mappings: {}, canManage: false, message: error.message || 'UniFi cameras did not load.' })),
       api('/api/location-health/thermostats').catch(error => ({ configured: true, devices: [], message: error.message || 'Thermostats did not load.' }))
     ]);
-    locationHealth = { ...cameraState, thermostats: thermostatState.devices || [], thermostatConfigured: thermostatState.configured, thermostatMessage: thermostatState.message || '', thermostatRefreshedAt: thermostatState.refreshedAt };
+    locationHealth = { ...cameraState, thermostats: thermostatState.devices || [], thermostatCommands: thermostatState.commands || [], thermostatCanControl: thermostatState.canControl === true, thermostatConfigured: thermostatState.configured, thermostatMessage: thermostatState.message || '', thermostatRefreshedAt: thermostatState.refreshedAt };
     if (loadSnapshots && cameraState.configured) {
       await Promise.all((cameraState.cameras || []).map(async camera => {
         try {
@@ -2181,15 +2181,19 @@ function renderLocationHealth() {
   const stateNames = ['Idle', 'Heating', 'Cooling', 'Lockout', 'Error'];
   $('#locationHealthThermostatList').innerHTML = thermostats.length ? thermostats.map(device => {
     const info = device.info || {};
+    const deviceKey = `${device.gatewayId}|${device.id}`;
+    const recentCommand = (locationHealth.thermostatCommands || []).find(command => command.deviceKey === deviceKey);
     const unit = Number(info.temperatureUnits) === 1 ? '°C' : '°F';
     const reading = value => value === null || value === undefined ? '—' : `${Number(value).toFixed(1).replace(/\.0$/, '')}${unit}`;
     return `<article class="card thermostat-card">
       <div class="maintenance-log-heading"><div><p class="eyebrow">${escapeHtml(device.model || 'VENSTAR')}</p><h3>${escapeHtml(device.name || 'Thermostat')}</h3><p>${escapeHtml(locationName(device.locationId))}</p></div><span class="status ${device.online ? 'camera-online' : 'camera-offline'}">${device.online ? 'ONLINE' : 'OFFLINE'}</span></div>
       <div class="thermostat-reading"><strong>${reading(info.spaceTemp)}</strong><span>Current temperature</span></div>
       <div class="thermostat-details"><p><b>System</b><span>${escapeHtml(modeNames[info.mode] || `Mode ${info.mode ?? '—'}`)}</span></p><p><b>Status</b><span>${escapeHtml(stateNames[info.state] || `State ${info.state ?? '—'}`)}</span></p><p><b>Heat setpoint</b><span>${reading(info.heatTemp)}</span></p><p><b>Cool setpoint</b><span>${reading(info.coolTemp)}</span></p><p><b>Fan</b><span>${info.fanState ? 'Running' : (info.fan ? 'On' : 'Auto')}</span></p><p><b>Last report</b><span>${device.lastSeenAt ? new Date(device.lastSeenAt).toLocaleString() : 'Never'}</span></p></div>
-      <p class="hint">Monitoring only during the initial connection test.</p>
+      ${locationHealth.thermostatCanControl ? `<details class="thermostat-control" data-thermostat-control="${escapeHtml(deviceKey)}"><summary><b>Adjust thermostat</b></summary><div class="form-grid three-col"><label>System mode<select data-thermostat-mode><option value="0" ${info.mode === 0 ? 'selected' : ''}>Off</option><option value="1" ${info.mode === 1 ? 'selected' : ''}>Heat</option><option value="2" ${info.mode === 2 ? 'selected' : ''}>Cool</option><option value="3" ${info.mode === 3 ? 'selected' : ''}>Auto</option></select></label><label>Heat setpoint<input data-thermostat-heat type="number" min="55" max="78" step="1" value="${Number(info.heatTemp) || 68}"></label><label>Cool setpoint<input data-thermostat-cool type="number" min="65" max="85" step="1" value="${Number(info.coolTemp) || 75}"></label><label>Fan<select data-thermostat-fan><option value="0" ${!info.fan ? 'selected' : ''}>Auto</option><option value="1" ${info.fan ? 'selected' : ''}>On</option></select></label></div><p class="hint">Safety limits: heat 55–78°F, cool 65–85°F, with at least 2°F between them.</p><button data-thermostat-apply type="button" ${device.online ? '' : 'disabled'}>Apply changes</button></details>` : ''}
+      ${recentCommand ? `<p class="thermostat-command-status"><b>Latest change:</b> ${escapeHtml(recentCommand.status)} · ${escapeHtml(recentCommand.requestedBy || '')} · ${new Date(recentCommand.requestedAt).toLocaleString()}${recentCommand.message ? ` · ${escapeHtml(recentCommand.message)}` : ''}</p>` : ''}
     </article>`;
   }).join('') : '<div class="empty">No thermostat has reported to DQ OPS yet.</div>';
+  document.querySelectorAll('[data-thermostat-apply]').forEach(button => button.addEventListener('click', () => queueThermostatControl(button.closest('[data-thermostat-control]'))));
   const cameras = locationHealth.cameras || [];
   const online = cameras.filter(camera => camera.state === 'CONNECTED').length;
   $('#locationHealthStatus').textContent = locationHealth.message || (locationHealth.configured
@@ -2209,6 +2213,25 @@ function renderLocationHealth() {
     </article>`;
   }).join('') + (locationHealth.canManage ? '<button id="saveUnifiCameraMappingsBtn" type="button">Save camera locations</button>' : '') : '<div class="empty">No cameras are available for your assigned locations.</div>';
   $('#saveUnifiCameraMappingsBtn')?.addEventListener('click', saveUnifiCameraMappings);
+}
+
+async function queueThermostatControl(panel) {
+  if (!panel) return;
+  const [gatewayId, deviceId] = panel.dataset.thermostatControl.split('|');
+  const heatTemp = Number(panel.querySelector('[data-thermostat-heat]').value);
+  const coolTemp = Number(panel.querySelector('[data-thermostat-cool]').value);
+  if (!confirm(`Apply heat ${heatTemp}°F and cool ${coolTemp}°F to this thermostat?`)) return;
+  const button = panel.querySelector('[data-thermostat-apply]');
+  button.disabled = true;
+  try {
+    const state = await api('/api/location-health/thermostat-command', { method: 'POST', body: JSON.stringify({ gatewayId, deviceId, mode: Number(panel.querySelector('[data-thermostat-mode]').value), fan: Number(panel.querySelector('[data-thermostat-fan]').value), heatTemp, coolTemp }) });
+    locationHealth = { ...locationHealth, thermostats: state.devices || [], thermostatCommands: state.commands || [], thermostatCanControl: state.canControl === true };
+    renderLocationHealth();
+    toast('Thermostat change queued. It will apply when the gateway checks in.');
+  } catch (error) {
+    button.disabled = false;
+    toast(`Thermostat did not update: ${error.message}`);
+  }
 }
 
 async function saveUnifiCameraMappings() {

@@ -9,7 +9,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.7.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -1254,9 +1254,10 @@ async function saveThermostatReport(event, payload = {}) {
     spaceTemp: finiteNumber(source.spacetemp), heatTemp: finiteNumber(source.heattemp), coolTemp: finiteNumber(source.cooltemp),
     humidity: finiteNumber(source.hum), availableModes: finiteNumber(source.availablemodes)
   };
-  const storedValue = await readMaintenanceKey('locationHealthThermostats', { devices: {} });
-  const stored = storedValue && typeof storedValue === 'object' && !Array.isArray(storedValue) ? storedValue : { devices: {} };
+  const storedValue = await readMaintenanceKey('locationHealthThermostats', { devices: {}, commands: [] });
+  const stored = storedValue && typeof storedValue === 'object' && !Array.isArray(storedValue) ? storedValue : { devices: {}, commands: [] };
   const devices = stored.devices && typeof stored.devices === 'object' && !Array.isArray(stored.devices) ? stored.devices : {};
+  const commands = Array.isArray(stored.commands) ? stored.commands : [];
   const key = `${gatewayId}|${deviceId}`;
   devices[key] = {
     id: deviceId, gatewayId, locationId,
@@ -1265,16 +1266,60 @@ async function saveThermostatReport(event, payload = {}) {
     lastSeenAt: new Date().toISOString(),
     observedAt: String(payload.observedAt || new Date().toISOString()).slice(0, 40), info
   };
-  await writeMaintenanceKey('locationHealthThermostats', { devices, updatedAt: new Date().toISOString() });
-  return { ok: true, receivedAt: devices[key].lastSeenAt };
+  const result = payload.commandResult && typeof payload.commandResult === 'object' ? payload.commandResult : null;
+  if (result?.id) {
+    const completed = commands.find(command => command.id === String(result.id) && command.deviceKey === key);
+    if (completed) {
+      completed.status = result.success === true ? 'Applied' : 'Failed';
+      completed.completedAt = new Date().toISOString();
+      completed.message = String(result.message || '').slice(0, 500);
+    }
+  }
+  const pending = commands.find(command => command.deviceKey === key && command.status === 'Queued');
+  if (pending) {
+    pending.status = 'Sent';
+    pending.sentAt = new Date().toISOString();
+  }
+  await writeMaintenanceKey('locationHealthThermostats', { devices, commands: commands.slice(0, 500), updatedAt: new Date().toISOString() });
+  return { ok: true, receivedAt: devices[key].lastSeenAt, command: pending ? { id: pending.id, control: pending.control } : null };
 }
 
 async function thermostatState(actor) {
   if (AUTH_REQUIRED && !canAreaManage(actor)) throw Object.assign(new Error('Only Area Managers and above can view thermostats'), { statusCode: 403 });
-  const stored = await readMaintenanceKey('locationHealthThermostats', { devices: {} });
+  const stored = await readMaintenanceKey('locationHealthThermostats', { devices: {}, commands: [] });
   const allowed = new Set(userLocationIds(actor));
   const devices = Object.values(stored?.devices || {}).filter(device => !AUTH_REQUIRED || isFullAccess(actor) || allowed.has(device.locationId));
-  return { configured: Boolean(DQOPS_GATEWAY_TOKEN), devices: devices.map(device => ({ ...device, online: Date.now() - new Date(device.lastSeenAt).getTime() < 10 * 60 * 1000 })), refreshedAt: new Date().toISOString() };
+  const visibleKeys = new Set(devices.map(device => `${device.gatewayId}|${device.id}`));
+  const commands = (Array.isArray(stored?.commands) ? stored.commands : []).filter(command => visibleKeys.has(command.deviceKey)).slice(0, 50);
+  return { configured: Boolean(DQOPS_GATEWAY_TOKEN), canControl: !AUTH_REQUIRED || canAreaManage(actor), devices: devices.map(device => ({ ...device, online: Date.now() - new Date(device.lastSeenAt).getTime() < 10 * 60 * 1000 })), commands, refreshedAt: new Date().toISOString() };
+}
+
+async function queueThermostatCommand(payload, actor) {
+  if (AUTH_REQUIRED && !canAreaManage(actor)) throw Object.assign(new Error('Only Area Managers and above can control thermostats'), { statusCode: 403 });
+  const gatewayId = safeName(payload.gatewayId || '');
+  const deviceId = safeName(payload.deviceId || '');
+  const deviceKey = `${gatewayId}|${deviceId}`;
+  const stored = await readMaintenanceKey('locationHealthThermostats', { devices: {}, commands: [] });
+  const device = stored?.devices?.[deviceKey];
+  if (!device) throw Object.assign(new Error('Thermostat not found'), { statusCode: 404 });
+  if (AUTH_REQUIRED && !canAccessLocation(actor, device.locationId)) throw Object.assign(new Error('You do not have access to this thermostat location'), { statusCode: 403 });
+  if (Date.now() - new Date(device.lastSeenAt).getTime() >= 10 * 60 * 1000) throw Object.assign(new Error('The thermostat gateway is offline'), { statusCode: 409 });
+  const mode = Number(payload.mode), fan = Number(payload.fan), heatTemp = Number(payload.heatTemp), coolTemp = Number(payload.coolTemp);
+  if (![0, 1, 2, 3].includes(mode)) throw Object.assign(new Error('Choose a valid thermostat mode'), { statusCode: 400 });
+  if (![0, 1].includes(fan)) throw Object.assign(new Error('Choose Auto or On for the fan'), { statusCode: 400 });
+  if (!Number.isFinite(heatTemp) || heatTemp < 55 || heatTemp > 78) throw Object.assign(new Error('The heating setpoint must be between 55°F and 78°F'), { statusCode: 400 });
+  if (!Number.isFinite(coolTemp) || coolTemp < 65 || coolTemp > 85) throw Object.assign(new Error('The cooling setpoint must be between 65°F and 85°F'), { statusCode: 400 });
+  if (coolTemp - heatTemp < 2) throw Object.assign(new Error('Cooling must be at least 2°F above heating'), { statusCode: 400 });
+  const commands = Array.isArray(stored.commands) ? stored.commands : [];
+  commands.forEach(command => { if (command.deviceKey === deviceKey && command.status === 'Queued') command.status = 'Replaced'; });
+  commands.unshift({
+    id: `THERM-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
+    deviceKey, gatewayId, deviceId, locationId: device.locationId, deviceName: device.name,
+    control: { mode, fan, heattemp: heatTemp, cooltemp: coolTemp }, status: 'Queued',
+    requestedAt: new Date().toISOString(), requestedBy: actor?.name || 'DQ OPS', requestedById: actor?.id || ''
+  });
+  await writeMaintenanceKey('locationHealthThermostats', { ...stored, commands: commands.slice(0, 500), updatedAt: new Date().toISOString() });
+  return thermostatState(actor);
 }
 
 async function readNotificationLogs(actor = null) {
@@ -3140,7 +3185,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/version') {
       return json(200, {
         version: APP_VERSION,
-        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.25.1'
+        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.25.2'
       });
     }
 
@@ -3404,6 +3449,7 @@ exports.handler = async event => {
     if (method === 'POST' && apiPath === '/maintenance-log/entry') return json(200, await saveMaintenanceWorkLog(body, actor));
     if (method === 'POST' && apiPath === '/maintenance-log/permissions') return json(200, await saveMaintenanceHoursPermissions(body, actor));
     if (method === 'POST' && apiPath === '/location-health/camera-mappings') return json(200, await saveUnifiCameraMappings(body, actor));
+    if (method === 'POST' && apiPath === '/location-health/thermostat-command') return json(200, await queueThermostatCommand(body, actor));
 
     return json(404, { error: `Unknown route: ${method} ${apiPath}` });
   } catch (error) {
