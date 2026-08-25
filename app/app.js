@@ -2457,16 +2457,12 @@ function renderResources() {
   const list = scopedResources();
   $('#resourcesCount').textContent = `${list.length} link${list.length === 1 ? '' : 's'}`;
   $('#resourcesList').innerHTML = list.length ? list.map(resource => `
-    <article class="card maintenance-row compact resource-row">
-      <div>
-        <b>${escapeHtml(resource.title)}</b>
-        <p>${escapeHtml(resource.category || 'General')} · ${resource.locationId === 'all' || !resource.locationId ? 'All assigned locations' : escapeHtml(resource.locationName || locationName(resource.locationId))} · ${escapeHtml(resource.minRole || 'Employee')}+</p>
-        ${resource.notes ? `<p>${escapeHtml(resource.notes)}</p>` : ''}
-      </div>
-      <div class="row-actions">
-        <a class="button-link ghost" href="${escapeHtml(resource.url)}" target="_blank" rel="noopener">Open</a>
-        ${canManageResources() ? `<button data-resource-edit="${escapeHtml(resource.id)}" type="button">Edit</button><button class="danger" data-resource-delete="${escapeHtml(resource.id)}" type="button">Remove</button>` : ''}
-      </div>
+    <article class="resource-row-wrap">
+      <a class="card resource-row resource-row-link" href="${escapeHtml(resource.url)}" target="_blank" rel="noopener">
+        <div><b>${escapeHtml(resource.title)}</b><p>${escapeHtml(resource.category || 'General')} · ${resource.locationId === 'all' || !resource.locationId ? 'All assigned locations' : escapeHtml(resource.locationName || locationName(resource.locationId))} · ${escapeHtml(resource.minRole || 'Employee')}+</p>${resource.notes ? `<p>${escapeHtml(resource.notes)}</p>` : ''}</div>
+        <span class="resource-open-label">Open <span aria-hidden="true">↗</span></span>
+      </a>
+      ${canManageResources() ? `<button class="resource-pencil" data-resource-edit="${escapeHtml(resource.id)}" type="button" title="Edit or delete ${escapeHtml(resource.title)}" aria-label="Edit or delete ${escapeHtml(resource.title)}">✎</button>` : ''}
     </article>
   `).join('') : '<div class="empty">No resources for this view yet.</div>';
 }
@@ -3767,6 +3763,8 @@ function resetResourceForm() {
   if ($('#resourceLocation')) $('#resourceLocation').value = 'all';
   $('#resourceNotes').value = '';
   $('#saveResourceBtn').textContent = 'Save resource';
+  $('#resourceFormTitle').textContent = 'Add resource link';
+  $('#deleteEditingResourceBtn').hidden = true;
   renderResources();
 }
 
@@ -3781,6 +3779,8 @@ function editResource(id) {
   if ($('#resourceLocation')) $('#resourceLocation').value = resource.locationId || 'all';
   $('#resourceNotes').value = resource.notes || '';
   $('#saveResourceBtn').textContent = 'Save changes';
+  $('#resourceFormTitle').textContent = 'Edit resource link';
+  $('#deleteEditingResourceBtn').hidden = false;
   renderResources();
   $('#resourcesAdminCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -4121,6 +4121,11 @@ function fillTempItems() {
   const areas = temperatureAreasForList();
   $('#tempItem').innerHTML = Object.entries(areas).flatMap(([area, items]) => items.map(item => `<option value="${escapeHtml(item)}" data-area="${escapeHtml(area)}">${escapeHtml(item)}</option>`)).join('');
 }
+
+$('#deleteEditingResourceBtn').onclick = async () => {
+  const id = $('#resourceId').value;
+  if (id) await deleteResource(id);
+};
 
 function openTempDialog(area = $('#tempArea').value, item = null, list = selectedTempList) {
   tempEntryMode = 'listed';

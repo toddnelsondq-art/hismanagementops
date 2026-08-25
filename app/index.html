@@ -22,6 +22,12 @@
     .delivery-location-row{border-top:1px solid var(--line);padding:10px 0}
     .delivery-day-checks{display:grid;grid-template-columns:repeat(7,minmax(58px,1fr));gap:4px;margin-top:6px}
     .delivery-day-checks .location-check{font-size:12px}
+    .resource-row-wrap{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:stretch;margin-bottom:12px}
+    .resource-row-link{margin:0!important;display:flex;align-items:center;justify-content:space-between;gap:16px;color:inherit;text-decoration:none;cursor:pointer;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}
+    .resource-row-link:hover,.resource-row-link:focus-visible{transform:translateY(-1px);border-color:var(--green);box-shadow:0 6px 18px #102b2418;outline:none}
+    .resource-open-label{flex:0 0 auto;color:var(--green);font-weight:800}
+    .resource-pencil{align-self:stretch;min-width:46px;padding:10px;font-size:21px;background:var(--mint);color:var(--green)}
+    .resource-pencil:hover,.resource-pencil:focus-visible{background:var(--green);color:#fff}
     @media(max-width:680px){.delivery-day-checks{grid-template-columns:repeat(4,1fr)}}
   </style>
 </head>
@@ -701,7 +707,7 @@
       </article>
 
       <article class="card form-card collapsible-card" id="resourcesAdminCard">
-        <h3>Add or edit resource link</h3>
+        <h3 id="resourceFormTitle">Add resource link</h3>
         <p class="hint">Managers and above can add web pages, shared folders, training links, ordering pages, and other useful resources.</p>
         <input id="resourceId" type="hidden">
         <label>Title
@@ -739,6 +745,7 @@
         <div class="row-actions">
           <button id="saveResourceBtn" type="button">Save resource</button>
           <button id="cancelResourceEditBtn" class="ghost" type="button">Cancel edit</button>
+          <button id="deleteEditingResourceBtn" class="danger" type="button" hidden>Delete resource</button>
         </div>
       </article>
 
