@@ -190,7 +190,7 @@ let selectedReportDate = null;
 let selectedReportLocationId = null;
 let maintenance = { locations: [], equipment: [], workOrders: [], pmSchedule: [], vendors: [], lists: {} };
 let maintenanceWorkLog = { mode: 'none', canEdit: false, canManagePermissions: false, entries: [], technicians: [], areaManagers: [], permissions: { areaManagerIds: [] } };
-let locationHealth = { configured: false, cameras: [], mappings: {}, canManage: false, message: '' };
+let locationHealth = { configured: false, cameras: [], mappings: {}, canManage: false, message: '', thermostats: [], thermostatConfigured: false, thermostatMessage: '' };
 const locationHealthSnapshots = new Map();
 let maintenanceLogPeriod = 'month';
 let maintenanceTechnicianFilter = 'all';
@@ -1562,13 +1562,19 @@ function temperatureLogEditorHtml(list = '', required = true, items = []) {
 
 async function loadLocationHealthState(loadSnapshots = false) {
   if (!apiOnline || !canUseLocationHealth()) {
-    locationHealth = { configured: false, cameras: [], mappings: {}, canManage: false, message: '' };
+    locationHealth = { configured: false, cameras: [], mappings: {}, canManage: false, message: '', thermostats: [], thermostatConfigured: false, thermostatMessage: '' };
     return;
   }
+  let cameraState = { configured: false, cameras: [], mappings: {}, canManage: false, message: '' };
+  let thermostatState = { configured: false, devices: [], message: '' };
   try {
-    locationHealth = await api('/api/location-health/cameras');
-    if (loadSnapshots && locationHealth.configured) {
-      await Promise.all((locationHealth.cameras || []).map(async camera => {
+    [cameraState, thermostatState] = await Promise.all([
+      api('/api/location-health/cameras').catch(error => ({ configured: true, cameras: [], mappings: {}, canManage: false, message: error.message || 'UniFi cameras did not load.' })),
+      api('/api/location-health/thermostats').catch(error => ({ configured: true, devices: [], message: error.message || 'Thermostats did not load.' }))
+    ]);
+    locationHealth = { ...cameraState, thermostats: thermostatState.devices || [], thermostatConfigured: thermostatState.configured, thermostatMessage: thermostatState.message || '', thermostatRefreshedAt: thermostatState.refreshedAt };
+    if (loadSnapshots && cameraState.configured) {
+      await Promise.all((cameraState.cameras || []).map(async camera => {
         try {
           const blob = await apiBlob(`/api/location-health/camera-snapshot?cameraId=${encodeURIComponent(camera.id)}&v=${Date.now()}`);
           const previous = locationHealthSnapshots.get(camera.id);
@@ -1580,7 +1586,7 @@ async function loadLocationHealthState(loadSnapshots = false) {
       }));
     }
   } catch (error) {
-    locationHealth = { configured: true, cameras: [], mappings: {}, canManage: false, message: error.message || 'UniFi cameras did not load.' };
+    locationHealth = { configured: true, cameras: [], mappings: {}, canManage: false, message: error.message || 'Location Health did not load.', thermostats: [], thermostatConfigured: false, thermostatMessage: error.message || '' };
   }
 }
 
@@ -2166,6 +2172,24 @@ function renderLocationHealth() {
   const allowed = canUseLocationHealth();
   document.querySelectorAll('[data-view="locationHealthView"]').forEach(button => { button.style.display = allowed ? '' : 'none'; });
   if (!allowed) return;
+  const thermostats = locationHealth.thermostats || [];
+  const thermostatOnline = thermostats.filter(device => device.online).length;
+  $('#locationHealthThermostatStatus').textContent = locationHealth.thermostatMessage || (locationHealth.thermostatConfigured
+    ? `${thermostatOnline} of ${thermostats.length} thermostat${thermostats.length === 1 ? '' : 's'} reporting${locationHealth.thermostatRefreshedAt ? ` · Refreshed ${new Date(locationHealth.thermostatRefreshedAt).toLocaleString()}` : ''}`
+    : 'Thermostat reporting is not configured yet.');
+  const modeNames = ['Off', 'Heat', 'Cool', 'Auto'];
+  const stateNames = ['Idle', 'Heating', 'Cooling', 'Lockout', 'Error'];
+  $('#locationHealthThermostatList').innerHTML = thermostats.length ? thermostats.map(device => {
+    const info = device.info || {};
+    const unit = Number(info.temperatureUnits) === 1 ? '°C' : '°F';
+    const reading = value => value === null || value === undefined ? '—' : `${Number(value).toFixed(1).replace(/\.0$/, '')}${unit}`;
+    return `<article class="card thermostat-card">
+      <div class="maintenance-log-heading"><div><p class="eyebrow">${escapeHtml(device.model || 'VENSTAR')}</p><h3>${escapeHtml(device.name || 'Thermostat')}</h3><p>${escapeHtml(locationName(device.locationId))}</p></div><span class="status ${device.online ? 'camera-online' : 'camera-offline'}">${device.online ? 'ONLINE' : 'OFFLINE'}</span></div>
+      <div class="thermostat-reading"><strong>${reading(info.spaceTemp)}</strong><span>Current temperature</span></div>
+      <div class="thermostat-details"><p><b>System</b><span>${escapeHtml(modeNames[info.mode] || `Mode ${info.mode ?? '—'}`)}</span></p><p><b>Status</b><span>${escapeHtml(stateNames[info.state] || `State ${info.state ?? '—'}`)}</span></p><p><b>Heat setpoint</b><span>${reading(info.heatTemp)}</span></p><p><b>Cool setpoint</b><span>${reading(info.coolTemp)}</span></p><p><b>Fan</b><span>${info.fanState ? 'Running' : (info.fan ? 'On' : 'Auto')}</span></p><p><b>Last report</b><span>${device.lastSeenAt ? new Date(device.lastSeenAt).toLocaleString() : 'Never'}</span></p></div>
+      <p class="hint">Monitoring only during the initial connection test.</p>
+    </article>`;
+  }).join('') : '<div class="empty">No thermostat has reported to DQ OPS yet.</div>';
   const cameras = locationHealth.cameras || [];
   const online = cameras.filter(camera => camera.state === 'CONNECTED').length;
   $('#locationHealthStatus').textContent = locationHealth.message || (locationHealth.configured
@@ -2191,7 +2215,8 @@ async function saveUnifiCameraMappings() {
   const mappings = {};
   document.querySelectorAll('[data-unifi-camera-location]').forEach(select => { mappings[select.dataset.unifiCameraLocation] = select.value; });
   try {
-    locationHealth = await api('/api/location-health/camera-mappings', { method: 'POST', body: JSON.stringify({ mappings }) });
+    const cameraState = await api('/api/location-health/camera-mappings', { method: 'POST', body: JSON.stringify({ mappings }) });
+    locationHealth = { ...locationHealth, ...cameraState };
     renderLocationHealth();
     toast('Camera locations saved');
   } catch (error) { toast(`Camera locations did not save: ${error.message}`); }
@@ -2199,7 +2224,8 @@ async function saveUnifiCameraMappings() {
 
 async function refreshLocationHealth() {
   $('#refreshLocationHealthBtn').disabled = true;
-  $('#locationHealthStatus').textContent = 'Refreshing UniFi cameras and snapshots…';
+  $('#locationHealthStatus').textContent = 'Refreshing cameras and snapshots…';
+  $('#locationHealthThermostatStatus').textContent = 'Refreshing thermostat readings…';
   await loadLocationHealthState(true);
   renderLocationHealth();
   $('#refreshLocationHealthBtn').disabled = false;

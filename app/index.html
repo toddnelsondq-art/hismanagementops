@@ -365,8 +365,14 @@
     <section id="locationHealthView" class="view">
       <div class="date">
         <div><p>CONNECTED LOCATIONS</p><h2>Location Health</h2></div>
-        <button id="refreshLocationHealthBtn" class="ghost" type="button">Refresh cameras</button>
+        <button id="refreshLocationHealthBtn" class="ghost" type="button">Refresh devices</button>
       </div>
+      <article class="card">
+        <h3>Thermostats</h3>
+        <p class="hint">Live readings reported securely by each location's HIS OPS gateway. Controls will be enabled after the monitoring test is complete.</p>
+        <p id="locationHealthThermostatStatus" class="hint">Loading thermostat status…</p>
+      </article>
+      <div id="locationHealthThermostatList"></div>
       <article class="card">
         <h3>UniFi Protect cameras</h3>
         <p class="hint">Camera snapshots remain protected by your DQ OPS sign-in. Directors and Owners can assign each camera to a DQ OPS location.</p>

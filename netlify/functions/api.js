@@ -9,10 +9,11 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.5.1';
+const APP_VERSION = '1.6.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
+const DQOPS_GATEWAY_TOKEN = process.env.DQOPS_GATEWAY_TOKEN || '';
 const DEFAULT_TENANT_ID = safeName(process.env.APP_TENANT_ID || 'his-management');
 const DEFAULT_TENANT_NAME = process.env.APP_TENANT_NAME || 'HIS Management Group Inc';
 const DEFAULT_TENANT_LOGO = process.env.APP_TENANT_LOGO || 'assets/his-management.png';
@@ -1215,6 +1216,65 @@ async function unifiCameraSnapshot(cameraId, actor) {
     body: Buffer.from(await response.arrayBuffer()).toString('base64'),
     isBase64Encoded: true
   };
+}
+
+function secureTokenMatches(provided = '', expected = '') {
+  if (!provided || !expected) return false;
+  const left = crypto.createHash('sha256').update(String(provided)).digest();
+  const right = crypto.createHash('sha256').update(String(expected)).digest();
+  return crypto.timingSafeEqual(left, right);
+}
+
+function gatewayToken(event) {
+  const headers = event.headers || {};
+  return headers['x-dqops-gateway-token'] || headers['X-Dqops-Gateway-Token'] || '';
+}
+
+function finiteNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+async function saveThermostatReport(event, payload = {}) {
+  if (!DQOPS_GATEWAY_TOKEN) throw Object.assign(new Error('The thermostat gateway is not configured in Netlify'), { statusCode: 503 });
+  if (!secureTokenMatches(gatewayToken(event), DQOPS_GATEWAY_TOKEN)) throw Object.assign(new Error('Unauthorized gateway'), { statusCode: 401 });
+  const rawGatewayId = String(payload.gatewayId || '').trim();
+  const rawDeviceId = String(payload.deviceId || '').trim();
+  const gatewayId = safeName(rawGatewayId);
+  const deviceId = safeName(rawDeviceId);
+  const locationId = String(payload.locationId || '').trim();
+  if (!rawGatewayId || !rawDeviceId || !locationId) throw Object.assign(new Error('gatewayId, deviceId, and locationId are required'), { statusCode: 400 });
+  const validLocations = new Set((await readLocations()).map(location => String(location.id)));
+  if (!validLocations.has(locationId)) throw Object.assign(new Error('Unknown DQ OPS location'), { statusCode: 400 });
+  const source = payload.info && typeof payload.info === 'object' ? payload.info : {};
+  const info = {
+    mode: finiteNumber(source.mode), state: finiteNumber(source.state), activeStage: finiteNumber(source.activestage),
+    fan: finiteNumber(source.fan), fanState: finiteNumber(source.fanstate), temperatureUnits: finiteNumber(source.tempunits),
+    spaceTemp: finiteNumber(source.spacetemp), heatTemp: finiteNumber(source.heattemp), coolTemp: finiteNumber(source.cooltemp),
+    humidity: finiteNumber(source.hum), availableModes: finiteNumber(source.availablemodes)
+  };
+  const storedValue = await readMaintenanceKey('locationHealthThermostats', { devices: {} });
+  const stored = storedValue && typeof storedValue === 'object' && !Array.isArray(storedValue) ? storedValue : { devices: {} };
+  const devices = stored.devices && typeof stored.devices === 'object' && !Array.isArray(stored.devices) ? stored.devices : {};
+  const key = `${gatewayId}|${deviceId}`;
+  devices[key] = {
+    id: deviceId, gatewayId, locationId,
+    name: String(payload.name || 'Venstar thermostat').trim().slice(0, 100),
+    model: String(payload.model || 'Venstar').trim().slice(0, 100),
+    lastSeenAt: new Date().toISOString(),
+    observedAt: String(payload.observedAt || new Date().toISOString()).slice(0, 40), info
+  };
+  await writeMaintenanceKey('locationHealthThermostats', { devices, updatedAt: new Date().toISOString() });
+  return { ok: true, receivedAt: devices[key].lastSeenAt };
+}
+
+async function thermostatState(actor) {
+  if (AUTH_REQUIRED && !canAreaManage(actor)) throw Object.assign(new Error('Only Area Managers and above can view thermostats'), { statusCode: 403 });
+  const stored = await readMaintenanceKey('locationHealthThermostats', { devices: {} });
+  const allowed = new Set(userLocationIds(actor));
+  const devices = Object.values(stored?.devices || {}).filter(device => !AUTH_REQUIRED || isFullAccess(actor) || allowed.has(device.locationId));
+  return { configured: Boolean(DQOPS_GATEWAY_TOKEN), devices: devices.map(device => ({ ...device, online: Date.now() - new Date(device.lastSeenAt).getTime() < 10 * 60 * 1000 })), refreshedAt: new Date().toISOString() };
 }
 
 async function readNotificationLogs(actor = null) {
@@ -3080,7 +3140,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/version') {
       return json(200, {
         version: APP_VERSION,
-        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.24.1'
+        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.25.1'
       });
     }
 
@@ -3096,6 +3156,10 @@ exports.handler = async event => {
 
     if (method === 'POST' && apiPath === '/sms-consent') {
       return json(200, await saveSmsConsentPreference(body));
+    }
+
+    if (method === 'POST' && apiPath === '/gateway/thermostat/report') {
+      return json(200, await saveThermostatReport(event, body));
     }
 
     if ((method === 'POST' && apiPath === '/session-profile') || (method === 'POST' && apiPath === '/accept-invite')) {
@@ -3171,6 +3235,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/maintenance/state') return json(200, await maintenanceState(query.locationId || 'all'));
     if (method === 'GET' && apiPath === '/maintenance-log/state') return json(200, await maintenanceWorkLogState(actor));
     if (method === 'GET' && apiPath === '/location-health/cameras') return json(200, await unifiCameraState(actor));
+    if (method === 'GET' && apiPath === '/location-health/thermostats') return json(200, await thermostatState(actor));
     if (method === 'GET' && apiPath === '/location-health/camera-snapshot') return unifiCameraSnapshot(String(query.cameraId || ''), actor);
     if (method === 'GET' && apiPath === '/notices') return json(200, { notices: await readNotices(actor) });
     if (method === 'GET' && apiPath === '/notification-logs') return json(200, { logs: await readNotificationLogs(actor) });

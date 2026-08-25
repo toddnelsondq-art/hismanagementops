@@ -1,0 +1,18 @@
+[Unit]
+Description=DQ OPS Venstar thermostat gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/dqops-gateway.env
+ExecStart=/usr/bin/python3 /opt/dqops-gateway/thermostat_gateway.py
+User=hisops
+Group=hisops
+Restart=always
+RestartSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
