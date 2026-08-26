@@ -1917,10 +1917,17 @@ main{margin-left:0!important}
     max-height:100dvh;
     padding-top:max(16px,env(safe-area-inset-top))!important;
     padding-bottom:max(16px,env(safe-area-inset-bottom))!important;
-    visibility:hidden;
     pointer-events:none;
+    opacity:0;
+    transform:translate3d(-105%,0,0)!important;
+    will-change:transform;
   }
-  body.menu-expanded .ops-sidebar{visibility:visible;pointer-events:auto}
+  #primarySidebar.drawer-open{
+    display:flex!important;
+    pointer-events:auto!important;
+    opacity:1!important;
+    transform:translate3d(0,0,0)!important;
+  }
   .menu-scrim{z-index:1001!important}
   .menu-open-button{
     top:calc(env(safe-area-inset-top) + 10px)!important;

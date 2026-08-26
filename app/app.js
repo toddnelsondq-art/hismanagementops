@@ -436,8 +436,11 @@ if (!wideSidebarQuery.matches) sidebarExpanded = false;
 
 function setSidebarExpanded(expanded, remember = true) {
   sidebarExpanded = Boolean(expanded);
+  const sidebar = $('#primarySidebar');
   document.body.classList.toggle('menu-expanded', sidebarExpanded);
   document.body.classList.toggle('menu-collapsed', !sidebarExpanded && wideSidebarQuery.matches);
+  sidebar.classList.toggle('drawer-open', sidebarExpanded);
+  sidebar.setAttribute('aria-hidden', String(!sidebarExpanded && !wideSidebarQuery.matches));
   $('#sideMenuToggle').setAttribute('aria-expanded', String(sidebarExpanded));
   $('#sideMenuToggle').setAttribute('aria-label', sidebarExpanded ? 'Collapse navigation' : 'Expand navigation');
   const sideMenuIcon = $('#sideMenuToggle .nav-icon');
@@ -445,6 +448,7 @@ function setSidebarExpanded(expanded, remember = true) {
   if (sideMenuIcon) sideMenuIcon.textContent = sidebarExpanded && !wideSidebarQuery.matches ? '×' : '☰';
   if (sideMenuText) sideMenuText.textContent = sidebarExpanded && !wideSidebarQuery.matches ? 'Close menu' : 'Menu';
   $('#menuOpenButton').setAttribute('aria-expanded', String(sidebarExpanded));
+  $('#menuOpenButton').hidden = sidebarExpanded;
   $('#menuScrim').hidden = !sidebarExpanded;
   if (remember) localStorage.setItem('dqops-sidebar-expanded', String(sidebarExpanded));
 }
