@@ -1782,6 +1782,7 @@ button.danger{
     padding:14px 20px;
     border-bottom:1px solid #dbe3ee;
   }
+}
 
 header h1{
   font-size:22px;
@@ -1890,7 +1891,6 @@ nav{
 
 .side-user{
   display:none;
-}
 }
 /* Location-specific forced alarms for store tablets */
 .store-alarm-overlay{position:fixed;inset:0;z-index:10000;background:rgba(84,0,0,.96);display:grid;place-items:center;padding:24px;color:#fff}
@@ -2009,3 +2009,25 @@ header .header-actions{width:auto!important;margin-left:auto!important;overflow:
 @media(max-width:900px){.temperature-standard-row{grid-template-columns:1fr 1fr}.temperature-standard-row>strong,.temperature-standard-row textarea{grid-column:1/-1}}
 .temperature-log-editor{margin:14px 0;border:1px solid var(--line,#d9e1ea);border-radius:14px;overflow:hidden;background:#fff}.temperature-log-editor>summary{display:flex;justify-content:space-between;gap:12px;padding:16px;cursor:pointer;background:#f3f6fa}.temperature-log-editor-body{padding:14px}.temperature-log-head{display:grid;grid-template-columns:minmax(180px,1fr) auto auto;gap:12px;align-items:end;margin-bottom:12px}.temperature-item-editor{display:grid;grid-template-columns:minmax(180px,1.2fr) 95px 95px minmax(160px,1fr) minmax(160px,1fr) auto;gap:9px;align-items:end;padding:12px 0;border-top:1px solid var(--line,#d9e1ea)}.temperature-item-editor label{font-size:13px}.temperature-item-editor textarea{min-height:68px}.temperature-item-actions{display:flex;gap:5px}.temperature-item-actions button{padding:9px}
 @media(max-width:1050px){.temperature-item-editor{grid-template-columns:1fr 1fr}.temperature-item-editor label:first-child,.temperature-item-editor label:nth-child(4),.temperature-item-editor label:nth-child(5),.temperature-item-actions{grid-column:1/-1}.temperature-log-head{grid-template-columns:1fr}}
+
+/* Final portrait safeguard for iPhone Safari and installed PWA mode. */
+@media (orientation:portrait) and (max-width:1024px){
+  #primarySidebar{
+    position:fixed!important;
+    inset:0 auto 0 0!important;
+    width:min(320px,85vw)!important;
+    height:100vh!important;
+    height:100dvh!important;
+    display:grid!important;
+    grid-template-columns:minmax(0,1fr)!important;
+    grid-auto-flow:row!important;
+    grid-auto-rows:max-content!important;
+    align-content:start!important;
+    align-items:stretch!important;
+    justify-items:stretch!important;
+    overflow-x:hidden!important;
+    overflow-y:auto!important;
+  }
+  #primarySidebar>*{min-width:0!important;width:100%!important}
+  #primarySidebar .side-user{margin-top:18px!important}
+}
