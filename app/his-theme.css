@@ -640,6 +640,34 @@ input[type=number]{
   gap:14px;
 }
 
+.task-clickable{
+  cursor:pointer;
+  transition:border-color .16s ease,box-shadow .16s ease,transform .16s ease;
+}
+
+.task-clickable:hover{
+  border-color:#8ba8ca;
+  box-shadow:0 8px 22px rgba(8,40,82,.1);
+  transform:translateY(-1px);
+}
+
+.task-clickable:focus-visible{
+  outline:3px solid rgba(40,120,199,.32);
+  outline-offset:2px;
+}
+
+.task-clickable.done{
+  background:#eef8f3;
+  border-color:#9bc8b5;
+}
+
+.task-completed-by{
+  margin:5px 0 0;
+  color:#28745f;
+  font-size:13px;
+  font-weight:700;
+}
+
 .task input[type=checkbox]{
   width:28px;
   height:28px;

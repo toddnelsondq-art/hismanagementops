@@ -1465,10 +1465,11 @@ function render() {
       <p class="prep-readonly"><b>Quantity to prep:</b> ${prepQty !== '' ? escapeHtml(prepQty) : 'Not set by manager yet'}</p>
     ` : '';
     return `
-      <article class="card task ${task.done ? 'done' : ''} ${task.pushed ? 'urgent' : ''} ${task.managerPrep || task.crewPrep ? 'prep-task' : ''}">
+      <article class="card task task-clickable ${task.done ? 'done' : ''} ${task.pushed ? 'urgent' : ''} ${task.managerPrep || task.crewPrep ? 'prep-task' : ''}" data-task-card="${escapeHtml(task.id)}" role="button" tabindex="0" aria-label="${task.done ? 'Mark incomplete' : 'Mark complete'}: ${escapeHtml(task.name)}">
         <input type="checkbox" data-check="${task.id}" ${task.done ? 'checked' : ''} ${task.photo && !task.photoUrl && !task.photoData ? 'disabled' : ''}>
         <div>
           <div class="task-name">${escapeHtml(task.name)}</div>
+          ${task.done && task.completedBy ? `<p class="task-completed-by">Completed by ${escapeHtml(task.completedBy)}${task.completedAt ? ` · ${escapeHtml(new Date(task.completedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))}` : ''}</p>` : ''}
           ${prepDetails}
           ${task.pushed ? '<span class="urgent-label">MANAGER ADDED</span>' : ''}
           ${task.snoozedFrom ? `<p class="hint">Snoozed from ${escapeHtml(prettyDate(task.snoozedFrom))}${task.snoozedBy ? ` by ${escapeHtml(task.snoozedBy)}` : ''}</p>` : ''}
@@ -3242,7 +3243,7 @@ function reportMarkup(report) {
           <span>${task.done ? '✓' : '○'}</span>
           <div>
             <b>${escapeHtml(task.name)}</b>
-            <p>${task.pushed ? 'Manager-added task' : 'Standard task'}${task.photo ? ` · Photo ${task.photoUrl || task.photoData ? 'attached' : 'required but missing'}` : ''}${task.photoBy ? ` · Photo by ${escapeHtml(task.photoBy)}` : ''}</p>
+            <p>${task.pushed ? 'Manager-added task' : 'Standard task'}${task.done && task.completedBy ? ` · Completed by ${escapeHtml(task.completedBy)}${task.completedAt ? ` at ${escapeHtml(new Date(task.completedAt).toLocaleString())}` : ''}` : ''}${task.photo ? ` · Photo ${task.photoUrl || task.photoData ? 'attached' : 'required but missing'}` : ''}${task.photoBy ? ` · Photo by ${escapeHtml(task.photoBy)}` : ''}</p>
             ${task.photoUrl ? `<a href="${escapeHtml(fullPhotoUrl(task.photoUrl))}" target="_blank">View photo</a>` : ''}
           </div>
         </div>
@@ -4103,8 +4104,26 @@ document.addEventListener('click', async event => {
 
   const checkbox = event.target.closest('[data-check]');
   if (checkbox) {
-    day.tasks.find(entry => entry.id === checkbox.dataset.check).done = checkbox.checked;
+    const task = day.tasks.find(entry => entry.id === checkbox.dataset.check);
+    task.done = checkbox.checked;
+    task.completedBy = checkbox.checked ? currentUser().name : '';
+    task.completedById = checkbox.checked ? currentUser().id : '';
+    task.completedAt = checkbox.checked ? new Date().toISOString() : '';
     await persistAndRender();
+    return;
+  }
+
+  const taskCard = event.target.closest('[data-task-card]');
+  if (taskCard && !event.target.closest('button, input, select, textarea, a, label')) {
+    const task = day.tasks.find(entry => entry.id === taskCard.dataset.taskCard);
+    if (!task) return;
+    if (task.photo && !task.photoUrl && !task.photoData) return toast('Attach the required photo before completing this item');
+    task.done = !task.done;
+    task.completedBy = task.done ? currentUser().name : '';
+    task.completedById = task.done ? currentUser().id : '';
+    task.completedAt = task.done ? new Date().toISOString() : '';
+    await persistAndRender();
+    return;
   }
 
   const photoButton = event.target.closest('[data-photo]');
@@ -5550,6 +5569,13 @@ $('#backToHistoryBtn').onclick = () => switchView('historyView');
 $('#exportAllBtn').onclick = () => downloadReports(history.map(reportKey));
 $('#exportSelectedBtn').onclick = () => downloadReports(selectedHistoryKeys());
 $('#exportReportBtn').onclick = () => selectedReportDate && downloadReports([`${selectedReportLocationId}|${selectedReportDate}`]);
+
+document.addEventListener('keydown', event => {
+  const taskCard = event.target.closest?.('[data-task-card]');
+  if (!taskCard || !['Enter', ' '].includes(event.key)) return;
+  event.preventDefault();
+  taskCard.click();
+});
 
 function renderHistory() {
   $('#historyList').innerHTML = history.length
