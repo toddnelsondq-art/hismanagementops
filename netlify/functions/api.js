@@ -9,7 +9,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.7.0';
+const APP_VERSION = '1.8.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -2863,6 +2863,46 @@ async function saveMaintenanceHoursPermissions(payload, actor) {
   return maintenanceWorkLogState(actor);
 }
 
+const ROLLOUT_SECTIONS = [
+  { id: 'required', name: 'Required equipment', items: ['Tablet','Protective case and mount','Tablet charger and power','DQ OPS tablet enrollment','Raspberry Pi gateway','Pi power supply, case, and microSD card','Venstar thermostats for every HVAC zone','C-wire verified','Equipment labels'] },
+  { id: 'network', name: 'Network and configuration', items: ['Wi-Fi credentials available','Pi and thermostats on the same private network','Wi-Fi signal verified','Unique Pi hostname','Unique DQ OPS gateway ID','Correct DQ OPS location ID','Thermostats named','Venstar Local API enabled','DHCP reservations created','Gateway security token installed','Gateway restarts after power loss'] },
+  { id: 'verification', name: 'Installation verification', items: ['Tablet opens DQ OPS','Employee PIN sign-in tested','Tablet locked to correct location','Cleaning lists verified','Temperature lists verified','Notices verified','Store alarm tested','Thermostats visible in Location Health','Temperature readings verified','Remote setpoint change tested','Thermostat keypad locked','Pi reporting verified after reboot'] },
+  { id: 'cameras', name: 'Optional cameras', optional: true, items: ['UniFi console or recorder installed','Storage configured','Cameras and mounts installed','Network cabling and PoE verified','Cameras adopted and named','Cameras assigned in DQ OPS','Snapshots verified','Retention period configured','Privacy and viewing angles checked'] },
+  { id: 'future', name: 'Optional future equipment', optional: true, items: ['Equipment temperature sensors','Door sensors','Water-leak sensors','Power-loss alarms','Cellular backup','UPS battery backup','Spare charger','Spare Pi and microSD card','Printed quick-start guide'] },
+  { id: 'handoff', name: 'Final handoff', items: ['Store manager trained','Employees trained on PIN sign-in','Manager trained on alarms','Area Manager trained on Location Health','Support information posted','Installation date recorded','Installer recorded','Follow-up scheduled'] }
+];
+
+async function rolloutState(actor) {
+  const permissions = await readMaintenanceKey('rolloutPermissions', { userIds: [] });
+  const allowed = !AUTH_REQUIRED || isFullAccess(actor) || (permissions.userIds || []).includes(String(actor?.id));
+  if (!allowed) throw Object.assign(new Error('Location rollout access has not been granted'), { statusCode: 403 });
+  const records = await readMaintenanceKey('locationRollouts', {});
+  return { allowed: true, canManagePermissions: !AUTH_REQUIRED || isFullAccess(actor), sections: ROLLOUT_SECTIONS, records, installerUserIds: permissions.userIds || [], users: isFullAccess(actor) ? await readUsers() : [] };
+}
+
+async function saveRolloutItem(payload, actor) {
+  const state = await rolloutState(actor);
+  const locationId = String(payload.locationId || '');
+  if (!(await readLocations()).some(location => String(location.id) === locationId)) throw Object.assign(new Error('Location not found'), { statusCode: 404 });
+  const section = ROLLOUT_SECTIONS.find(value => value.id === payload.sectionId);
+  const itemIndex = Number(payload.itemIndex);
+  if (!section || !Number.isInteger(itemIndex) || !section.items[itemIndex]) throw Object.assign(new Error('Checklist item not found'), { statusCode: 404 });
+  const records = state.records && typeof state.records === 'object' ? state.records : {};
+  records[locationId] ||= {};
+  const key = `${section.id}:${itemIndex}`;
+  records[locationId][key] = { checked: payload.checked === true, updatedAt: new Date().toISOString(), updatedBy: actor?.name || 'Installer' };
+  await writeMaintenanceKey('locationRollouts', records);
+  return rolloutState(actor);
+}
+
+async function saveRolloutPermissions(payload, actor) {
+  if (AUTH_REQUIRED && !isFullAccess(actor)) throw Object.assign(new Error('Only the Director of Operations or Owner can assign installers'), { statusCode: 403 });
+  const valid = new Set((await readUsers()).map(user => String(user.id)));
+  const userIds = Array.isArray(payload.userIds) ? [...new Set(payload.userIds.map(String).filter(id => valid.has(id)))] : [];
+  await writeMaintenanceKey('rolloutPermissions', { userIds, updatedAt: new Date().toISOString(), updatedBy: actor?.name || '' });
+  return rolloutState(actor);
+}
+
 async function maintenanceLists() {
   const rows = await readMaintenanceKey('lists', []);
   const keys = {
@@ -3185,7 +3225,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/version') {
       return json(200, {
         version: APP_VERSION,
-        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.25.2'
+        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.25.3'
       });
     }
 
@@ -3279,6 +3319,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/dashboard') return json(200, await dashboardSummary(actor, query.range || 'day', query.locationId || 'all'));
     if (method === 'GET' && apiPath === '/maintenance/state') return json(200, await maintenanceState(query.locationId || 'all'));
     if (method === 'GET' && apiPath === '/maintenance-log/state') return json(200, await maintenanceWorkLogState(actor));
+    if (method === 'GET' && apiPath === '/rollout/state') return json(200, await rolloutState(actor));
     if (method === 'GET' && apiPath === '/location-health/cameras') return json(200, await unifiCameraState(actor));
     if (method === 'GET' && apiPath === '/location-health/thermostats') return json(200, await thermostatState(actor));
     if (method === 'GET' && apiPath === '/location-health/camera-snapshot') return unifiCameraSnapshot(String(query.cameraId || ''), actor);
@@ -3448,6 +3489,8 @@ exports.handler = async event => {
     if (method === 'POST' && apiPath === '/maintenance/attachment') return json(200, { url: await saveAttachment(body) });
     if (method === 'POST' && apiPath === '/maintenance-log/entry') return json(200, await saveMaintenanceWorkLog(body, actor));
     if (method === 'POST' && apiPath === '/maintenance-log/permissions') return json(200, await saveMaintenanceHoursPermissions(body, actor));
+    if (method === 'POST' && apiPath === '/rollout/item') return json(200, await saveRolloutItem(body, actor));
+    if (method === 'POST' && apiPath === '/rollout/permissions') return json(200, await saveRolloutPermissions(body, actor));
     if (method === 'POST' && apiPath === '/location-health/camera-mappings') return json(200, await saveUnifiCameraMappings(body, actor));
     if (method === 'POST' && apiPath === '/location-health/thermostat-command') return json(200, await queueThermostatCommand(body, actor));
 

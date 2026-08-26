@@ -191,6 +191,8 @@ let selectedReportLocationId = null;
 let maintenance = { locations: [], equipment: [], workOrders: [], pmSchedule: [], vendors: [], lists: {} };
 let maintenanceWorkLog = { mode: 'none', canEdit: false, canManagePermissions: false, entries: [], technicians: [], areaManagers: [], permissions: { areaManagerIds: [] } };
 let locationHealth = { configured: false, cameras: [], mappings: {}, canManage: false, message: '', thermostats: [], thermostatConfigured: false, thermostatMessage: '' };
+let rollout = { allowed: false, canManagePermissions: false, sections: [], records: {}, installerUserIds: [], users: [] };
+let rolloutLocationId = localStorage.getItem('dqops-rollout-location') || 'store-01';
 const locationHealthSnapshots = new Map();
 let maintenanceLogPeriod = 'month';
 let maintenanceTechnicianFilter = 'all';
@@ -734,6 +736,7 @@ async function loadState() {
   filterScopedRecords();
   await loadMaintenanceState();
   await loadMaintenanceWorkLogState();
+  await loadRolloutState();
   await loadLocationHealthState(true);
   await loadFpcState();
   await loadCalendarState();
@@ -748,6 +751,42 @@ async function loadState() {
   await loadStoreAlarmState();
   await loadTemperatureStandards();
   render();
+}
+
+async function loadRolloutState() {
+  if (!apiOnline) return;
+  try { rollout = await api('/api/rollout/state'); }
+  catch { rollout = { allowed: false, canManagePermissions: false, sections: [], records: {}, installerUserIds: [], users: [] }; }
+}
+
+function renderRollout() {
+  if (!$('#rolloutView')) return;
+  document.querySelectorAll('[data-view="rolloutView"], [data-section-view="rolloutView"]').forEach(button => { button.style.display = rollout.allowed ? '' : 'none'; });
+  if (!rollout.allowed) return;
+  const select = $('#rolloutLocation');
+  select.innerHTML = locations.map(location => `<option value="${escapeHtml(location.id)}">${escapeHtml(location.name)}</option>`).join('');
+  if (!locations.some(location => location.id === rolloutLocationId)) rolloutLocationId = locations[0]?.id || 'store-01';
+  select.value = rolloutLocationId;
+  const record = rollout.records?.[rolloutLocationId] || {};
+  const requiredItems = (rollout.sections || []).filter(section => !section.optional).flatMap(section => section.items.map((_, index) => record[`${section.id}:${index}`]?.checked));
+  const completed = requiredItems.filter(Boolean).length;
+  const percent = requiredItems.length ? Math.round(completed / requiredItems.length * 100) : 0;
+  $('#rolloutProgress').textContent = `${percent}% required complete`;
+  $('#rolloutSections').innerHTML = (rollout.sections || []).map(section => `<article class="card rollout-section"><div class="section-title"><h3>${escapeHtml(section.name)}</h3><span>${section.optional ? 'Optional' : 'Required'}</span></div><div class="rollout-items">${section.items.map((item, index) => { const saved = record[`${section.id}:${index}`] || {}; return `<label class="rollout-item"><input type="checkbox" data-rollout-section="${escapeHtml(section.id)}" data-rollout-index="${index}" ${saved.checked ? 'checked' : ''}><span><b>${escapeHtml(item)}</b>${saved.updatedAt ? `<small>${escapeHtml(saved.updatedBy || 'Installer')} · ${new Date(saved.updatedAt).toLocaleString()}</small>` : ''}</span></label>`; }).join('')}</div></article>`).join('');
+  document.querySelectorAll('[data-rollout-section]').forEach(input => input.addEventListener('change', () => saveRolloutItem(input)));
+  $('#rolloutPermissionsCard').hidden = !rollout.canManagePermissions;
+  if (rollout.canManagePermissions) $('#rolloutPermissionList').innerHTML = (rollout.users || []).filter(user => !isFullAccess(user)).map(user => `<label class="location-check"><input type="checkbox" value="${escapeHtml(user.id)}" ${(rollout.installerUserIds || []).includes(String(user.id)) ? 'checked' : ''}> ${escapeHtml(user.name)} · ${escapeHtml(user.role)}</label>`).join('') || '<p class="hint">No additional users are available.</p>';
+}
+
+async function saveRolloutItem(input) {
+  input.disabled = true;
+  try { rollout = await api('/api/rollout/item', { method: 'POST', body: JSON.stringify({ locationId: rolloutLocationId, sectionId: input.dataset.rolloutSection, itemIndex: Number(input.dataset.rolloutIndex), checked: input.checked }) }); renderRollout(); }
+  catch (error) { input.checked = !input.checked; input.disabled = false; toast(`Rollout item did not save: ${error.message}`); }
+}
+
+async function saveRolloutPermissions() {
+  try { rollout = await api('/api/rollout/permissions', { method: 'POST', body: JSON.stringify({ userIds: [...document.querySelectorAll('#rolloutPermissionList input:checked')].map(input => input.value) }) }); renderRollout(); toast('Installer access saved'); }
+  catch (error) { toast(`Installer access did not save: ${error.message}`); }
 }
 
 async function loadTemperatureStandards() {
@@ -1506,6 +1545,7 @@ function render() {
   renderMaintenance();
   renderMaintenanceWorkLog();
   renderLocationHealth();
+  renderRollout();
   renderFpc();
   renderStoreDocuments();
   renderResources();
@@ -2785,6 +2825,7 @@ function applyRoleAccess(user) {
   document.querySelectorAll('[data-view="taskListsView"], [data-view="tempLogsView"], [data-view="todayView"]').forEach(button => button.style.display = canUseDailyOps(user) ? '' : 'none');
   document.querySelectorAll('[data-view="historyView"]').forEach(button => button.style.display = showHistory && !tech ? '' : 'none');
   document.querySelectorAll('[data-view="manageView"]').forEach(button => button.style.display = showManage && !tech ? '' : 'none');
+  document.querySelectorAll('[data-view="rolloutView"], [data-section-view="rolloutView"]').forEach(button => button.style.display = rollout.allowed ? '' : 'none');
   document.querySelectorAll('[data-view="helpView"]').forEach(button => button.style.display = showManage && !tech ? '' : 'none');
   document.querySelectorAll('[data-view="locationsView"]').forEach(button => button.style.display = showLocations ? '' : 'none');
   document.querySelectorAll('[data-view="receiptsView"], [data-view="inspectionsView"]').forEach(button => button.style.display = canAddStoreDocuments(user) ? '' : 'none');
@@ -2800,6 +2841,7 @@ function applyRoleAccess(user) {
   if (!showLocationHealth && $('#locationHealthView').classList.contains('active')) switchView(canUseDailyOps(user) ? 'todayView' : 'homeView');
   if (!showHistory && $('#historyView').classList.contains('active')) switchView('todayView');
   if (!showManage && $('#manageView').classList.contains('active')) switchView('todayView');
+  if (!rollout.allowed && $('#rolloutView').classList.contains('active')) switchView('todayView');
   if (!showManage && $('#helpView').classList.contains('active')) switchView('todayView');
   if (!showLocations && $('#locationsView').classList.contains('active')) switchView('todayView');
   if (!canAddStoreDocuments(user) && ($('#receiptsView').classList.contains('active') || $('#inspectionsView').classList.contains('active'))) switchView('todayView');
@@ -3992,7 +4034,7 @@ document.addEventListener('click', async event => {
     if ((targetView === 'receiptsView' || targetView === 'inspectionsView') && !canAddStoreDocuments()) return toast('Only Area Managers and above can access this section');
     if (targetView === 'locationsView' && !canViewLocations()) return toast('Only managers and above can access locations');
     if (targetView === 'helpView' && !canUseManage()) return toast('Only managers and above can access Help');
-    if (isMaintenanceTech() && !['homeView', 'maintenanceView', 'fpcView', 'maintenanceLogView', 'noticesView'].includes(targetView)) return toast('This role can only access Dashboard, Notices, Maintenance, FPC, and Work Log');
+    if (isMaintenanceTech() && targetView !== 'rolloutView' && !['homeView', 'maintenanceView', 'fpcView', 'maintenanceLogView', 'noticesView'].includes(targetView)) return toast('This role can only access Dashboard, Notices, Maintenance, FPC, Work Log, and authorized rollouts');
     switchView(targetView);
     return;
   }
@@ -5398,7 +5440,7 @@ $('#finishBtn').onclick = async () => {
 
 document.querySelectorAll('nav button, .ops-sidebar button[data-view]').forEach(button => {
   button.onclick = () => {
-    if (isMaintenanceTech() && !['homeView', 'maintenanceView', 'fpcView', 'maintenanceLogView', 'noticesView'].includes(button.dataset.view)) return toast('This role can only access Dashboard, Notices, Maintenance, FPC, and Work Log');
+    if (isMaintenanceTech() && button.dataset.view !== 'rolloutView' && !['homeView', 'maintenanceView', 'fpcView', 'maintenanceLogView', 'noticesView'].includes(button.dataset.view)) return toast('This role can only access Dashboard, Notices, Maintenance, FPC, Work Log, and authorized rollouts');
     switchView(button.dataset.view);
     if (!wideSidebarQuery.matches) setSidebarExpanded(false);
   };
@@ -5475,6 +5517,8 @@ $('#cancelMaintenanceLogBtn').onclick = () => {
   renderMaintenanceWorkLog();
 };
 $('#saveMaintenanceHoursPermissionsBtn').onclick = saveMaintenanceHoursPermissions;
+$('#saveRolloutPermissionsBtn').onclick = saveRolloutPermissions;
+$('#rolloutLocation').onchange = event => { rolloutLocationId = event.target.value; localStorage.setItem('dqops-rollout-location', rolloutLocationId); renderRollout(); };
 $('#customizeDashboardBtn').onclick = openDashboardCustomization;
 $('#saveDashboardBtn').onclick = saveDashboardCustomization;
 $('#resetDashboardBtn').onclick = resetDashboardCustomization;

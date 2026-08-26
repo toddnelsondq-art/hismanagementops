@@ -1130,6 +1130,13 @@
       </div>
     </section>
 
+    <section id="rolloutView" class="view">
+      <div class="date"><div><p>INSTALLATION READINESS</p><h2>Location Rollout</h2></div><span class="status" id="rolloutProgress">0% complete</span></div>
+      <article class="card location-switcher"><label>Location<select id="rolloutLocation"></select></label><p class="hint">Required and optional installation sections are tracked separately for each location.</p></article>
+      <article class="card" id="rolloutPermissionsCard" hidden><h3>Authorized installers</h3><p class="hint">Directors and Owners always have access. Select any additional users who may view and update rollout checklists.</p><div id="rolloutPermissionList" class="location-checks"></div><button id="saveRolloutPermissionsBtn" type="button">Save installer access</button></article>
+      <div id="rolloutSections"></div>
+    </section>
+
     <section id="manageView" class="view">
       <div class="date">
         <div>
@@ -1142,6 +1149,7 @@
         <button class="section-hub-card" data-section-view="locationsView" type="button"><span>⌖</span><b>Locations</b><small>Addresses, phone numbers, and store setup</small></button>
         <button class="section-hub-card" data-section-view="receiptsView" type="button"><span>🧾</span><b>Receipts</b><small>Private purchase receipt archive</small></button>
         <button class="section-hub-card" data-section-view="inspectionsView" type="button"><span>✓</span><b>Store inspections</b><small>Visit checklist, scores, and trends</small></button>
+        <button class="section-hub-card" data-section-view="rolloutView" type="button"><span>▣</span><b>Location Rollout</b><small>Equipment, setup, verification, and handoff</small></button>
         <button class="section-hub-card" data-section-view="helpView" type="button"><span>?</span><b>Help</b><small>Navigation and feature guide</small></button>
       </div>
 
@@ -1427,6 +1435,7 @@
     <button data-view="smallwaresView"><span class="nav-icon">🧺</span><span>Smallwares</span></button>
     <button data-view="managementReportsView"><span class="nav-icon">!</span><span>Incidents</span></button>
     <button data-view="manageView" id="sideManageNav"><span class="nav-icon">⚙</span><span>Manage</span></button>
+    <button data-view="rolloutView"><span class="nav-icon">▣</span><span>Rollout</span></button>
     <button data-view="calendarView"><span class="nav-icon">📅</span><span>Calendar</span></button>
     <div class="side-user">
       <details class="side-account-menu">
