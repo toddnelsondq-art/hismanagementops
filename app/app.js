@@ -228,6 +228,7 @@ let dashboardMetrics = {
   maintenance: { completed: 0, open: 0, total: 0, percent: 0 }
 };
 let taskTemplates = baseTasks.map(task => ({ ...task, section: 'Opening', active: true }));
+let pendingChecklistImport = [];
 let notices = [];
 let alertSettings = { rules: [], logs: [] };
 let notificationLogs = [];
@@ -3391,6 +3392,108 @@ async function importAreaChecklists() {
   }
 }
 
+function checklistImportValue(row, ...names) {
+  const normalized = Object.fromEntries(Object.entries(row).map(([key, value]) => [String(key).toLowerCase().replace(/[^a-z0-9]/g, ''), value]));
+  for (const name of names) {
+    const value = normalized[String(name).toLowerCase().replace(/[^a-z0-9]/g, '')];
+    if (value !== undefined && value !== null && String(value).trim() !== '') return String(value).trim();
+  }
+  return '';
+}
+
+function checklistImportDays(value) {
+  const allowed = new Map(weekdayOptions.map(day => [day.toLowerCase(), day]));
+  const parts = String(value || 'Daily').split(/[,;|/]+/).map(day => day.trim()).filter(Boolean);
+  if (!parts.length || parts.some(day => ['daily', 'every day', 'all'].includes(day.toLowerCase()))) return ['daily'];
+  return [...new Set(parts.map(day => allowed.get(day.toLowerCase())).filter(Boolean))];
+}
+
+function checklistImportLocation(value) {
+  const requested = String(value || 'Company Master').trim();
+  if (!requested || ['all', 'company master', 'company', 'master'].includes(requested.toLowerCase())) return 'all';
+  const match = locations.find(location => location.id.toLowerCase() === requested.toLowerCase() || location.name.toLowerCase() === requested.toLowerCase());
+  return match?.id || '';
+}
+
+async function previewChecklistImport(file) {
+  const preview = $('#checklistImportPreview');
+  const importButton = $('#importChecklistItemsBtn');
+  pendingChecklistImport = [];
+  importButton.disabled = true;
+  if (!file) {
+    preview.innerHTML = '<p class="hint">Choose a completed template to preview it here.</p>';
+    return;
+  }
+  try {
+    if (!window.XLSX) throw new Error('The spreadsheet reader did not load. Refresh DQ OPS and try again.');
+    const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+    const sourceRows = XLSX.utils.sheet_to_json(worksheet, { defval: '', raw: false });
+    const errors = [];
+    const seen = new Set();
+    sourceRows.forEach((row, index) => {
+      const rowNumber = index + 2;
+      const name = checklistImportValue(row, 'Task', 'Task Description', 'Item');
+      const section = checklistImportValue(row, 'Checklist', 'Section', 'Daypart') || 'All Day';
+      const categoryRaw = checklistImportValue(row, 'Main Set', 'Category', 'Station') || 'Manager';
+      const category = taskCategories.find(item => item.toLowerCase() === categoryRaw.toLowerCase());
+      const locationRaw = checklistImportValue(row, 'Location', 'Location ID', 'Store') || 'Company Master';
+      const locationId = checklistImportLocation(locationRaw);
+      const prepRaw = checklistImportValue(row, 'Prep Area', 'Prep Quantity List');
+      const prepArea = prepAreas.find(item => item.toLowerCase() === prepRaw.toLowerCase()) || '';
+      const photoRaw = checklistImportValue(row, 'Photo Required', 'Require Photo', 'Photo');
+      const photo = ['yes', 'y', 'true', '1', 'required'].includes(photoRaw.toLowerCase());
+      const scheduleDays = checklistImportDays(checklistImportValue(row, 'Days', 'Schedule', 'Schedule Days'));
+      if (!name) errors.push(`Row ${rowNumber}: Task is required.`);
+      if (!category) errors.push(`Row ${rowNumber}: Main Set must be Manager, Service, Chill, or Grill.`);
+      if (!locationId) errors.push(`Row ${rowNumber}: Location “${locationRaw}” was not found in DQ OPS.`);
+      if (!scheduleDays.length) errors.push(`Row ${rowNumber}: Days must contain Daily or valid weekday names.`);
+      if (!name || !category || !locationId || !scheduleDays.length) return;
+      const duplicateKey = `${locationId}|${section}|${category}|${name}`.toLowerCase();
+      if (seen.has(duplicateKey)) {
+        errors.push(`Row ${rowNumber}: Duplicate item in this file.`);
+        return;
+      }
+      seen.add(duplicateKey);
+      pendingChecklistImport.push({ name, section, category, locationId, prepArea, managerPrep: Boolean(prepArea), photo, scheduleDays, active: true });
+    });
+    const sample = pendingChecklistImport.slice(0, 12);
+    preview.innerHTML = `
+      <div class="checklist-import-summary ${errors.length ? 'has-errors' : ''}">
+        <b>${pendingChecklistImport.length} valid item${pendingChecklistImport.length === 1 ? '' : 's'}</b>
+        <span>${errors.length ? `${errors.length} issue${errors.length === 1 ? '' : 's'} must be corrected` : 'Ready to import'}</span>
+      </div>
+      ${sample.length ? `<div class="table-scroll"><table><thead><tr><th>Location</th><th>Main Set</th><th>Checklist</th><th>Task</th><th>Days</th><th>Photo</th></tr></thead><tbody>${sample.map(item => `<tr><td>${escapeHtml(item.locationId === 'all' ? 'Company Master' : locationName(item.locationId))}</td><td>${escapeHtml(item.category)}</td><td>${escapeHtml(item.section)}</td><td>${escapeHtml(item.name)}</td><td>${escapeHtml(scheduleLabel(item.scheduleDays))}</td><td>${item.photo ? 'Yes' : 'No'}</td></tr>`).join('')}</tbody></table></div>${pendingChecklistImport.length > sample.length ? `<p class="hint">Previewing the first ${sample.length} items.</p>` : ''}` : ''}
+      ${errors.length ? `<ul class="import-errors">${errors.slice(0, 20).map(error => `<li>${escapeHtml(error)}</li>`).join('')}</ul>${errors.length > 20 ? `<p class="hint">Plus ${errors.length - 20} more issues.</p>` : ''}` : ''}
+    `;
+    importButton.disabled = Boolean(errors.length || !pendingChecklistImport.length);
+  } catch (error) {
+    preview.innerHTML = `<p class="import-error">Could not read this file: ${escapeHtml(error.message)}</p>`;
+  }
+}
+
+async function importChecklistItems() {
+  if (!pendingChecklistImport.length) return toast('Choose and preview a checklist file first');
+  if (!confirm(`Import ${pendingChecklistImport.length} checklist items? Matching items will be updated instead of duplicated.`)) return;
+  const button = $('#importChecklistItemsBtn');
+  button.disabled = true;
+  try {
+    const response = await api('/api/task-templates/import-spreadsheet', {
+      method: 'POST',
+      body: JSON.stringify({ items: pendingChecklistImport })
+    });
+    taskTemplates = response.taskTemplates;
+    pendingChecklistImport = [];
+    $('#checklistImportFile').value = '';
+    $('#checklistImportPreview').innerHTML = `<p class="success-text">Imported ${response.importedCount} items. ${response.updatedCount} existing items were updated and ${response.createdCount} were added.</p>`;
+    render();
+    toast('Checklist items imported');
+  } catch (error) {
+    button.disabled = false;
+    toast(`Checklist items did not import: ${error.message}`);
+  }
+}
+
 async function deletePermanentTask(id) {
   if (!confirm('Remove this task from future checklists? Existing daily records will not change.')) return;
   try {
@@ -5489,6 +5592,8 @@ $('#createKioskCodeBtn').onclick = async () => {
 };
 $('#noticesBtn').onclick = () => switchView('noticesView');
 $('#addTemplateTaskBtn').onclick = savePermanentTask;
+$('#checklistImportFile').onchange = event => previewChecklistImport(event.target.files?.[0]);
+$('#importChecklistItemsBtn').onclick = importChecklistItems;
 $('#loadAreaChecklistsBtn').onclick = importAreaChecklists;
 $('#copyChecklistBtn').onclick = copyChecklistToLocation;
 $('#saveScheduleBtn').onclick = saveChecklistSchedule;

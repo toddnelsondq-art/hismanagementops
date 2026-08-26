@@ -1,2 +1,2 @@
-self.DQ_OPS_VERSION = '1.9.2';
-self.DQ_OPS_BUILD = '2026.08.26.3';
+self.DQ_OPS_VERSION = '1.10.0';
+self.DQ_OPS_BUILD = '2026.08.26.4';

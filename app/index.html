@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="assets/pwa-icon-180.png">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="temperature.css">
-  <link rel="stylesheet" href="his-theme.css?v=2026-08-26-mobile-drawer-2">
+  <link rel="stylesheet" href="his-theme.css?v=2026-08-26-checklist-import">
   <style>
     .receiving-issue-tools,.receiving-issue-list{width:100%;margin-top:12px}
     .receiving-issue{border-top:1px solid var(--line);padding:10px 0}
@@ -1195,7 +1195,17 @@
         <label class="check"><input type="checkbox" id="templatePhotoRequired"> Require a photo</label>
         <button id="addTemplateTaskBtn" type="button">Add permanent task</button>
         <button id="loadAreaChecklistsBtn" class="ghost" type="button" hidden>Load DQ area checklists</button>
-        <p class="hint">The prior imported items have been cleared while checklist names are preserved. Rebuild shorter lists here one item at a time; use spreadsheet import later only for large, reviewed batches.</p>
+        <p class="hint">The prior imported items have been cleared while checklist names are preserved. Rebuild shorter lists here one item at a time or use the spreadsheet importer for reviewed batches.</p>
+        <div class="schedule-box checklist-import-box">
+          <h4>Import checklist items</h4>
+          <p class="hint">Upload the DQ OPS template as an Excel or CSV file. Nothing is saved until you review the preview and select Import.</p>
+          <a class="button-link ghost" href="assets/DQ_OPS_Checklist_Import_Template.xlsx" download>Download Excel template</a>
+          <label>Choose Excel or CSV file
+            <input id="checklistImportFile" type="file" accept=".xlsx,.xls,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+          </label>
+          <div id="checklistImportPreview" class="checklist-import-preview"><p class="hint">Choose a completed template to preview it here.</p></div>
+          <button id="importChecklistItemsBtn" type="button" disabled>Import reviewed items</button>
+        </div>
         <div class="schedule-box">
           <h4>Copy master checklist to one store</h4>
           <p class="hint">This creates a store-only copy. After copying, edits for that store will not change the company master or other stores.</p>
@@ -1862,9 +1872,9 @@
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-26-3"></script>
+  <script src="version.js?v=2026-08-26-4"></script>
   <script src="auth.js?v=2026-07-29-kiosk-pin"></script>
-  <script src="app.js?v=2026-08-26-mobile-drawer-2"></script>
+  <script src="app.js?v=2026-08-26-checklist-import"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>

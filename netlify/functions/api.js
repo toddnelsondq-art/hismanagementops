@@ -9,7 +9,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.9.2';
+const APP_VERSION = '1.10.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -2195,6 +2195,33 @@ async function saveStoreDocument(payload, actor) {
   return storeDocumentsState();
 }
 
+async function importSpreadsheetChecklistTemplates(payload = {}, actor) {
+  if (AUTH_REQUIRED && !canManage(actor)) throw Object.assign(new Error('Only managers and above can import checklists'), { statusCode: 403 });
+  const items = Array.isArray(payload.items) ? payload.items : [];
+  if (!items.length) throw Object.assign(new Error('No checklist items were provided'), { statusCode: 400 });
+  if (items.length > 2000) throw Object.assign(new Error('Import files are limited to 2,000 checklist items'), { statusCode: 400 });
+  const incoming = items.map(normalizeTaskTemplate);
+  const templates = await readTaskTemplates();
+  const keyFor = task => `${templateLocationId(task)}|${String(task.section || '').trim()}|${String(task.category || '').trim()}|${String(task.name || '').trim()}`.toLowerCase();
+  const byKey = new Map(templates.filter(task => task.name).map(task => [keyFor(task), task]));
+  let createdCount = 0;
+  let updatedCount = 0;
+  incoming.forEach(task => {
+    const key = keyFor(task);
+    const existing = byKey.get(key);
+    if (existing) {
+      Object.assign(existing, { ...task, id: existing.id, locationSchedules: existing.locationSchedules || task.locationSchedules || {} });
+      updatedCount += 1;
+    } else {
+      templates.push(task);
+      byKey.set(key, task);
+      createdCount += 1;
+    }
+  });
+  await writeMaintenanceKey('taskTemplates', templates);
+  return { taskTemplates: templates, importedCount: incoming.length, createdCount, updatedCount };
+}
+
 async function readTemperatureStandards() {
   const stored = await readMaintenanceKey('temperatureStandards', {});
   return stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
@@ -3394,6 +3421,9 @@ exports.handler = async event => {
     }
     if (method === 'POST' && apiPath === '/task-templates/import-area-checklists') {
       return json(200, { taskTemplates: await importAreaChecklistTemplates(actor) });
+    }
+    if (method === 'POST' && apiPath === '/task-templates/import-spreadsheet') {
+      return json(200, await importSpreadsheetChecklistTemplates(body, actor));
     }
     if (method === 'POST' && apiPath === '/notice') {
       return json(200, { notices: await saveNotice(body, actor) });

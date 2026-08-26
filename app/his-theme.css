@@ -668,6 +668,18 @@ input[type=number]{
   font-weight:700;
 }
 
+.checklist-import-box{display:grid;gap:12px}
+.checklist-import-box .button-link{display:inline-flex;width:max-content;align-items:center;text-decoration:none}
+.checklist-import-preview{border:1px dashed var(--line);border-radius:12px;padding:14px;background:#f8fafc}
+.checklist-import-summary{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px;color:#28745f}
+.checklist-import-summary.has-errors,.import-error,.import-errors{color:#b42335}
+.checklist-import-preview table{width:100%;border-collapse:collapse;font-size:13px}
+.checklist-import-preview th,.checklist-import-preview td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.checklist-import-preview th{background:#eaf0f7;color:#0b2f5b;white-space:nowrap}
+.checklist-import-preview .table-scroll{overflow:auto;max-height:380px;border-radius:9px}
+.import-errors{margin:10px 0 0;padding-left:22px}
+.success-text{margin:0;color:#28745f;font-weight:800}
+
 .task input[type=checkbox]{
   width:28px;
   height:28px;
