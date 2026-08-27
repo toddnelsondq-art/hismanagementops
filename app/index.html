@@ -202,7 +202,7 @@
 
       <div class="maintenance-metrics" id="maintenanceMetrics"></div>
 
-      <article class="card form-card">
+      <article class="card form-card collapsible-card" id="createWorkOrderCard">
         <h3>Create work order</h3>
         <label>Category
           <select id="woCategory"></select>
@@ -253,7 +253,7 @@
         <button id="createWorkOrderBtn">Create work order</button>
       </article>
 
-      <div class="maintenance-actions">
+      <div class="maintenance-actions" id="maintenanceActions">
         <button data-maint-section="equipmentForm">Add equipment</button>
         <button data-maint-section="pmForm" class="ghost">Add PM task</button>
         <button data-maint-section="maintenanceImportPanel" class="ghost">Import workbook</button>
@@ -1377,6 +1377,7 @@
             <option>Owner</option>
           </select>
         </label>
+        <label class="check"><input id="newUserMaintenance" type="checkbox"> Maintenance — may be assigned internal work orders</label>
         <label>Home location
           <select id="newUserLocation"></select>
         </label>
@@ -1541,6 +1542,7 @@
           <option>Owner</option>
         </select>
       </label>
+      <label class="check"><input id="editUserMaintenance" type="checkbox"> Maintenance — may be assigned internal work orders</label>
       <label>Home location
         <select id="editUserLocation"></select>
       </label>
@@ -1872,9 +1874,9 @@
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-26-6"></script>
+  <script src="version.js?v=2026-08-26-7"></script>
   <script src="auth.js?v=2026-07-29-kiosk-pin"></script>
-  <script src="app.js?v=2026-08-26-checklist-import"></script>
+  <script src="app.js?v=2026-08-26-maintenance-access"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>

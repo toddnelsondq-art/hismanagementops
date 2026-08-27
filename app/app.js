@@ -430,6 +430,17 @@ function setupCollapsibleCards() {
 
 setupCollapsibleCards();
 
+function arrangeMaintenanceTools() {
+  const view = $('#maintenanceView');
+  const actions = $('#maintenanceActions');
+  if (!view || !actions) return;
+  view.append(actions);
+  ['maintenanceImportPanel', 'equipmentForm', 'pmForm', 'equipmentDirectory', 'vendorDirectory']
+    .forEach(id => { const panel = $(`#${id}`); if (panel) view.append(panel); });
+}
+
+arrangeMaintenanceTools();
+
 const wideSidebarQuery = window.matchMedia('(min-width: 840px)');
 let sidebarExpanded = localStorage.getItem('dqops-sidebar-expanded');
 sidebarExpanded = sidebarExpanded === null ? wideSidebarQuery.matches : sidebarExpanded === 'true';
@@ -1170,7 +1181,7 @@ function locationName(locationId) {
 
 function userOptionList(selectedId = '') {
   return '<option value="">No internal person selected</option>' + users
-    .filter(user => user.active !== false && user.email)
+    .filter(user => user.active !== false && (user.maintenance || isMaintenanceTech(user) || user.id === selectedId))
     .map(user => `<option value="${escapeHtml(user.id)}" ${user.id === selectedId ? 'selected' : ''}>${escapeHtml(user.name)} · ${escapeHtml(user.role || '')}</option>`)
     .join('');
 }
@@ -1348,6 +1359,15 @@ function temperatureListNames() {
   return isTemperatureListFormat() ? Object.keys(temperatureItems) : ['Grill', 'Chill'];
 }
 
+function formatClockTime(value = '') {
+  const text = String(value || '').trim();
+  if (!text || /\b(?:AM|PM)\b/i.test(text)) return text;
+  const clock = text.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (!clock) return text;
+  return new Date(2000, 0, 1, Number(clock[1]), Number(clock[2]))
+    .toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
 function temperatureListScheduledToday(listName, locationId = currentLocationId, when = new Date()) {
   const schedules = temperatureItems[listName]?.deliveryDaysByLocation;
   if (!schedules || !Object.prototype.hasOwnProperty.call(schedules, locationId)) return true;
@@ -1512,7 +1532,7 @@ function render() {
             <span>${escapeHtml(item)}</span>
             <b>${Math.min(readings.length, 1)}/1</b>
             <div class="reading-chips">
-              ${readings.map(reading => `<span class="reading-chip ${reading.correctiveAction ? 'reading-out-of-range' : ''}">${escapeHtml(reading.value)}°F · ${escapeHtml(reading.time)}${reading.userName ? ` · ${escapeHtml(reading.userName)}` : ''}${reading.correctiveAction ? ` · ${escapeHtml(reading.correctiveAction)}` : ''}</span>`).join('')}
+              ${readings.map(reading => `<span class="reading-chip ${reading.correctiveAction ? 'reading-out-of-range' : ''}">${escapeHtml(reading.value)}°F · ${escapeHtml(formatClockTime(reading.time))}${reading.userName ? ` · ${escapeHtml(reading.userName)}` : ''}${reading.correctiveAction ? ` · ${escapeHtml(reading.correctiveAction)}` : ''}</span>`).join('')}
               ${readings.length < 1 ? `<span class="reading-due">due for ${escapeHtml(selectedTempSession)}</span>` : ''}
             </div>
           </button>
@@ -1523,13 +1543,13 @@ function render() {
   const additionalReadings = (day.temps || []).filter(temp => readingList(temp) === 'Additional' && readingSession(temp) === selectedTempSession);
   $('#additionalTempList').innerHTML = additionalReadings.length ? `
     <div class="temp-group additional-temp-group"><h4>Additional / non-listed temperatures</h4>
-      ${additionalReadings.map(reading => `<div class="temp-entry additional-temp-entry"><span>${escapeHtml(reading.item)}</span><div class="reading-chips"><span class="reading-chip">${escapeHtml(reading.value)}°F · ${escapeHtml(reading.time)}${reading.userName ? ` · ${escapeHtml(reading.userName)}` : ''}</span></div></div>`).join('')}
+      ${additionalReadings.map(reading => `<div class="temp-entry additional-temp-entry"><span>${escapeHtml(reading.item)}</span><div class="reading-chips"><span class="reading-chip">${escapeHtml(reading.value)}°F · ${escapeHtml(formatClockTime(reading.time))}${reading.userName ? ` · ${escapeHtml(reading.userName)}` : ''}</span></div></div>`).join('')}
     </div>` : '';
   const receivingIssues = (day.receivingIssues || []).filter(issue => issue.list === selectedTempList);
   if ($('#receivingIssueTools')) $('#receivingIssueTools').hidden = selectedTempList !== 'Receiving';
   if ($('#receivingIssueList')) $('#receivingIssueList').innerHTML = selectedTempList === 'Receiving' && receivingIssues.length ? `
     <div class="temp-group receiving-issue-group"><h4>Reported receiving issues</h4>
-      ${receivingIssues.map(issue => `<article class="receiving-issue"><b>${escapeHtml(issue.note || 'Photo-only issue')}</b><p>${escapeHtml(issue.time)} · ${escapeHtml(issue.userName || '')}</p>${issue.photoUrl ? `<a href="${escapeHtml(fullPhotoUrl(issue.photoUrl))}" target="_blank" rel="noopener">View photo</a>` : issue.photoData ? `<a href="${escapeHtml(issue.photoData)}" target="_blank" rel="noopener">View photo</a>` : ''}</article>`).join('')}
+      ${receivingIssues.map(issue => `<article class="receiving-issue"><b>${escapeHtml(issue.note || 'Photo-only issue')}</b><p>${escapeHtml(formatClockTime(issue.time))} · ${escapeHtml(issue.userName || '')}</p>${issue.photoUrl ? `<a href="${escapeHtml(fullPhotoUrl(issue.photoUrl))}" target="_blank" rel="noopener">View photo</a>` : issue.photoData ? `<a href="${escapeHtml(issue.photoData)}" target="_blank" rel="noopener">View photo</a>` : ''}</article>`).join('')}
     </div>` : '';
 
   const done = day.tasks.filter(task => task.done).length;
@@ -1569,7 +1589,7 @@ function render() {
 
 function temperatureStandardKey(list, area, item) { return `${list}|${area}|${item}`; }
 function temperatureStandard(list, area, item) { return temperatureStandards[temperatureStandardKey(list, area, item)] || {}; }
-function dayTempsAvailable(user = currentUser()) { return user.role !== 'Employee' || new Date().getHours() < 14; }
+function dayTempsAvailable() { return new Date().getHours() < 14; }
 
 function inStoreRuleIncomplete(rule) {
   if (rule.type === 'task') return (day.tasks || []).some(task => task.section === rule.target && !task.done);
@@ -1586,7 +1606,7 @@ function renderInStoreReminders() {
     .filter(rule => !(rule.roles || []).length || rule.roles.includes(currentUser().role))
     .filter(rule => { const [h, m] = String(rule.dueTime || '23:59').split(':').map(Number); return currentMinutes >= h * 60 + m; })
     .filter(inStoreRuleIncomplete);
-  const html = reminders.map(rule => `<article class="card in-store-reminder"><h3>Reminder: ${escapeHtml(rule.name)}</h3><p>${escapeHtml(rule.targetLabel || rule.target)} was due by ${escapeHtml(rule.dueTime)} and is not complete.</p></article>`).join('');
+  const html = reminders.map(rule => `<article class="card in-store-reminder"><h3>Reminder: ${escapeHtml(rule.name)}</h3><p>${escapeHtml(rule.targetLabel || rule.target)} was due by ${escapeHtml(formatClockTime(rule.dueTime))} and is not complete.</p></article>`).join('');
   if ($('#tempInStoreReminders')) $('#tempInStoreReminders').innerHTML = html;
   if ($('#taskInStoreReminders')) $('#taskInStoreReminders').innerHTML = html;
 }
@@ -3183,7 +3203,7 @@ function renderUsers() {
       <span class="avatar">${initials(user.name)}</span>
       <div>
         <b>${escapeHtml(user.name)}</b>
-        <p>${escapeHtml(user.role)} · ${userLocationIds(user).map(locationName).join(', ')}</p>
+        <p>${escapeHtml(user.role)}${user.maintenance || isMaintenanceTech(user) ? ' · Maintenance' : ''} · ${userLocationIds(user).map(locationName).join(', ')}</p>
       </div>
       <div class="row-actions">
         <button data-user-edit="${user.id}">Edit</button>
@@ -3269,14 +3289,14 @@ function reportMarkup(report) {
             <div class="report-temp-item">
               <b>${escapeHtml(item)}</b>
               <div class="reading-chips">
-                ${readings.map(reading => `<span class="reading-chip">${escapeHtml(reading.value)}°F · ${escapeHtml(reading.time)}${reading.userName ? ` · ${escapeHtml(reading.userName)}` : ''}</span>`).join('')}
+                ${readings.map(reading => `<span class="reading-chip">${escapeHtml(reading.value)}°F · ${escapeHtml(formatClockTime(reading.time))}${reading.userName ? ` · ${escapeHtml(reading.userName)}` : ''}</span>`).join('')}
               </div>
             </div>
           `).join('')}
         </div>
       `).join('') : '<p class="hint">No temperature readings recorded.</p>'}
     </article>
-    ${(entry.receivingIssues || []).length ? `<article class="card report-card"><h3>Receiving issues</h3>${entry.receivingIssues.map(issue => `<div class="report-line"><span>!</span><div><b>${escapeHtml(issue.note || 'Photo-only issue')}</b><p>${escapeHtml(issue.time || '')}${issue.userName ? ` · ${escapeHtml(issue.userName)}` : ''}</p>${issue.photoUrl ? `<a href="${escapeHtml(fullPhotoUrl(issue.photoUrl))}" target="_blank" rel="noopener">View photo</a>` : issue.photoData ? `<a href="${escapeHtml(issue.photoData)}" target="_blank" rel="noopener">View photo</a>` : ''}</div></div>`).join('')}</article>` : ''}
+    ${(entry.receivingIssues || []).length ? `<article class="card report-card"><h3>Receiving issues</h3>${entry.receivingIssues.map(issue => `<div class="report-line"><span>!</span><div><b>${escapeHtml(issue.note || 'Photo-only issue')}</b><p>${escapeHtml(formatClockTime(issue.time || ''))}${issue.userName ? ` · ${escapeHtml(issue.userName)}` : ''}</p>${issue.photoUrl ? `<a href="${escapeHtml(fullPhotoUrl(issue.photoUrl))}" target="_blank" rel="noopener">View photo</a>` : issue.photoData ? `<a href="${escapeHtml(issue.photoData)}" target="_blank" rel="noopener">View photo</a>` : ''}</div></div>`).join('')}</article>` : ''}
   `;
 }
 
@@ -4351,6 +4371,7 @@ $('#deleteEditingResourceBtn').onclick = async () => {
 };
 
 function openTempDialog(area = $('#tempArea').value, item = null, list = selectedTempList) {
+  if (selectedTempSession === 'Day' && !dayTempsAvailable()) return toast('Day temperatures close at 2:00 PM');
   tempEntryMode = 'listed';
   $('#tempValue').value = '';
   if (list) {
@@ -4369,6 +4390,7 @@ function openTempDialog(area = $('#tempArea').value, item = null, list = selecte
 }
 
 function openAdditionalTempDialog() {
+  if (selectedTempSession === 'Day' && !dayTempsAvailable()) return toast('Day temperatures close at 2:00 PM');
   tempEntryMode = 'additional';
   $('#tempValue').value = '';
   $('#additionalTempItem').value = '';
@@ -4808,6 +4830,10 @@ $('#saveVendorBtn').onclick = async () => {
 
 $('#saveTempBtn').onclick = async event => {
   event.preventDefault();
+  if (selectedTempSession === 'Day' && !dayTempsAvailable()) {
+    $('#tempDialog').close();
+    return toast('Day temperatures close at 2:00 PM');
+  }
   if (!$('#tempValue').value) {
     return toast('Enter the temperature');
   }
@@ -4820,7 +4846,7 @@ $('#saveTempBtn').onclick = async event => {
     item: tempEntryMode === 'additional' ? additionalItem : $('#tempItem').value,
     session: selectedTempSession,
     value: $('#tempValue').value,
-    time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+    time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true }),
     userId: currentUser().id,
     userName: currentUser().name
   };
@@ -4924,6 +4950,7 @@ $('#addUserBtn').onclick = async () => {
   const temporaryPassword = $('#newUserPassword').value.trim();
   const pin = $('#newUserPin').value.trim();
   const role = $('#newUserRole').value;
+  const maintenanceEligible = $('#newUserMaintenance').checked || role === maintenanceRole;
   if (!name) return toast('Enter a user name');
   if (window.dailyOpsAuth?.enabled && role !== 'Employee' && !email) return toast('Enter an email for management login');
   if (window.dailyOpsAuth?.enabled && role !== 'Employee' && !temporaryPassword) return toast('Enter a temporary password for management login');
@@ -4936,12 +4963,13 @@ $('#addUserBtn').onclick = async () => {
   if (!allowedAssignableRoles().includes(role)) return toast('You do not have access to create that role');
   if (!isFullAccess() && locationIds.some(savedLocation => !userLocationIds().includes(savedLocation))) return toast('You can only add users to your locations');
   try {
-    await saveUser({ name, email, phone, temporaryPassword, pin: role === 'Employee' ? pin : '', role, locationId, locationIds, invitedBy: currentUser().name });
+    await saveUser({ name, email, phone, temporaryPassword, pin: role === 'Employee' ? pin : '', role, maintenance: maintenanceEligible, locationId, locationIds, invitedBy: currentUser().name });
     $('#newUserName').value = '';
     $('#newUserEmail').value = '';
     $('#newUserPhone').value = '';
     $('#newUserPassword').value = '';
     $('#newUserPin').value = '';
+    $('#newUserMaintenance').checked = false;
     $('#newUserRole').value = 'Employee';
     renderNewUserLocationChecks();
     toast(role === 'Employee' ? 'Employee added with PIN' : 'User added with temporary password');
@@ -4967,6 +4995,7 @@ function openUserDialog(id) {
   $('#editUserPassword').value = '';
   $('#editUserPin').value = '';
   $('#editUserRole').innerHTML = roles.map(role => `<option ${user.role === role ? 'selected' : ''}>${role}</option>`).join('');
+  $('#editUserMaintenance').checked = Boolean(user.maintenance || isMaintenanceTech(user));
   if (!roles.includes(user.role)) $('#editUserRole').innerHTML += `<option selected>${escapeHtml(user.role)}</option>`;
   $('#editUserLocation').innerHTML = visibleLocations.map(location => `<option value="${location.id}" ${user.locationId === location.id ? 'selected' : ''}>${location.name}</option>`).join('');
   renderLocationChecks('#editUserLocations', userLocationIds(user));
@@ -4993,6 +5022,7 @@ $('#saveUserEditBtn').onclick = async () => {
   const email = $('#editUserEmail').value.trim();
   const phone = $('#editUserPhone').value.trim();
   const role = $('#editUserRole').value;
+  const maintenanceEligible = $('#editUserMaintenance').checked || role === maintenanceRole;
   const selected = [...document.querySelectorAll('#editUserLocations input:checked')].map(input => input.value);
   const locationId = $('#editUserLocation').value;
   if (!name) return toast('Enter a user name');
@@ -5006,6 +5036,7 @@ $('#saveUserEditBtn').onclick = async () => {
       email,
       phone,
       role,
+      maintenance: maintenanceEligible,
       locationId,
       locationIds: locationsToSave
     });

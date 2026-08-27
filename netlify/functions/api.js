@@ -9,7 +9,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.10.2';
+const APP_VERSION = '1.11.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -350,7 +350,11 @@ async function readLocations() {
 }
 
 async function readUsers() {
-  const rows = await supabase(`/rest/v1/app_users?${tenantQuery()}&active=eq.true&select=*&order=name.asc`);
+  const [rows, maintenanceEligibleUserIds] = await Promise.all([
+    supabase(`/rest/v1/app_users?${tenantQuery()}&active=eq.true&select=*&order=name.asc`),
+    readMaintenanceKey('maintenanceEligibleUserIds', []).catch(() => [])
+  ]);
+  const maintenanceIds = new Set((maintenanceEligibleUserIds || []).map(String));
   return rows.map(row => ({
     id: row.id,
     email: row.email,
@@ -359,8 +363,17 @@ async function readUsers() {
     role: row.role,
     pinEnabled: Boolean(row.pin_hash),
     locationId: row.location_id,
-    locationIds: Array.isArray(row.location_ids) ? row.location_ids : [row.location_id]
+    locationIds: Array.isArray(row.location_ids) ? row.location_ids : [row.location_id],
+    maintenance: row.role === MAINTENANCE_ROLE || maintenanceIds.has(String(row.id))
   }));
+}
+
+function localHour(timeZone = ALERT_TIME_ZONE, date = new Date()) {
+  return Number(new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour: '2-digit',
+    hourCycle: 'h23'
+  }).format(date));
 }
 
 async function readDay(locationId, date) {
@@ -717,6 +730,13 @@ async function saveUser(user) {
       updated_at: new Date().toISOString()
     }))
   });
+  if (typeof user.maintenance === 'boolean' || user.role === MAINTENANCE_ROLE) {
+    const savedIds = await readMaintenanceKey('maintenanceEligibleUserIds', []);
+    const maintenanceIds = new Set((savedIds || []).map(String));
+    if (user.maintenance || user.role === MAINTENANCE_ROLE) maintenanceIds.add(String(id));
+    else maintenanceIds.delete(String(id));
+    await writeMaintenanceKey('maintenanceEligibleUserIds', [...maintenanceIds]);
+  }
   return readUsers();
 }
 
@@ -850,6 +870,7 @@ async function createUserLogin(payload) {
     phone: payload.phone,
     name: payload.name,
     role: payload.role || 'Employee',
+    maintenance: Boolean(payload.maintenance || payload.role === MAINTENANCE_ROLE),
     locationId,
     locationIds
   });
@@ -2981,7 +3002,11 @@ function nextPrefixedId(rows, key, prefix) {
   return `${prefix}-${String(highest + 1).padStart(4, '0')}`;
 }
 
-async function writeWorkOrder(payload) {
+async function writeWorkOrder(payload, actor) {
+  const technician = actor?.role === MAINTENANCE_ROLE;
+  if (AUTH_REQUIRED && !technician && !canManage(actor)) {
+    throw Object.assign(new Error('You do not have permission to create work orders'), { statusCode: 403 });
+  }
   const workOrders = await readMaintenanceKey('workOrders', []);
   const equipment = await readMaintenanceKey('equipment', []);
   const selectedEquipment = equipment.find(row => row['Equipment ID'] === payload.equipmentId) || {};
@@ -3031,7 +3056,6 @@ async function updateWorkOrder(payload, actor) {
   const row = workOrders.find(entry => entry['Work Order ID'] === payload.workOrderId);
   if (!row) throw Object.assign(new Error('Work order not found'), { statusCode: 404 });
   const technician = actor?.role === MAINTENANCE_ROLE;
-  if (AUTH_REQUIRED && technician && !canAccessLocation(actor, String(row['Location ID'] || ''))) throw Object.assign(new Error('You do not have access to this work order location'), { statusCode: 403 });
   if (AUTH_REQUIRED && !technician && !canManage(actor)) throw Object.assign(new Error('You do not have permission to update work orders'), { statusCode: 403 });
   const managerMapping = {
     status: 'Status',
@@ -3370,6 +3394,14 @@ exports.handler = async event => {
     if (method === 'POST' && apiPath === '/day') {
       const locationId = body.locationId || DEFAULT_LOCATION_ID;
       if (AUTH_REQUIRED && !canAccessLocation(actor, locationId)) throw Object.assign(new Error('You do not have access to that location'), { statusCode: 403 });
+      if (body.date === localDate() && localHour() >= 14) {
+        const savedDay = await readDay(locationId, body.date);
+        const savedDayTemps = (savedDay.temps || []).filter(reading => readingSession(reading) === 'Day').length;
+        const submittedDayTemps = (body.day?.temps || []).filter(reading => readingSession(reading) === 'Day').length;
+        if (submittedDayTemps > savedDayTemps) {
+          throw Object.assign(new Error('Day temperatures close at 2:00 PM'), { statusCode: 403 });
+        }
+      }
       await writeDay(locationId, body.date, body.day);
       return json(200, {
         history: await readHistory(locationId),
@@ -3483,7 +3515,7 @@ exports.handler = async event => {
     if (method === 'POST' && apiPath === '/dashboard/preferences/reset') return json(200, await resetDashboardPreferences(actor));
 
     if (method === 'POST' && apiPath === '/maintenance/work-order') {
-      const workOrder = await writeWorkOrder(body);
+      const workOrder = await writeWorkOrder(body, actor);
       return json(200, { workOrder, state: await maintenanceState('all') });
     }
     if (method === 'POST' && apiPath === '/maintenance/work-order/update') {
