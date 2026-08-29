@@ -84,6 +84,7 @@ const defaultTemperatureItems = {
 const taskSections = ['All Day', 'Opening', 'Mid-shift', 'Closing'];
 const taskCategories = ['Manager', 'Chill', 'Grill', 'Service'];
 const prepAreas = ['Grill', 'Chill'];
+const managerTaskAreas = ['Service', 'Chill', 'Grill', 'Exterior', 'Back of house'];
 const tempSessions = ['Day', 'Afternoon'];
 const weekdayOptions = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const maintenanceRole = 'Maintenance Tech';
@@ -1519,6 +1520,7 @@ function render() {
         <input type="checkbox" data-check="${task.id}" ${task.done ? 'checked' : ''} ${task.photo && !task.photoUrl && !task.photoData ? 'disabled' : ''}>
         <div>
           <div class="task-name">${escapeHtml(task.name)}</div>
+          ${task.area ? `<span class="task-area-badge">${escapeHtml(task.area)}</span>` : ''}
           ${task.done && task.completedBy ? `<p class="task-completed-by">Completed by ${escapeHtml(task.completedBy)}${task.completedAt ? ` · ${escapeHtml(new Date(task.completedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))}` : ''}</p>` : ''}
           ${prepDetails}
           ${task.pushed ? '<span class="urgent-label">MANAGER ADDED</span>' : ''}
@@ -3068,6 +3070,12 @@ function renderTaskTemplates() {
                     ${taskCategories.map(category => `<option ${category === (task.category || taskCategory(task)) ? 'selected' : ''}>${escapeHtml(category)}</option>`).join('')}
                   </select>
                 </label>
+                <label>Area
+                  <select data-template-edit-area="${escapeHtml(id)}">
+                    <option value="">Not designated</option>
+                    ${managerTaskAreas.map(area => `<option value="${escapeHtml(area)}" ${area === task.area ? 'selected' : ''}>${escapeHtml(area)}</option>`).join('')}
+                  </select>
+                </label>
                 <label>Prep list
                   <select data-template-edit-prep="${escapeHtml(id)}">
                     <option value="" ${task.prepArea ? '' : 'selected'}>Not prep</option>
@@ -3084,7 +3092,7 @@ function renderTaskTemplates() {
           <div class="template-row">
             <div>
               <b>${escapeHtml(task.name)}</b>
-              <p class="hint">${escapeHtml(task.category || taskCategory(task))}${task.prepArea ? ` • ${escapeHtml(task.prepArea)} prep quantity item` : ''} • ${task.photo ? 'Photo required' : 'No photo required'}</p>
+              <p class="hint">${escapeHtml(task.category || taskCategory(task))}${task.area ? ` • ${escapeHtml(task.area)}` : ''}${task.prepArea ? ` • ${escapeHtml(task.prepArea)} prep quantity item` : ''} • ${task.photo ? 'Photo required' : 'No photo required'}</p>
             </div>
             <div class="row-actions">
               <button class="ghost" data-template-edit="${escapeHtml(id)}" type="button">Edit</button>
@@ -3582,6 +3590,7 @@ async function savePermanentTask() {
   const section = customSection || $('#templateSection').value || 'Opening';
   const prepArea = $('#templatePrepArea')?.value || '';
   const category = prepArea ? 'Manager' : ($('#templateCategory')?.value || 'Manager');
+  const area = $('#templateTaskArea')?.value || '';
   const name = $('#templateTaskName').value.trim();
   if (!name) return toast('Enter a task description');
   try {
@@ -3592,6 +3601,7 @@ async function savePermanentTask() {
         section,
         locationId: templateScope,
         category,
+        area,
         prepArea,
         managerPrep: Boolean(prepArea),
         photo: $('#templatePhotoRequired').checked
@@ -3600,6 +3610,7 @@ async function savePermanentTask() {
     $('#templateCustomSection').value = '';
     $('#templateTaskName').value = '';
     if ($('#templatePrepArea')) $('#templatePrepArea').value = '';
+    if ($('#templateTaskArea')) $('#templateTaskArea').value = '';
     $('#templatePhotoRequired').checked = false;
     render();
     toast('Permanent task added');
@@ -3671,6 +3682,8 @@ async function previewChecklistImport(file) {
       const locationId = checklistImportLocation(locationRaw);
       const prepRaw = checklistImportValue(row, 'Prep Area', 'Prep Quantity List');
       const prepArea = prepAreas.find(item => item.toLowerCase() === prepRaw.toLowerCase()) || '';
+      const areaRaw = checklistImportValue(row, 'Area', 'Task Area');
+      const area = managerTaskAreas.find(item => item.toLowerCase() === areaRaw.toLowerCase()) || '';
       const photoRaw = checklistImportValue(row, 'Photo Required', 'Require Photo', 'Photo');
       const photo = ['yes', 'y', 'true', '1', 'required'].includes(photoRaw.toLowerCase());
       const scheduleDays = checklistImportDays(checklistImportValue(row, 'Days', 'Schedule', 'Schedule Days'));
@@ -3685,7 +3698,7 @@ async function previewChecklistImport(file) {
         return;
       }
       seen.add(duplicateKey);
-      pendingChecklistImport.push({ name, section, category, locationId, prepArea, managerPrep: Boolean(prepArea), photo, scheduleDays, active: true });
+      pendingChecklistImport.push({ name, section, category, area, locationId, prepArea, managerPrep: Boolean(prepArea), photo, scheduleDays, active: true });
     });
     const sample = pendingChecklistImport.slice(0, 12);
     preview.innerHTML = `
@@ -3693,7 +3706,7 @@ async function previewChecklistImport(file) {
         <b>${pendingChecklistImport.length} valid item${pendingChecklistImport.length === 1 ? '' : 's'}</b>
         <span>${errors.length ? `${errors.length} issue${errors.length === 1 ? '' : 's'} must be corrected` : 'Ready to import'}</span>
       </div>
-      ${sample.length ? `<div class="table-scroll"><table><thead><tr><th>Location</th><th>Main Set</th><th>Checklist</th><th>Task</th><th>Days</th><th>Photo</th></tr></thead><tbody>${sample.map(item => `<tr><td>${escapeHtml(item.locationId === 'all' ? 'Company Master' : locationName(item.locationId))}</td><td>${escapeHtml(item.category)}</td><td>${escapeHtml(item.section)}</td><td>${escapeHtml(item.name)}</td><td>${escapeHtml(scheduleLabel(item.scheduleDays))}</td><td>${item.photo ? 'Yes' : 'No'}</td></tr>`).join('')}</tbody></table></div>${pendingChecklistImport.length > sample.length ? `<p class="hint">Previewing the first ${sample.length} items.</p>` : ''}` : ''}
+      ${sample.length ? `<div class="table-scroll"><table><thead><tr><th>Location</th><th>Main Set</th><th>Area</th><th>Checklist</th><th>Task</th><th>Days</th><th>Photo</th></tr></thead><tbody>${sample.map(item => `<tr><td>${escapeHtml(item.locationId === 'all' ? 'Company Master' : locationName(item.locationId))}</td><td>${escapeHtml(item.category)}</td><td>${escapeHtml(item.area || '—')}</td><td>${escapeHtml(item.section)}</td><td>${escapeHtml(item.name)}</td><td>${escapeHtml(scheduleLabel(item.scheduleDays))}</td><td>${item.photo ? 'Yes' : 'No'}</td></tr>`).join('')}</tbody></table></div>${pendingChecklistImport.length > sample.length ? `<p class="hint">Previewing the first ${sample.length} items.</p>` : ''}` : ''}
       ${errors.length ? `<ul class="import-errors">${errors.slice(0, 20).map(error => `<li>${escapeHtml(error)}</li>`).join('')}</ul>${errors.length > 20 ? `<p class="hint">Plus ${errors.length - 20} more issues.</p>` : ''}` : ''}
     `;
     importButton.disabled = Boolean(errors.length || !pendingChecklistImport.length);
@@ -3743,6 +3756,7 @@ async function saveTemplateEdit(id) {
   if (!task) return toast('Checklist item was not found');
   const name = document.querySelector(`[data-template-edit-name="${CSS.escape(id)}"]`)?.value.trim();
   const prepArea = document.querySelector(`[data-template-edit-prep="${CSS.escape(id)}"]`)?.value || '';
+  const area = document.querySelector(`[data-template-edit-area="${CSS.escape(id)}"]`)?.value || '';
   const category = prepArea ? 'Manager' : (document.querySelector(`[data-template-edit-category="${CSS.escape(id)}"]`)?.value || task.category || taskCategory(task));
   const photo = document.querySelector(`[data-template-edit-photo="${CSS.escape(id)}"]`)?.checked || false;
   if (!name) return toast('Enter a task description');
@@ -3755,6 +3769,7 @@ async function saveTemplateEdit(id) {
         name,
         photo,
         category,
+        area,
         prepArea,
         managerPrep: Boolean(prepArea),
         section: task.section || 'Opening',
