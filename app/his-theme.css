@@ -424,6 +424,23 @@ nav button[data-view="manageView"]{order:12}
   background:conic-gradient(#16a34a calc(var(--pct) * 1%), #e9eff6 0);
 }
 
+.page-back-button{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  min-height:38px;
+  margin:0 0 14px;
+  padding:8px 12px;
+  border:1px solid #d9e2ee;
+  border-radius:999px;
+  box-shadow:0 2px 8px #0828520d;
+}
+
+.page-back-button span{
+  font-size:19px;
+  line-height:1;
+}
+
 .help-intro p{
   margin-top:8px;
   color:var(--muted);

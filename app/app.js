@@ -4093,12 +4093,50 @@ async function updateSmallwaresRequest(id, status) {
   }
 }
 
-function switchView(viewId) {
-  if (hostedAuthEnabled() && viewId === 'todayView') viewId = 'taskListsView';
-  document.querySelectorAll('.view, nav button, .ops-sidebar button').forEach(entry => entry.classList.remove('active'));
-  $(`#${viewId}`).classList.add('active');
-  document.querySelectorAll(`[data-view="${viewId}"]`).forEach(button => button.classList.add('active'));
+const viewHistory = [];
+
+function defaultBackView() {
+  return canUseHub() || isMaintenanceTech() ? 'homeView' : 'taskListsView';
 }
+
+function updatePageBackButtons(viewId) {
+  document.querySelectorAll('.page-back-button').forEach(button => {
+    button.hidden = button.closest('.view')?.id !== viewId || viewId === 'homeView';
+  });
+}
+
+function setupPageBackButtons() {
+  document.querySelectorAll('main > .view:not(#homeView)').forEach(view => {
+    if (view.querySelector(':scope > .page-back-button')) return;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'ghost page-back-button';
+    button.setAttribute('aria-label', 'Go back to the previous page');
+    button.innerHTML = '<span aria-hidden="true">←</span> Back';
+    button.onclick = () => {
+      let target = viewHistory.pop();
+      while (target && (!document.getElementById(target) || target === view.id)) target = viewHistory.pop();
+      switchView(target || defaultBackView(), { remember: false });
+    };
+    view.prepend(button);
+  });
+}
+
+function switchView(viewId, options = {}) {
+  if (hostedAuthEnabled() && viewId === 'todayView') viewId = 'taskListsView';
+  const currentView = document.querySelector('.view.active');
+  if (options.remember !== false && currentView?.id && currentView.id !== viewId) viewHistory.push(currentView.id);
+  document.querySelectorAll('.view, nav button, .ops-sidebar button').forEach(entry => entry.classList.remove('active'));
+  const targetView = $(`#${viewId}`);
+  if (!targetView) return;
+  targetView.classList.add('active');
+  document.querySelectorAll(`[data-view="${viewId}"]`).forEach(button => button.classList.add('active'));
+  updatePageBackButtons(viewId);
+  window.scrollTo({ top: 0, behavior: 'auto' });
+}
+
+setupPageBackButtons();
+updatePageBackButtons(document.querySelector('.view.active')?.id || 'homeView');
 
 document.addEventListener('click', async event => {
   const removeTempLog = event.target.closest('[data-temp-log-remove]');
