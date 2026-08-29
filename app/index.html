@@ -48,29 +48,6 @@
         <button id="customizeDashboardBtn" class="ghost" type="button">Customize dashboard</button>
       </div>
 
-      <div class="hub-grid">
-        <button class="hub-tile" data-section-view="taskListsView">
-          <span class="icon">✓</span>
-          <div>
-            <b>Daily Operations</b>
-            <p>Task lists, temperature logs, required photos, reports, and missed-list tracking.</p>
-          </div>
-        </button>
-        <button class="hub-tile" data-section-view="maintenanceView">
-          <span class="icon">🔧</span>
-          <div>
-            <b>Maintenance</b>
-            <p>Work orders, equipment, PM tasks, vendors, and location follow-up.</p>
-          </div>
-        </button>
-        <button class="hub-tile" data-section-view="trainingView">
-          <span class="icon">🎓</span>
-          <div>
-            <b>Food Safety Training</b>
-            <p>Practice employee and manager food-safety questions with explanations and score review.</p>
-          </div>
-        </button>
-      </div>
       <article class="card dashboard-controls">
         <label>Time period
           <select id="dashboardRange">
@@ -111,14 +88,44 @@
         <article class="card dashboard-card ops-dashboard-card dashboard-clickable" data-section-view="taskListsView">
           <div>
             <p class="eyebrow">DAILY OPS</p>
-            <h3>Cleaning + temp logs</h3>
+            <h3>Task Lists</h3>
           </div>
           <div class="pie-row">
-            <div class="pie-chart" id="opsPie" style="--pct:0"><span id="opsPieLabel">0%</span></div>
+            <div class="pie-chart" id="taskListsPie" style="--pct:0"><span id="taskListsPieLabel">0%</span></div>
             <div class="chart-legend">
-              <p><b id="opsCompleted">0</b> completed</p>
-              <p><b id="opsRemaining">0</b> remaining</p>
-              <p class="hint" id="opsChartHint">Task lists and temp log requirements.</p>
+              <p><b id="taskListsCompleted">0</b> completed</p>
+              <p><b id="taskListsRemaining">0</b> remaining</p>
+              <p class="hint" id="taskListsChartHint">Daily task-list progress.</p>
+            </div>
+          </div>
+        </article>
+
+        <article class="card dashboard-card ops-dashboard-card dashboard-clickable" data-section-view="taskListsView">
+          <div>
+            <p class="eyebrow">CLEANING</p>
+            <h3>Weekly Cleaning</h3>
+          </div>
+          <div class="pie-row">
+            <div class="pie-chart" id="weeklyCleaningPie" style="--pct:0"><span id="weeklyCleaningPieLabel">0%</span></div>
+            <div class="chart-legend">
+              <p><b id="weeklyCleaningCompleted">0</b> completed</p>
+              <p><b id="weeklyCleaningRemaining">0</b> remaining</p>
+              <p class="hint" id="weeklyCleaningChartHint">Weekly cleaning-list progress.</p>
+            </div>
+          </div>
+        </article>
+
+        <article class="card dashboard-card ops-dashboard-card dashboard-clickable" data-section-view="tempLogsView">
+          <div>
+            <p class="eyebrow">FOOD SAFETY</p>
+            <h3>Temp Logs</h3>
+          </div>
+          <div class="pie-row">
+            <div class="pie-chart" id="tempLogsPie" style="--pct:0"><span id="tempLogsPieLabel">0%</span></div>
+            <div class="chart-legend">
+              <p><b id="tempLogsCompleted">0</b> completed</p>
+              <p><b id="tempLogsRemaining">0</b> remaining</p>
+              <p class="hint" id="tempLogsChartHint">Required temperature-log progress.</p>
             </div>
           </div>
         </article>
@@ -1972,9 +1979,9 @@
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-29-10"></script>
+  <script src="version.js?v=2026-08-29-11"></script>
   <script src="auth.js?v=2026-07-29-kiosk-pin"></script>
-  <script src="app.js?v=2026-08-29-fpc-photo-gallery"></script>
+  <script src="app.js?v=2026-08-29-dashboard-split"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>

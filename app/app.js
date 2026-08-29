@@ -209,12 +209,13 @@ let tempEntryMode = 'listed';
 let dashboardRange = localStorage.getItem('dailyops-dashboard-range') || 'day';
 let dashboardLocationId = localStorage.getItem('dailyops-dashboard-location') || 'all';
 const dashboardWidgetCatalog = [
-  { id: 'shortcuts', label: 'Quick links' },
   { id: 'alerts', label: 'Upcoming visits and events' },
   { id: 'upcoming', label: 'Upcoming maintenance and FPC tasks' },
   { id: 'marketing', label: 'POP & readerboard updates', required: true },
   { id: 'incidents', label: 'Incident Reports' },
-  { id: 'operations', label: 'Cleaning and temperature logs' },
+  { id: 'taskLists', label: 'Task Lists' },
+  { id: 'weeklyCleaning', label: 'Weekly Cleaning' },
+  { id: 'tempLogs', label: 'Temp Logs' },
   { id: 'maintenance', label: 'Maintenance work orders' },
   { id: 'fpc', label: 'FPC repair items' },
   { id: 'inspections', label: 'Inspection performance' },
@@ -226,7 +227,9 @@ let dashboardPreferencesCustomizable = false;
 let editingDashboardPreferences = null;
 let dashboardPreferencesApplied = false;
 let dashboardMetrics = {
-  ops: { completed: 0, remaining: 0, total: 0, percent: 0 },
+  taskLists: { completed: 0, remaining: 0, total: 0, percent: 0 },
+  weeklyCleaning: { completed: 0, remaining: 0, total: 0, percent: 0 },
+  tempLogs: { completed: 0, remaining: 0, total: 0, percent: 0 },
   maintenance: { completed: 0, open: 0, total: 0, percent: 0 }
 };
 let taskTemplates = baseTasks.map(task => ({ ...task, section: 'Opening', active: true }));
@@ -387,7 +390,6 @@ function setupCustomizableDashboard() {
   const home = $('#homeView');
   if (!home || $('#dashboardWidgetArea')) return;
   const controls = home.querySelector('.dashboard-controls');
-  const shortcuts = home.querySelector(':scope > .hub-grid');
   const alerts = $('#dashboardAlertsCard');
   const upcoming = $('#dashboardUpcomingTasksCard');
   const metricGrid = home.querySelector('.dashboard-grid');
@@ -415,13 +417,13 @@ function setupCustomizableDashboard() {
   marketingCard.dataset.openManageCard = 'popCampaignAdminCard';
   marketingCard.innerHTML = '<div class="maintenance-row compact"><div><p class="eyebrow">NOW + NEXT 30 DAYS</p><h3>POP &amp; readerboard updates</h3></div><span class="status" id="dashboardMarketingCount">0 updates</span></div><div id="dashboardMarketingList"></div>';
 
-  const widgets = { shortcuts, alerts, upcoming, marketing: marketingCard, incidents: incidentCard, operations: metricCards[0], maintenance: metricCards[1], fpc: metricCards[2], inspections: inspectionCard, progress };
+  const widgets = { alerts, upcoming, marketing: marketingCard, incidents: incidentCard, taskLists: metricCards[0], weeklyCleaning: metricCards[1], tempLogs: metricCards[2], maintenance: metricCards[3], fpc: metricCards[4], inspections: inspectionCard, progress };
   dashboardWidgetCatalog.forEach(widget => {
     const element = widgets[widget.id];
     if (!element) return;
     element.dataset.dashboardWidget = widget.id;
     element.classList.add('dashboard-widget');
-    if (['shortcuts', 'alerts', 'upcoming', 'marketing', 'progress'].includes(widget.id)) element.classList.add('widget-wide');
+    if (['alerts', 'upcoming', 'marketing', 'progress'].includes(widget.id)) element.classList.add('widget-wide');
     area.appendChild(element);
   });
   metricGrid?.remove();
@@ -1039,17 +1041,29 @@ function tempRequirementTotal() {
     .reduce((sum, list) => sum + Object.values(temperatureAreasForList(list)).reduce((itemSum, items) => itemSum + items.length, 0), 0) * tempSessions.length;
 }
 
+function isWeeklyCleaningTask(task = {}) {
+  return String(task.section || '').trim().toLowerCase().includes('weekly cleaning');
+}
+
+function progressMetric(completed = 0, total = 0) {
+  return {
+    completed,
+    remaining: Math.max(total - completed, 0),
+    total,
+    percent: total ? Math.round((completed / total) * 100) : 0
+  };
+}
+
 function localDashboardMetrics() {
-  const taskTotal = day.tasks.length || baseTasks.length;
-  const taskDone = day.tasks.filter(task => task.done).length;
+  const currentTasks = day.tasks.length ? day.tasks : baseTasks;
+  const weeklyTasks = currentTasks.filter(isWeeklyCleaningTask);
+  const standardTasks = currentTasks.filter(task => !isWeeklyCleaningTask(task));
   const requiredTemps = new Set();
   temperatureListNames().filter(list => temperatureItems[list]?.requiredDaily !== false).forEach(list => Object.entries(temperatureAreasForList(list)).forEach(([area, items]) => {
     items.forEach(item => tempSessions.forEach(session => requiredTemps.add(`${list}|${area}|${item}|${session}`)));
   }));
   const loggedTemps = new Set(day.temps.map(temp => `${readingList(temp)}|${temp.area}|${temp.item}|${readingSession(temp)}`));
   const tempDone = [...requiredTemps].filter(key => loggedTemps.has(key)).length;
-  const opsTotal = taskTotal + tempRequirementTotal();
-  const opsCompleted = taskDone + tempDone;
   const completedOrders = maintenance.workOrders.filter(order => order.Status === 'Completed').length;
   const openOrders = maintenance.workOrders.filter(order => !['Completed', 'Cancelled', 'Canceled'].includes(order.Status)).length;
   const completedPm = maintenance.pmSchedule.filter(pm => pm.Status === 'Completed').length;
@@ -1091,12 +1105,9 @@ function localDashboardMetrics() {
       };
     });
   return {
-    ops: {
-      completed: opsCompleted,
-      remaining: Math.max(opsTotal - opsCompleted, 0),
-      total: opsTotal,
-      percent: opsTotal ? Math.round((opsCompleted / opsTotal) * 100) : 0
-    },
+    taskLists: progressMetric(standardTasks.filter(task => task.done).length, standardTasks.length),
+    weeklyCleaning: progressMetric(weeklyTasks.filter(task => task.done).length, weeklyTasks.length),
+    tempLogs: progressMetric(tempDone, tempRequirementTotal()),
     maintenance: {
       completed: completedOrders + completedPm,
       open: openOrders + openPm,
@@ -1738,8 +1749,11 @@ function canCustomizeDashboard(user = currentUser()) {
 function normalizeClientDashboardPreferences(value = {}) {
   const allIds = dashboardWidgetCatalog.map(widget => widget.id);
   const requiredIds = dashboardWidgetCatalog.filter(widget => widget.required).map(widget => widget.id);
-  const visible = Array.isArray(value.visible) ? [...new Set([...value.visible.filter(id => allIds.includes(id)), ...requiredIds])] : allIds;
-  const suppliedOrder = Array.isArray(value.order) ? value.order.filter(id => allIds.includes(id)) : [];
+  const legacyOperationsVisible = Array.isArray(value.visible) && value.visible.includes('operations');
+  const migratedVisible = legacyOperationsVisible ? [...value.visible, 'taskLists', 'weeklyCleaning', 'tempLogs'] : value.visible;
+  const visible = Array.isArray(migratedVisible) ? [...new Set([...migratedVisible.filter(id => allIds.includes(id)), ...requiredIds])] : allIds;
+  const migratedOrder = Array.isArray(value.order) ? value.order.flatMap(id => id === 'operations' ? ['taskLists', 'weeklyCleaning', 'tempLogs'] : id) : [];
+  const suppliedOrder = migratedOrder.filter(id => allIds.includes(id));
   return { visible: [...new Set(visible)], order: [...new Set([...suppliedOrder, ...allIds])], defaultRange: ['day', 'week', 'month'].includes(value.defaultRange) ? value.defaultRange : 'day', defaultLocationId: String(value.defaultLocationId || 'all') };
 }
 
@@ -1769,7 +1783,7 @@ function applyDashboardPreferences(activeUser = currentUser()) {
   });
   area.querySelectorAll('[data-dashboard-widget]').forEach(widget => {
     const id = widget.dataset.dashboardWidget;
-    const permitted = (id !== 'incidents' || canUseManagementReports(activeUser)) && (id !== 'inspections' || canAddStoreDocuments(activeUser)) && (!['operations', 'progress'].includes(id) || canUseDailyOps(activeUser));
+    const permitted = (id !== 'incidents' || canUseManagementReports(activeUser)) && (id !== 'inspections' || canAddStoreDocuments(activeUser)) && (!['taskLists', 'weeklyCleaning', 'tempLogs', 'progress'].includes(id) || canUseDailyOps(activeUser));
     const required = dashboardWidgetCatalog.find(item => item.id === id)?.required;
     widget.style.display = (required || dashboardPreferences.visible.includes(id)) && permitted ? '' : 'none';
   });
@@ -1852,22 +1866,35 @@ function renderDashboard(visibleLocations, activeUser) {
   ].join('');
   $('#dashboardLocation').value = dashboardLocationId;
 
-  const ops = dashboardMetrics.ops || { completed: 0, remaining: 0, total: 0, percent: 0 };
+  const taskLists = dashboardMetrics.taskLists || { completed: 0, remaining: 0, total: 0, percent: 0 };
+  const weeklyCleaning = dashboardMetrics.weeklyCleaning || { completed: 0, remaining: 0, total: 0, percent: 0 };
+  const tempLogs = dashboardMetrics.tempLogs || { completed: 0, remaining: 0, total: 0, percent: 0 };
   const maintenanceSummary = dashboardMetrics.maintenance || { completed: 0, open: 0, total: 0, percent: 0 };
   const fpcSummary = dashboardMetrics.fpc || { completed: 0, open: 0, total: 0, percent: 0 };
-  setPie('#opsPie', ops.percent);
+  setPie('#taskListsPie', taskLists.percent);
+  setPie('#weeklyCleaningPie', weeklyCleaning.percent);
+  setPie('#tempLogsPie', tempLogs.percent);
   setPie('#maintenancePie', maintenanceSummary.percent);
   setPie('#fpcPie', fpcSummary.percent);
-  $('#opsPieLabel').textContent = `${ops.percent || 0}%`;
+  $('#taskListsPieLabel').textContent = `${taskLists.percent || 0}%`;
+  $('#weeklyCleaningPieLabel').textContent = `${weeklyCleaning.percent || 0}%`;
+  $('#tempLogsPieLabel').textContent = `${tempLogs.percent || 0}%`;
   $('#maintenancePieLabel').textContent = `${maintenanceSummary.percent || 0}%`;
   $('#fpcPieLabel').textContent = `${fpcSummary.percent || 0}%`;
-  $('#opsCompleted').textContent = ops.completed || 0;
-  $('#opsRemaining').textContent = ops.remaining || 0;
+  $('#taskListsCompleted').textContent = taskLists.completed || 0;
+  $('#taskListsRemaining').textContent = taskLists.remaining || 0;
+  $('#weeklyCleaningCompleted').textContent = weeklyCleaning.completed || 0;
+  $('#weeklyCleaningRemaining').textContent = weeklyCleaning.remaining || 0;
+  $('#tempLogsCompleted').textContent = tempLogs.completed || 0;
+  $('#tempLogsRemaining').textContent = tempLogs.remaining || 0;
   $('#maintenanceCompleted').textContent = maintenanceSummary.completed || 0;
   $('#maintenanceOpen').textContent = maintenanceSummary.open || 0;
   $('#fpcCompleted').textContent = fpcSummary.completed || 0;
   $('#fpcOpen').textContent = fpcSummary.open || 0;
-  $('#opsChartHint').textContent = `${dashboardRange === 'day' ? 'Current day' : dashboardRange === 'week' ? 'Current week' : 'Current month'} cleaning tasks and temp logs.`;
+  const periodLabel = dashboardRange === 'day' ? 'Current day' : dashboardRange === 'week' ? 'Current week' : 'Current month';
+  $('#taskListsChartHint').textContent = `${periodLabel} task-list progress.`;
+  $('#weeklyCleaningChartHint').textContent = `${periodLabel} weekly-cleaning progress.`;
+  $('#tempLogsChartHint').textContent = `${periodLabel} required temperature logs.`;
   $('#maintenanceChartHint').textContent = `${dashboardRange === 'day' ? 'Current day' : dashboardRange === 'week' ? 'Current week' : 'Current month'} completed vs open work orders.`;
   $('#fpcChartHint').textContent = 'Current FPC repair item completion for the selected location view.';
   renderDashboardProgress();
@@ -2079,8 +2106,10 @@ function renderEventCard(event, { dashboard = false } = {}) {
 function renderDashboardAlerts(visibleLocations) {
   if (!$('#dashboardAlertList')) return;
   const items = upcomingCalendarItems(visibleLocations).slice(0, 5);
+  const firstItems = items.slice(0, 2);
+  const remainingItems = items.slice(2);
   $('#dashboardAlertList').innerHTML = items.length
-    ? items.map(item => renderEventCard(item, { dashboard: true })).join('')
+    ? `${firstItems.map(item => renderEventCard(item, { dashboard: true })).join('')}${remainingItems.length ? `<details class="dashboard-alert-more"><summary>Show ${remainingItems.length} more upcoming ${remainingItems.length === 1 ? 'item' : 'items'}</summary>${remainingItems.map(item => renderEventCard(item, { dashboard: true })).join('')}</details>` : ''}`
     : '<p class="hint">No manually scheduled visits or inspection alerts yet.</p>';
 }
 
@@ -4609,6 +4638,7 @@ setupPageBackButtons();
 updatePageBackButtons(document.querySelector('.view.active')?.id || 'homeView');
 
 document.addEventListener('click', async event => {
+  if (event.target.closest('.dashboard-alert-more > summary')) return;
   const removeTempLog = event.target.closest('[data-temp-log-remove]');
   if (removeTempLog) { if (confirm('Delete this temperature log and all of its configured items?')) removeTempLog.closest('.temperature-log-editor').remove(); return; }
   const addTempItem = event.target.closest('[data-temp-item-add]');

@@ -9,7 +9,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.17.0';
+const APP_VERSION = '1.18.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -607,7 +607,9 @@ async function dashboardSummary(actor, range = 'day', locationId = 'all') {
       locationId,
       start,
       end,
-      ops: { completed: 0, remaining: 0, total: 0, percent: 0 },
+      taskLists: { completed: 0, remaining: 0, total: 0, percent: 0 },
+      weeklyCleaning: { completed: 0, remaining: 0, total: 0, percent: 0 },
+      tempLogs: { completed: 0, remaining: 0, total: 0, percent: 0 },
       maintenance: { completed: 0, open: 0, total: 0, percent: 0 },
       fpc: { completed: 0, open: 0, total: 0, percent: 0 },
       progress: { mode: 'locations', rows: [] }
@@ -636,11 +638,26 @@ async function dashboardSummary(actor, range = 'day', locationId = 'all') {
       percent: dashboardPercent(totals.completed, totals.total)
     };
   });
-  const ops = locationProgress.reduce((totals, row) => {
-    totals.completed += row.completed;
-    totals.total += row.total;
+  const categoryTotals = selectedLocations.reduce((totals, scopedLocationId) => {
+    dates.forEach(date => {
+      const counts = dailyOpsCategoryCounts(rowMap.get(`${scopedLocationId}|${date}`), taskTemplates, scopedLocationId, date, temperatureDefinitions);
+      Object.keys(totals).forEach(key => {
+        totals[key].completed += counts[key].completed;
+        totals[key].total += counts[key].total;
+      });
+    });
     return totals;
-  }, { completed: 0, total: 0 });
+  }, {
+    taskLists: { completed: 0, total: 0 },
+    weeklyCleaning: { completed: 0, total: 0 },
+    tempLogs: { completed: 0, total: 0 }
+  });
+  const categoryMetric = counts => ({
+    completed: counts.completed,
+    remaining: Math.max(counts.total - counts.completed, 0),
+    total: counts.total,
+    percent: dashboardPercent(counts.completed, counts.total)
+  });
 
   const selectedBreakdown = selectedLocations.length === 1
     ? dates.reduce((rows, date) => {
@@ -689,12 +706,9 @@ async function dashboardSummary(actor, range = 'day', locationId = 'all') {
     locationId,
     start,
     end,
-    ops: {
-      completed: ops.completed,
-      remaining: Math.max(ops.total - ops.completed, 0),
-      total: ops.total,
-      percent: dashboardPercent(ops.completed, ops.total)
-    },
+    taskLists: categoryMetric(categoryTotals.taskLists),
+    weeklyCleaning: categoryMetric(categoryTotals.weeklyCleaning),
+    tempLogs: categoryMetric(categoryTotals.tempLogs),
     maintenance: {
       completed: completedOrders.length + completedPm.length,
       open: openOrders.length + openPm.length,
@@ -909,6 +923,28 @@ function appProfile(row) {
     locationId: row.location_id,
     locationIds: userLocationIds(row),
     authMode: row.authMode || 'password'
+  };
+}
+
+function isWeeklyCleaningTask(task = {}) {
+  return String(task.section || '').trim().toLowerCase().includes('weekly cleaning');
+}
+
+function dailyOpsCategoryCounts(payload = null, templates = DEFAULT_TASK_TEMPLATES, locationId = DEFAULT_LOCATION_ID, date = today(), definitions = TEMPERATURE_ITEMS) {
+  const source = payload || newDay(locationId, templates, date);
+  const scheduledTemplates = templates.filter(task => task.active !== false && taskScheduledForDate(task, locationId, date));
+  const tasks = Array.isArray(source.tasks) ? source.tasks : scheduledTemplates;
+  const weeklyTasks = tasks.filter(isWeeklyCleaningTask);
+  const standardTasks = tasks.filter(task => !isWeeklyCleaningTask(task));
+  const requiredTemps = new Set();
+  Object.entries(definitions).filter(([, list]) => list.requiredDaily !== false).forEach(([listName, list]) => Object.entries(list.areas || {}).forEach(([area, items]) => {
+    items.forEach(item => ['Day', 'Afternoon'].forEach(session => requiredTemps.add(`${listName}|${area}|${item}|${session}`)));
+  }));
+  const loggedTemps = new Set((source.temps || []).map(temp => `${readingList(temp)}|${temp.area}|${temp.item}|${temp.session || 'Day'}`));
+  return {
+    taskLists: { completed: standardTasks.filter(task => task.done).length, total: standardTasks.length },
+    weeklyCleaning: { completed: weeklyTasks.filter(task => task.done).length, total: weeklyTasks.length },
+    tempLogs: { completed: [...requiredTemps].filter(key => loggedTemps.has(key)).length, total: requiredTemps.size }
   };
 }
 
@@ -3166,7 +3202,7 @@ async function updateManagementReport(payload, actor) {
   return managementReportsState(actor);
 }
 
-const DASHBOARD_WIDGETS = ['shortcuts', 'alerts', 'upcoming', 'marketing', 'incidents', 'operations', 'maintenance', 'fpc', 'inspections', 'progress'];
+const DASHBOARD_WIDGETS = ['alerts', 'upcoming', 'marketing', 'incidents', 'taskLists', 'weeklyCleaning', 'tempLogs', 'maintenance', 'fpc', 'inspections', 'progress'];
 
 function defaultDashboardPreferences() {
   return { visible: [...DASHBOARD_WIDGETS], order: [...DASHBOARD_WIDGETS], defaultRange: 'day', defaultLocationId: 'all' };
@@ -3174,8 +3210,10 @@ function defaultDashboardPreferences() {
 
 function normalizeDashboardPreferences(value = {}) {
   const defaults = defaultDashboardPreferences();
-  const visible = Array.isArray(value.visible) ? [...new Set([...value.visible.filter(id => DASHBOARD_WIDGETS.includes(id)), 'marketing'])] : defaults.visible;
-  const suppliedOrder = Array.isArray(value.order) ? value.order.filter(id => DASHBOARD_WIDGETS.includes(id)) : [];
+  const migratedVisible = Array.isArray(value.visible) && value.visible.includes('operations') ? [...value.visible, 'taskLists', 'weeklyCleaning', 'tempLogs'] : value.visible;
+  const visible = Array.isArray(migratedVisible) ? [...new Set([...migratedVisible.filter(id => DASHBOARD_WIDGETS.includes(id)), 'marketing'])] : defaults.visible;
+  const migratedOrder = Array.isArray(value.order) ? value.order.flatMap(id => id === 'operations' ? ['taskLists', 'weeklyCleaning', 'tempLogs'] : id) : [];
+  const suppliedOrder = migratedOrder.filter(id => DASHBOARD_WIDGETS.includes(id));
   const order = [...new Set([...suppliedOrder, ...DASHBOARD_WIDGETS])];
   return {
     visible: [...new Set(visible)],
