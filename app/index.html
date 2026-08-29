@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="assets/pwa-icon-180.png">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="temperature.css">
-  <link rel="stylesheet" href="his-theme.css?v=2026-08-29-manager-task-areas">
+  <link rel="stylesheet" href="his-theme.css?v=2026-08-29-location-notice-security">
   <style>
     .receiving-issue-tools,.receiving-issue-list{width:100%;margin-top:12px}
     .receiving-issue{border-top:1px solid var(--line);padding:10px 0}
@@ -496,7 +496,9 @@
           <h2>Notices</h2>
         </div>
       </div>
+      <div class="report-actions"><button id="togglePreviousNoticesBtn" class="ghost" type="button">Previous notifications</button></div>
       <div id="noticeList"></div>
+      <div id="previousNoticeList" hidden></div>
     </section>
 
     <section id="calendarView" class="view">
@@ -1156,7 +1158,7 @@
         <button class="section-hub-card" data-section-view="helpView" type="button"><span>?</span><b>Help</b><small>Navigation and feature guide</small></button>
       </div>
 
-      <article class="card form-card collapsible-card" id="managerNotificationPreferencesCard" data-start-open="true">
+      <article class="card form-card collapsible-card" id="managerNotificationPreferencesCard">
         <h3>My notifications &amp; reports</h3>
         <p class="hint">Choose your own alerts for assigned locations. Texts go to your employee phone number and emails go to your employee email address.</p>
         <div class="preference-setting">
@@ -1297,11 +1299,15 @@
       <article class="card form-card collapsible-card" id="noticeAdminCard">
         <h3>Post an important notice</h3>
         <p class="hint">Notices show a badge until each user opens them.</p>
+        <input id="noticeId" type="hidden">
         <label>Title
           <input id="noticeTitle" placeholder="e.g. New cleaning procedure">
         </label>
         <label>Message
           <textarea id="noticeMessage" placeholder="Type the communication here"></textarea>
+        </label>
+        <label>Remove from active notices after
+          <input id="noticeEndDate" type="date">
         </label>
         <div>
           <b>Show this notice to</b>
@@ -1322,7 +1328,7 @@
         <label>Or paste shared link
           <input id="noticeLink" type="url" placeholder="https://drive.google.com/...">
         </label>
-        <button id="postNoticeBtn" type="button">Post notice</button>
+        <div class="row-actions"><button id="cancelNoticeEditBtn" class="ghost" type="button" hidden>Cancel edit</button><button id="postNoticeBtn" type="button">Post notice</button></div>
       </article>
 
       <article class="card form-card collapsible-card" id="storeAlarmAdminCard">
@@ -1939,9 +1945,9 @@
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-29-5"></script>
+  <script src="version.js?v=2026-08-29-6"></script>
   <script src="auth.js?v=2026-07-29-kiosk-pin"></script>
-  <script src="app.js?v=2026-08-29-manager-task-areas"></script>
+  <script src="app.js?v=2026-08-29-location-notice-security"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>

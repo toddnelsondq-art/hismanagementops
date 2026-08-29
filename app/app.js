@@ -232,6 +232,7 @@ let dashboardMetrics = {
 let taskTemplates = baseTasks.map(task => ({ ...task, section: 'Opening', active: true }));
 let pendingChecklistImport = [];
 let notices = [];
+let showPreviousNotices = false;
 let alertSettings = { rules: [], logs: [] };
 let notificationLogs = [];
 let managerNotificationPreferences = {
@@ -657,12 +658,8 @@ function accessibleLocationIds(user = currentUser()) {
 
 function maintenanceAllowedLocationIds(user = currentUser()) {
   if (isFullAccess(user)) return maintenance.locations.map(location => String(location['Location ID']));
-  return userLocationIds(user).map(id => {
-    const match = String(id).match(/store-(\d+)/);
-    if (!match) return null;
-    const index = Number(match[1]) - 1;
-    return maintenance.locations[index] ? String(maintenance.locations[index]['Location ID']) : null;
-  }).filter(Boolean);
+  // The API already restricts this list to the signed-in user's assigned stores.
+  return maintenance.locations.map(location => String(location['Location ID']));
 }
 
 function filterScopedRecords() {
@@ -3109,28 +3106,37 @@ function renderTaskTemplates() {
 
 function renderNotices() {
   if (!$('#noticeBadge')) return;
-  const unreadCount = notices.filter(notice => notice.unread).length;
+  const activeNotices = notices.filter(notice => notice.unread && !notice.expired);
+  const previousNotices = notices.filter(notice => !notice.unread || notice.expired);
+  const unreadCount = activeNotices.length;
   $('#noticeBadge').textContent = unreadCount;
   $('#noticeBadge').style.display = unreadCount ? 'inline-flex' : 'none';
   $('#noticesBtn').classList.toggle('has-unread', unreadCount > 0);
   $('#noticesBtn').setAttribute('aria-label', unreadCount ? `Notices, ${unreadCount} unread` : 'Notices');
   $('#noticesBtn').title = unreadCount ? `${unreadCount} unread notice${unreadCount === 1 ? '' : 's'}` : 'Notices';
   if (!$('#noticeList')) return;
-  $('#noticeList').innerHTML = notices.length ? notices.map(notice => `
+  const noticeMarkup = list => list.length ? list.map(notice => `
     <article class="card notice-card ${notice.unread ? 'unread' : ''}">
       <div class="notice-head">
         <div>
           <h3>${escapeHtml(notice.title)}</h3>
           ${notice.targetRoles?.length ? `<p class="hint">Visible to: ${notice.targetRoles.map(escapeHtml).join(', ')}</p>` : ''}
+          ${notice.visibleToActor === false ? '<p class="hint">Managed notice · not targeted to your role</p>' : ''}
           <p class="hint">${escapeHtml(notice.createdBy || 'Manager')} · ${notice.createdAt ? new Date(notice.createdAt).toLocaleString() : ''}</p>
+          ${notice.endDate ? `<p class="hint">Active through ${escapeHtml(prettyDate(notice.endDate))}</p>` : ''}
         </div>
         ${notice.unread ? '<span class="status">New</span>' : ''}
       </div>
       <p>${escapeHtml(notice.message)}</p>
       ${notice.attachmentUrl ? `<p><a href="${escapeHtml(notice.attachmentUrl)}" target="_blank" rel="noopener">${escapeHtml(notice.attachmentName || 'Open attachment')}</a></p>` : ''}
       ${notice.unread ? `<button data-notice-read="${escapeHtml(notice.id)}">Mark as read</button>` : ''}
+      ${notice.editable ? `<div class="row-actions"><button class="ghost" data-notice-edit="${escapeHtml(notice.id)}" type="button">Edit</button><button class="danger" data-notice-delete="${escapeHtml(notice.id)}" type="button">Delete</button></div>` : ''}
     </article>
-  `).join('') : '<div class="empty">No notices yet.</div>';
+  `).join('') : '<div class="empty">No notices here.</div>';
+  $('#noticeList').innerHTML = noticeMarkup(activeNotices);
+  $('#previousNoticeList').innerHTML = noticeMarkup(previousNotices);
+  $('#previousNoticeList').hidden = !showPreviousNotices;
+  $('#togglePreviousNoticesBtn').textContent = showPreviousNotices ? 'Hide previous notifications' : `Previous notifications (${previousNotices.length})`;
 }
 
 function alertTargetOptions(type = $('#alertRuleType')?.value || 'task') {
@@ -3839,6 +3845,7 @@ async function saveChecklistSchedule() {
 }
 
 async function postNotice() {
+  const editing = Boolean($('#noticeId').value);
   const title = $('#noticeTitle').value.trim();
   const message = $('#noticeMessage').value.trim();
   if (!title || !message) return toast('Enter a notice title and message');
@@ -3850,15 +3857,11 @@ async function postNotice() {
   try {
     notices = (await api('/api/notice', {
       method: 'POST',
-      body: JSON.stringify({ title, message, targetRoles, attachment, attachmentUrl, attachmentName: attachmentUrl ? 'Shared link' : '' })
+      body: JSON.stringify({ id: $('#noticeId').value || undefined, title, message, endDate: $('#noticeEndDate').value, targetRoles, attachment, attachmentUrl, attachmentName: attachmentUrl ? 'Shared link' : '' })
     })).notices;
-    $('#noticeTitle').value = '';
-    $('#noticeMessage').value = '';
-    document.querySelectorAll('#noticeTargetRoles input').forEach(input => { input.checked = true; });
-    $('#noticeFile').value = '';
-    if ($('#noticeLink')) $('#noticeLink').value = '';
+    resetNoticeForm();
     render();
-    toast('Notice posted');
+    toast(editing ? 'Notice updated' : 'Notice posted');
   } catch (error) {
     toast(`Notice did not post: ${error.message}`);
   }
@@ -4217,6 +4220,42 @@ function resetResourceForm() {
   $('#resourceFormTitle').textContent = 'Add resource link';
   $('#deleteEditingResourceBtn').hidden = true;
   renderResources();
+}
+
+function resetNoticeForm() {
+  $('#noticeId').value = '';
+  $('#noticeTitle').value = '';
+  $('#noticeMessage').value = '';
+  $('#noticeEndDate').value = '';
+  document.querySelectorAll('#noticeTargetRoles input').forEach(input => { input.checked = true; });
+  $('#noticeFile').value = '';
+  if ($('#noticeLink')) $('#noticeLink').value = '';
+  $('#cancelNoticeEditBtn').hidden = true;
+  $('#postNoticeBtn').textContent = 'Post notice';
+}
+
+function editNotice(id) {
+  const notice = notices.find(item => item.id === id);
+  if (!notice?.editable) return toast('Only Area Managers and above can edit notices');
+  $('#noticeId').value = notice.id;
+  $('#noticeTitle').value = notice.title || '';
+  $('#noticeMessage').value = notice.message || '';
+  $('#noticeEndDate').value = notice.endDate || '';
+  $('#noticeLink').value = notice.attachmentUrl || '';
+  document.querySelectorAll('#noticeTargetRoles input').forEach(input => { input.checked = !notice.targetRoles?.length || notice.targetRoles.includes(input.value); });
+  $('#cancelNoticeEditBtn').hidden = false;
+  $('#postNoticeBtn').textContent = 'Save changes';
+  switchView('manageView');
+  $('#noticeAdminCard').classList.remove('collapsed');
+  $('#noticeAdminCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function deleteNotice(id) {
+  if (!confirm('Delete this notice? It will be removed from active and previous notifications.')) return;
+  try {
+    notices = (await api('/api/notice/delete', { method: 'POST', body: JSON.stringify({ id }) })).notices;
+    renderNotices(); toast('Notice deleted');
+  } catch (error) { toast(`Notice did not delete: ${error.message}`); }
 }
 
 function editResource(id) {
@@ -4578,6 +4617,10 @@ document.addEventListener('click', async event => {
 
   const noticeReadButton = event.target.closest('[data-notice-read]');
   if (noticeReadButton) await markNoticeRead(noticeReadButton.dataset.noticeRead);
+  const noticeEditButton = event.target.closest('[data-notice-edit]');
+  if (noticeEditButton) editNotice(noticeEditButton.dataset.noticeEdit);
+  const noticeDeleteButton = event.target.closest('[data-notice-delete]');
+  if (noticeDeleteButton) await deleteNotice(noticeDeleteButton.dataset.noticeDelete);
 
   const calendarEditButton = event.target.closest('[data-calendar-edit]');
   if (calendarEditButton) editCalendarEvent(calendarEditButton.dataset.calendarEdit);
@@ -5921,6 +5964,7 @@ $('#createKioskCodeBtn').onclick = async () => {
   }
 };
 $('#noticesBtn').onclick = async () => { await refreshNoticesQuietly(); switchView('noticesView'); };
+$('#togglePreviousNoticesBtn').onclick = () => { showPreviousNotices = !showPreviousNotices; renderNotices(); };
 $('#addTemplateTaskBtn').onclick = savePermanentTask;
 $('#checklistImportFile').onchange = event => previewChecklistImport(event.target.files?.[0]);
 $('#importChecklistItemsBtn').onclick = importChecklistItems;
@@ -5987,6 +6031,7 @@ $('#customizeDashboardBtn').onclick = openDashboardCustomization;
 $('#saveDashboardBtn').onclick = saveDashboardCustomization;
 $('#resetDashboardBtn').onclick = resetDashboardCustomization;
 $('#saveManagerNotificationPreferencesBtn').onclick = saveManagerNotificationPreferences;
+$('#cancelNoticeEditBtn').onclick = resetNoticeForm;
 $('#savePopCampaignBtn').onclick = savePopCampaign;
 $('#cancelPopCampaignBtn').onclick = resetPopCampaignForm;
 $('#checkForUpdatesBtn').onclick = checkForAppUpdate;

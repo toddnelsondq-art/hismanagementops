@@ -9,7 +9,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.13.1';
+const APP_VERSION = '1.14.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -576,12 +576,14 @@ function fpcSummary(records = [], locationIds = []) {
   };
 }
 
-function maintenanceLocationIdsForStoreIds(storeIds, maintenanceLocations) {
-  return storeIds.map(storeId => {
-    const match = String(storeId).match(/store-(\d+)/);
-    if (!match) return null;
-    return maintenanceLocations[Number(match[1]) - 1]?.['Location ID'];
-  }).filter(Boolean).map(String);
+function maintenanceLocationIdsForStoreIds(storeIds, maintenanceLocations, appLocations = []) {
+  const selectedNames = new Set(appLocations
+    .filter(location => storeIds.includes(location.id))
+    .map(location => maintenanceLocationKey(location.name))
+    .filter(Boolean));
+  return maintenanceLocations
+    .filter(location => selectedNames.has(maintenanceLocationKey(location['Location Name'])))
+    .map(location => String(location['Location ID']));
 }
 
 function dateInRange(value, start, end) {
@@ -666,14 +668,10 @@ async function dashboardSummary(actor, range = 'day', locationId = 'all') {
     readFpcRecords()
   ]);
   const maintenanceLocationIds = locationId && locationId !== 'all'
-    ? maintenanceLocationIdsForStoreIds([locationId], maintenanceLocations)
-    : maintenanceLocationIdsForStoreIds(selectedLocations, maintenanceLocations);
-  const scopedOrders = maintenanceLocationIds.length
-    ? workOrders.filter(order => maintenanceLocationIds.includes(String(order['Location ID'])))
-    : workOrders;
-  const scopedPm = maintenanceLocationIds.length
-    ? pmSchedule.filter(pm => maintenanceLocationIds.includes(String(pm['Location ID'])))
-    : pmSchedule;
+    ? maintenanceLocationIdsForStoreIds([locationId], maintenanceLocations, allLocations)
+    : maintenanceLocationIdsForStoreIds(selectedLocations, maintenanceLocations, allLocations);
+  const scopedOrders = workOrders.filter(order => maintenanceLocationIds.includes(String(order['Location ID'])));
+  const scopedPm = pmSchedule.filter(pm => maintenanceLocationIds.includes(String(pm['Location ID'])));
   const completedOrders = scopedOrders.filter(order =>
     String(order.Status || '').toLowerCase() === 'completed' &&
     (dateInRange(order['Date Completed'], start, end) || dateInRange(order['Date Submitted'], start, end))
@@ -912,6 +910,19 @@ function appProfile(row) {
     locationIds: userLocationIds(row),
     authMode: row.authMode || 'password'
   };
+}
+
+function maintenanceLocationKey(value = '') {
+  return String(value).toLowerCase()
+    .replace(/dairy\s*queen|\bdq\b|\bstore\b/g, '')
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+async function canAccessMaintenanceRecord(actor, record = {}) {
+  if (!AUTH_REQUIRED || !actor || isFullAccess(actor) || actor.role === MAINTENANCE_ROLE) return true;
+  const assigned = (await readLocations()).filter(location => userLocationIds(actor).includes(location.id));
+  const allowedNames = new Set(assigned.map(location => maintenanceLocationKey(location.name)));
+  return allowedNames.has(maintenanceLocationKey(record['Location Name']));
 }
 
 async function kioskDeviceFromToken(event) {
@@ -1626,15 +1637,28 @@ async function readNotices(actor = null) {
   const notices = await readMaintenanceKey('notices', []);
   const actorId = actor?.id || '';
   const actorRole = actor?.role || '';
+  const canAdminister = !AUTH_REQUIRED || canAreaManage(actor);
   return notices
     .filter(notice => notice.active !== false)
-    .filter(notice => !Array.isArray(notice.targetUserIds) || !notice.targetUserIds.length || notice.targetUserIds.includes(actorId))
-    .filter(notice => !Array.isArray(notice.targetRoles) || !notice.targetRoles.length || notice.targetRoles.includes(actorRole))
+    .filter(notice => {
+      const userMatch = !Array.isArray(notice.targetUserIds) || !notice.targetUserIds.length || notice.targetUserIds.includes(actorId);
+      const roleMatch = !Array.isArray(notice.targetRoles) || !notice.targetRoles.length || notice.targetRoles.includes(actorRole);
+      const administrableNotice = canAdminister && (!Array.isArray(notice.targetUserIds) || !notice.targetUserIds.length);
+      return administrableNotice || (userMatch && roleMatch);
+    })
     .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
-    .map(notice => ({
-      ...notice,
-      unread: actorId ? !(notice.readBy || []).includes(actorId) : false
-    }));
+    .map(notice => {
+      const userMatch = !Array.isArray(notice.targetUserIds) || !notice.targetUserIds.length || notice.targetUserIds.includes(actorId);
+      const roleMatch = !Array.isArray(notice.targetRoles) || !notice.targetRoles.length || notice.targetRoles.includes(actorRole);
+      const visibleToActor = userMatch && roleMatch;
+      return {
+        ...notice,
+        visibleToActor,
+        expired: Boolean(notice.endDate && notice.endDate < localDate()),
+        unread: visibleToActor && actorId ? !(notice.readBy || []).includes(actorId) : false,
+        editable: canAdminister
+      };
+    });
 }
 
 async function saveNotice(payload, actor) {
@@ -1643,19 +1667,31 @@ async function saveNotice(payload, actor) {
   const message = String(payload.message || '').trim();
   if (!title || !message) throw Object.assign(new Error('Notice title and message are required'), { statusCode: 400 });
   const notices = await readMaintenanceKey('notices', []);
+  const id = payload.id || `notice-${Date.now()}`;
+  let notice = notices.find(entry => entry.id === id);
+  if (notice && AUTH_REQUIRED && !canAreaManage(actor)) throw Object.assign(new Error('Only Area Managers and above can edit notices'), { statusCode: 403 });
   const attachmentUrl = payload.attachment?.dataUrl
     ? await saveAttachment({ ...payload.attachment, kind: 'notice-attachment', name: payload.attachment.name || title })
-    : payload.attachmentUrl || '';
-  notices.push({
-    id: `notice-${Date.now()}`,
+    : payload.attachmentUrl || notice?.attachmentUrl || '';
+  if (!notice) {
+    notice = {
+      id,
+      createdBy: actor?.name || payload.createdBy || 'Manager',
+      createdAt: new Date().toISOString(),
+      readBy: [],
+      active: true
+    };
+    notices.push(notice);
+  }
+  Object.assign(notice, {
     title,
     message,
     attachmentUrl,
-    attachmentName: payload.attachment?.name || payload.attachmentName || '',
+    attachmentName: payload.attachment?.name || payload.attachmentName || notice.attachmentName || '',
     targetRoles: Array.isArray(payload.targetRoles) && payload.targetRoles.length ? payload.targetRoles : [],
-    createdBy: actor?.name || payload.createdBy || 'Manager',
-    createdAt: new Date().toISOString(),
-    readBy: [],
+    endDate: String(payload.endDate || '').trim(),
+    updatedBy: actor?.name || 'Manager',
+    updatedAt: new Date().toISOString(),
     active: true
   });
   await writeMaintenanceKey('notices', notices);
@@ -2060,6 +2096,18 @@ async function checkAlerts(query = {}, actor = null) {
   return { dryRun, date, alerts, storeAlarmEscalations, managerNotifications };
 }
 
+async function deleteNotice(id, actor) {
+  if (AUTH_REQUIRED && !canAreaManage(actor)) throw Object.assign(new Error('Only Area Managers and above can delete notices'), { statusCode: 403 });
+  const notices = await readMaintenanceKey('notices', []);
+  const notice = notices.find(entry => entry.id === id);
+  if (!notice) throw Object.assign(new Error('Notice not found'), { statusCode: 404 });
+  notice.active = false;
+  notice.updatedBy = actor?.name || 'Area Manager';
+  notice.updatedAt = new Date().toISOString();
+  await writeMaintenanceKey('notices', notices);
+  return readNotices(actor);
+}
+
 function localWeekday(now = new Date()) {
   return new Intl.DateTimeFormat('en-US', { timeZone: ALERT_TIME_ZONE, weekday: 'long' }).format(now);
 }
@@ -2184,13 +2232,17 @@ function nextFpcId(records) {
   return `FPC-${String(highest + 1).padStart(4, '0')}`;
 }
 
-async function fpcState() {
-  return { records: await readFpcRecords() };
+async function fpcState(actor = null) {
+  const records = await readFpcRecords();
+  if (!AUTH_REQUIRED || !actor || isFullAccess(actor)) return { records };
+  const allowed = userLocationIds(actor);
+  return { records: records.filter(record => allowed.includes(record.locationId)) };
 }
 
 async function saveFpcInspection(payload, actor) {
   if (AUTH_REQUIRED && !canManage(actor)) throw Object.assign(new Error('Only managers and above can update FPC records'), { statusCode: 403 });
   const locationId = payload.locationId || DEFAULT_LOCATION_ID;
+  if (AUTH_REQUIRED && !canAccessLocation(actor, locationId)) throw Object.assign(new Error('You can only update FPC records for your assigned location'), { statusCode: 403 });
   const records = await readFpcRecords();
   const attachmentUrl = payload.attachment?.dataUrl
     ? await saveAttachment({ ...payload.attachment, kind: 'fpc-inspection', name: payload.attachment.name || `${locationId}-fpc` })
@@ -2209,14 +2261,16 @@ async function saveFpcInspection(payload, actor) {
   };
   records.unshift(record);
   await writeMaintenanceKey('fpcRecords', records);
-  return fpcState();
+  return fpcState(actor);
 }
 
 async function saveFpcItem(payload, actor) {
   if (AUTH_REQUIRED && !canManage(actor)) throw Object.assign(new Error('Only managers and above can edit FPC records'), { statusCode: 403 });
   const records = await readFpcRecords();
   let record = records.find(entry => entry.id === payload.recordId);
+  if (record && AUTH_REQUIRED && !canAccessLocation(actor, record.locationId)) throw Object.assign(new Error('You can only update FPC records for your assigned location'), { statusCode: 403 });
   if (!record) {
+    if (AUTH_REQUIRED && !canAccessLocation(actor, payload.locationId || DEFAULT_LOCATION_ID)) throw Object.assign(new Error('You can only update FPC records for your assigned location'), { statusCode: 403 });
     record = {
       id: nextFpcId(records),
       locationId: payload.locationId || DEFAULT_LOCATION_ID,
@@ -2258,7 +2312,7 @@ async function saveFpcItem(payload, actor) {
   else record.items.unshift(item);
   item.assignmentEmail = await sendAssignmentEmail({ ...item, locationName: record.locationName || payload.locationName }, 'FPC repair item');
   await writeMaintenanceKey('fpcRecords', records);
-  return fpcState();
+  return fpcState(actor);
 }
 
 async function updateFpcItem(payload, actor) {
@@ -2267,13 +2321,14 @@ async function updateFpcItem(payload, actor) {
   const record = records.find(entry => entry.id === payload.recordId);
   const item = record?.items?.find(entry => entry.id === payload.itemId);
   if (!item) throw Object.assign(new Error('FPC item not found'), { statusCode: 404 });
+  if (AUTH_REQUIRED && !canAccessLocation(actor, record.locationId)) throw Object.assign(new Error('You can only update FPC records for your assigned location'), { statusCode: 403 });
   ['description', 'priority', 'status', 'assignedTo', 'assignmentType', 'assigneeId', 'assigneeName', 'assigneeEmail', 'assigneePhone', 'vendorId', 'vendorName', 'assignmentNotify', 'targetDate', 'photoUrl', 'photoName'].forEach(key => {
     if (payload[key] !== undefined) item[key] = payload[key];
   });
   item.assignmentEmail = await sendAssignmentEmail({ ...item, locationName: record.locationName }, 'FPC repair item');
   item.updatedAt = new Date().toISOString();
   await writeMaintenanceKey('fpcRecords', records);
-  return fpcState();
+  return fpcState(actor);
 }
 
 async function addFpcComment(payload, actor) {
@@ -2282,6 +2337,7 @@ async function addFpcComment(payload, actor) {
   const record = records.find(entry => entry.id === payload.recordId);
   const item = record?.items?.find(entry => entry.id === payload.itemId);
   if (!item) throw Object.assign(new Error('FPC item not found'), { statusCode: 404 });
+  if (AUTH_REQUIRED && !canAccessLocation(actor, record.locationId)) throw Object.assign(new Error('You can only comment on FPC records for your assigned location'), { statusCode: 403 });
   const text = String(payload.comment || '').trim();
   if (!text) throw Object.assign(new Error('Comment is required'), { statusCode: 400 });
   item.comments = item.comments || [];
@@ -2293,7 +2349,7 @@ async function addFpcComment(payload, actor) {
   });
   item.updatedAt = new Date().toISOString();
   await writeMaintenanceKey('fpcRecords', records);
-  return fpcState();
+  return fpcState(actor);
 }
 
 async function readStoreDocuments() {
@@ -3285,6 +3341,14 @@ async function writeWorkOrder(payload, actor) {
   if (AUTH_REQUIRED && !technician && !canManage(actor)) {
     throw Object.assign(new Error('You do not have permission to create work orders'), { statusCode: 403 });
   }
+  if (AUTH_REQUIRED && !technician && !isFullAccess(actor)) {
+    const [appLocations, maintenanceLocations] = await Promise.all([readLocations(), readMaintenanceKey('locations', [])]);
+    const assigned = appLocations.filter(location => userLocationIds(actor).includes(location.id));
+    const names = new Set(assigned.map(location => maintenanceLocationKey(location.name)));
+    const selected = maintenanceLocations.find(location => String(location['Location ID']) === String(payload.locationId));
+    const selectedName = maintenanceLocationKey(payload.locationName || selected?.['Location Name'] || '');
+    if (!names.has(selectedName)) throw Object.assign(new Error('You can only create work orders for your assigned location'), { statusCode: 403 });
+  }
   const workOrders = await readMaintenanceKey('workOrders', []);
   const equipment = await readMaintenanceKey('equipment', []);
   const selectedEquipment = equipment.find(row => row['Equipment ID'] === payload.equipmentId) || {};
@@ -3330,12 +3394,32 @@ async function writeWorkOrder(payload, actor) {
   return item;
 }
 
+async function maintenanceStateForActor(actor, locationId = 'all') {
+  const state = await maintenanceState(locationId);
+  if (!AUTH_REQUIRED || !actor || isFullAccess(actor) || actor.role === MAINTENANCE_ROLE) return state;
+  const appLocations = await readLocations();
+  const assignedStores = appLocations.filter(location => userLocationIds(actor).includes(location.id));
+  const assignedNames = new Set(assignedStores.map(location => maintenanceLocationKey(location.name)).filter(Boolean));
+  const allowedMaintenanceIds = new Set(state.locations
+    .filter(location => assignedNames.has(maintenanceLocationKey(location['Location Name'])))
+    .map(location => String(location['Location ID'])));
+  const allowedRow = row => allowedMaintenanceIds.has(String(row['Location ID'])) || assignedNames.has(maintenanceLocationKey(row['Location Name']));
+  return {
+    ...state,
+    locations: state.locations.filter(allowedRow),
+    equipment: state.equipment.filter(allowedRow),
+    workOrders: state.workOrders.filter(allowedRow),
+    pmSchedule: state.pmSchedule.filter(allowedRow)
+  };
+}
+
 async function updateWorkOrder(payload, actor) {
   const workOrders = await readMaintenanceKey('workOrders', []);
   const row = workOrders.find(entry => entry['Work Order ID'] === payload.workOrderId);
   if (!row) throw Object.assign(new Error('Work order not found'), { statusCode: 404 });
   const technician = actor?.role === MAINTENANCE_ROLE;
   if (AUTH_REQUIRED && !technician && !canManage(actor)) throw Object.assign(new Error('You do not have permission to update work orders'), { statusCode: 403 });
+  if (!(await canAccessMaintenanceRecord(actor, row))) throw Object.assign(new Error('You can only update work orders for your assigned location'), { statusCode: 403 });
   const managerMapping = {
     status: 'Status',
     assignedTo: 'Assigned To',
@@ -3651,7 +3735,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/locations') return json(200, { locations: await readLocations() });
     if (method === 'GET' && apiPath === '/overdue') return json(200, { overdue: await readOverdue(query.date) });
     if (method === 'GET' && apiPath === '/dashboard') return json(200, await dashboardSummary(actor, query.range || 'day', query.locationId || 'all'));
-    if (method === 'GET' && apiPath === '/maintenance/state') return json(200, await maintenanceState(query.locationId || 'all'));
+    if (method === 'GET' && apiPath === '/maintenance/state') return json(200, await maintenanceStateForActor(actor, query.locationId || 'all'));
     if (method === 'GET' && apiPath === '/maintenance-log/state') return json(200, await maintenanceWorkLogState(actor));
     if (method === 'GET' && apiPath === '/rollout/state') return json(200, await rolloutState(actor));
     if (method === 'GET' && apiPath === '/location-health/cameras') return json(200, await unifiCameraState(actor));
@@ -3665,7 +3749,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/temperature-standards') return json(200, { standards: await readTemperatureStandards() });
     if (method === 'GET' && apiPath === '/temperature-definitions') return json(200, { definitions: await readTemperatureDefinitions() });
     if (method === 'GET' && apiPath === '/alerts/check') return json(200, await checkAlerts(query, actor));
-    if (method === 'GET' && apiPath === '/fpc/state') return json(200, await fpcState());
+    if (method === 'GET' && apiPath === '/fpc/state') return json(200, await fpcState(actor));
     if (method === 'GET' && apiPath === '/store-documents/state') return json(200, await storeDocumentsState());
     if (method === 'GET' && apiPath === '/resources/state') return json(200, await resourcesState());
     if (method === 'GET' && apiPath === '/receipts/state') return json(200, await receiptState(actor));
@@ -3752,6 +3836,7 @@ exports.handler = async event => {
     if (method === 'POST' && apiPath === '/notice/read') {
       return json(200, { notices: await markNoticeRead(body.id, actor) });
     }
+    if (method === 'POST' && apiPath === '/notice/delete') return json(200, { notices: await deleteNotice(body.id, actor) });
     if (method === 'POST' && apiPath === '/store-alarms/send') return json(200, await sendStoreAlarm(body, actor));
     if (method === 'POST' && apiPath === '/store-alarms/acknowledge') return json(200, await acknowledgeStoreAlarm(body, actor));
     if (method === 'POST' && apiPath === '/store-alarms/cancel') return json(200, await cancelStoreAlarm(body, actor));
@@ -3809,34 +3894,34 @@ exports.handler = async event => {
 
     if (method === 'POST' && apiPath === '/maintenance/work-order') {
       const workOrder = await writeWorkOrder(body, actor);
-      return json(200, { workOrder, state: await maintenanceState('all') });
+      return json(200, { workOrder, state: await maintenanceStateForActor(actor, 'all') });
     }
     if (method === 'POST' && apiPath === '/maintenance/work-order/update') {
       const workOrder = await updateWorkOrder(body, actor);
-      return json(200, { workOrder, state: await maintenanceState('all') });
+      return json(200, { workOrder, state: await maintenanceStateForActor(actor, 'all') });
     }
     if (method === 'POST' && apiPath === '/maintenance/equipment') {
       const equipment = await writeEquipment(body);
-      return json(200, { equipment, state: await maintenanceState('all') });
+      return json(200, { equipment, state: await maintenanceStateForActor(actor, 'all') });
     }
     if (method === 'POST' && apiPath === '/maintenance/equipment/update') {
       const equipment = await updateEquipment(body);
-      return json(200, { equipment, state: await maintenanceState('all') });
+      return json(200, { equipment, state: await maintenanceStateForActor(actor, 'all') });
     }
     if (method === 'POST' && apiPath === '/maintenance/pm') {
       const pmTask = await writePmTask(body);
-      return json(200, { pmTask, state: await maintenanceState('all') });
+      return json(200, { pmTask, state: await maintenanceStateForActor(actor, 'all') });
     }
     if (method === 'POST' && apiPath === '/maintenance/pm/update') {
       const pmTask = await updatePmTask(body);
-      return json(200, { pmTask, state: await maintenanceState('all') });
+      return json(200, { pmTask, state: await maintenanceStateForActor(actor, 'all') });
     }
     if (method === 'POST' && apiPath === '/maintenance/priority-order') {
       return json(200, await saveMaintenancePriorityOrder(body, actor));
     }
     if (method === 'POST' && apiPath === '/maintenance/vendor') {
       const vendor = await saveVendor(body);
-      return json(200, { vendor, state: await maintenanceState('all') });
+      return json(200, { vendor, state: await maintenanceStateForActor(actor, 'all') });
     }
     if (method === 'POST' && apiPath === '/maintenance/import') {
       return json(200, await importMaintenanceWorkbook(body));
