@@ -1118,6 +1118,38 @@ button.danger{
   opacity:.72;
 }
 
+.fpc-completed-items{
+  margin-top:10px;
+  border-top:1px solid var(--line);
+}
+
+.fpc-completed-items > summary{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  width:max-content;
+  padding:14px 0 4px;
+  color:var(--navy);
+  font-size:14px;
+  font-weight:900;
+  cursor:pointer;
+}
+
+.fpc-completed-items > summary span{
+  display:inline-grid;
+  place-items:center;
+  min-width:24px;
+  height:24px;
+  padding:0 7px;
+  border-radius:999px;
+  background:#e7edf5;
+  font-size:12px;
+}
+
+.fpc-completed-list .fpc-item:first-child{
+  margin-top:8px;
+}
+
 .fpc-item-head{
   display:flex;
   justify-content:space-between;

@@ -2613,6 +2613,33 @@ function renderMaintenance() {
   `).join('');
 }
 
+function fpcRepairItemHtml(record, item) {
+  return `
+    <div class="fpc-item ${item.status === 'Completed' ? 'complete' : ''}">
+      <div class="fpc-item-head">
+        <div>
+          <b>${escapeHtml(item.description)}</b>
+          <p class="hint">${escapeHtml(item.priority || 'Medium')} priority${item.assignedTo ? ` · Assigned to ${escapeHtml(item.assignedTo)}` : ''}${item.targetDate ? ` · Target ${escapeHtml(item.targetDate)}` : ''}</p>
+          ${fpcPhotoGalleryHtml(item)}
+        </div>
+        <div class="row-actions">
+          <select data-fpc-status="${escapeHtml(record.id)}|${escapeHtml(item.id)}">
+            ${['Open', 'In Progress', 'Completed'].map(status => `<option ${item.status === status ? 'selected' : ''}>${status}</option>`).join('')}
+          </select>
+          <button data-edit-fpc="${escapeHtml(record.id)}|${escapeHtml(item.id)}" type="button">Edit</button>
+        </div>
+      </div>
+      <div class="fpc-comments">
+        ${(item.comments || []).map(comment => `<p><b>${escapeHtml(comment.createdBy || 'Manager')}:</b> ${escapeHtml(comment.text)} <span class="hint">${comment.createdAt ? new Date(comment.createdAt).toLocaleString() : ''}</span></p>`).join('')}
+      </div>
+      <div class="fpc-comment-form">
+        <input data-fpc-comment-input="${escapeHtml(record.id)}|${escapeHtml(item.id)}" placeholder="Add a manager comment">
+        <button data-fpc-comment="${escapeHtml(record.id)}|${escapeHtml(item.id)}" type="button">Comment</button>
+      </div>
+    </div>
+  `;
+}
+
 function renderFpc() {
   if (!$('#fpcLocation')) return;
   const visibleLocations = fpcVisibleLocations();
@@ -2633,7 +2660,10 @@ function renderFpc() {
     : '<option value="">Create from selected location</option>';
 
   setAssignmentFields('fpc', {});
-  $('#fpcList').innerHTML = records.length ? records.map(record => `
+  $('#fpcList').innerHTML = records.length ? records.map(record => {
+    const activeItems = (record.items || []).filter(item => item.status !== 'Completed');
+    const completedItems = (record.items || []).filter(item => item.status === 'Completed');
+    return `
     <details class="card fpc-record">
       <summary class="fpc-record-head">
         <div>
@@ -2641,36 +2671,20 @@ function renderFpc() {
           <p class="hint">Added by ${escapeHtml(record.createdBy || 'Manager')}${record.createdAt ? ` · ${new Date(record.createdAt).toLocaleDateString()}` : ''}</p>
           ${record.inspectionUrl ? `<p><a href="${escapeHtml(record.inspectionUrl)}" target="_blank" rel="noopener">${escapeHtml(record.inspectionName || 'Open inspection')}</a></p>` : '<p class="hint">No inspection file attached yet.</p>'}
         </div>
-        <span class="status">${(record.items || []).filter(item => item.status !== 'Completed').length} open</span>
+        <span class="status">${activeItems.length} open</span>
       </summary>
       <div class="fpc-items">
-        ${(record.items || []).length ? record.items.map(item => `
-          <div class="fpc-item ${item.status === 'Completed' ? 'complete' : ''}">
-            <div class="fpc-item-head">
-              <div>
-                <b>${escapeHtml(item.description)}</b>
-                <p class="hint">${escapeHtml(item.priority || 'Medium')} priority${item.assignedTo ? ` · Assigned to ${escapeHtml(item.assignedTo)}` : ''}${item.targetDate ? ` · Target ${escapeHtml(item.targetDate)}` : ''}</p>
-                ${fpcPhotoGalleryHtml(item)}
-              </div>
-              <div class="row-actions">
-                <select data-fpc-status="${escapeHtml(record.id)}|${escapeHtml(item.id)}">
-                  ${['Open', 'In Progress', 'Completed'].map(status => `<option ${item.status === status ? 'selected' : ''}>${status}</option>`).join('')}
-                </select>
-                <button data-edit-fpc="${escapeHtml(record.id)}|${escapeHtml(item.id)}" type="button">Edit</button>
-              </div>
-            </div>
-            <div class="fpc-comments">
-              ${(item.comments || []).map(comment => `<p><b>${escapeHtml(comment.createdBy || 'Manager')}:</b> ${escapeHtml(comment.text)} <span class="hint">${comment.createdAt ? new Date(comment.createdAt).toLocaleString() : ''}</span></p>`).join('')}
-            </div>
-            <div class="fpc-comment-form">
-              <input data-fpc-comment-input="${escapeHtml(record.id)}|${escapeHtml(item.id)}" placeholder="Add a manager comment">
-              <button data-fpc-comment="${escapeHtml(record.id)}|${escapeHtml(item.id)}" type="button">Comment</button>
-            </div>
-          </div>
-        `).join('') : '<p class="hint">No FPC repair items yet.</p>'}
+        ${activeItems.length ? activeItems.map(item => fpcRepairItemHtml(record, item)).join('') : '<p class="hint">No open FPC repair items.</p>'}
+        ${completedItems.length ? `
+          <details class="fpc-completed-items">
+            <summary>Completed Items <span>${completedItems.length}</span></summary>
+            <div class="fpc-completed-list">${completedItems.map(item => fpcRepairItemHtml(record, item)).join('')}</div>
+          </details>
+        ` : ''}
       </div>
     </details>
-  `).join('') : '<div class="empty">No FPC inspections for this view yet.</div>';
+  `;
+  }).join('') : '<div class="empty">No FPC inspections for this view yet.</div>';
 }
 
 function renderStoreDocuments() {
