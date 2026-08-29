@@ -398,16 +398,20 @@ function setupCustomizableDashboard() {
   controls.insertAdjacentElement('afterend', area);
 
   const incidentCard = document.createElement('article');
-  incidentCard.className = 'card dashboard-card dashboard-widget';
+  incidentCard.className = 'card dashboard-card dashboard-widget dashboard-clickable';
   incidentCard.id = 'dashboardIncidentCard';
+  incidentCard.dataset.sectionView = 'managementReportsView';
   incidentCard.innerHTML = '<div><p class="eyebrow">MANAGEMENT</p><h3>Incident Reports</h3></div><div id="dashboardIncidentSummary"></div><button class="ghost" data-section-view="managementReportsView" type="button">Open Incident Reports</button>';
   const inspectionCard = document.createElement('article');
-  inspectionCard.className = 'card dashboard-card dashboard-widget';
+  inspectionCard.className = 'card dashboard-card dashboard-widget dashboard-clickable';
   inspectionCard.id = 'dashboardInspectionCard';
+  inspectionCard.dataset.sectionView = 'inspectionsView';
   inspectionCard.innerHTML = '<div><p class="eyebrow">STORE VISITS</p><h3>Inspection performance</h3></div><div id="dashboardInspectionSummary"></div><button class="ghost" data-section-view="inspectionsView" type="button">Open inspections</button>';
   const marketingCard = document.createElement('article');
-  marketingCard.className = 'card dashboard-widget';
+  marketingCard.className = 'card dashboard-widget dashboard-clickable';
   marketingCard.id = 'dashboardMarketingCard';
+  marketingCard.dataset.sectionView = 'manageView';
+  marketingCard.dataset.openManageCard = 'popCampaignAdminCard';
   marketingCard.innerHTML = '<div class="maintenance-row compact"><div><p class="eyebrow">NOW + NEXT 30 DAYS</p><h3>POP &amp; readerboard updates</h3></div><span class="status" id="dashboardMarketingCount">0 updates</span></div><div id="dashboardMarketingList"></div>';
 
   const widgets = { shortcuts, alerts, upcoming, marketing: marketingCard, incidents: incidentCard, operations: metricCards[0], maintenance: metricCards[1], fpc: metricCards[2], inspections: inspectionCard, progress };
@@ -424,6 +428,31 @@ function setupCustomizableDashboard() {
 
 setupDailyOpsLayout();
 setupCustomizableDashboard();
+
+function arrangeManageSections() {
+  const usersGroup = $('#manageUsersGroupItems');
+  const setupGroup = $('#manageSetupGroupItems');
+  if (!usersGroup || !setupGroup || usersGroup.dataset.arranged) return;
+
+  $('#usersTitle').textContent = 'Current users';
+  $('#addUserCard').querySelector(':scope > h3').textContent = 'Add new user';
+  $('#importUsersCard').querySelector(':scope > h3').textContent = 'Import users';
+  ['usersCard', 'addUserCard', 'kioskAdminCard', 'importUsersCard'].forEach(id => usersGroup.appendChild($(`#${id}`)));
+
+  const locationLink = document.createElement('button');
+  locationLink.className = 'section-hub-card manage-setup-link';
+  locationLink.type = 'button';
+  locationLink.dataset.sectionView = 'locationsView';
+  locationLink.innerHTML = '<span>⌖</span><b>Locations</b><small>Addresses, phone numbers, and store setup</small>';
+  setupGroup.appendChild(locationLink);
+  ['popCampaignAdminCard', 'checklistTemplateCard', 'temperatureStandardsCard', 'alertRulesCard'].forEach(id => setupGroup.appendChild($(`#${id}`)));
+
+  $('#missingChecklistAdminCard').hidden = true;
+  $('#teamProgressAdminCard').hidden = true;
+  usersGroup.dataset.arranged = 'true';
+}
+
+arrangeManageSections();
 
 function setupCollapsibleCards() {
   document.querySelectorAll('.collapsible-card').forEach((card, index) => {
@@ -2902,7 +2931,7 @@ function applyRoleAccess(user) {
   document.querySelectorAll('[data-view="helpView"]').forEach(button => button.style.display = showManage && !tech ? '' : 'none');
   document.querySelectorAll('[data-view="locationsView"]').forEach(button => button.style.display = showLocations ? '' : 'none');
   document.querySelectorAll('[data-view="receiptsView"], [data-view="inspectionsView"]').forEach(button => button.style.display = canAddStoreDocuments(user) ? '' : 'none');
-  document.querySelectorAll('#manageSectionHub [data-section-view="locationsView"]').forEach(button => button.style.display = showLocations ? '' : 'none');
+  document.querySelectorAll('[data-section-view="locationsView"]').forEach(button => button.style.display = showLocations ? '' : 'none');
   document.querySelectorAll('#manageSectionHub [data-section-view="receiptsView"], #manageSectionHub [data-section-view="inspectionsView"]').forEach(button => button.style.display = canAddStoreDocuments(user) ? '' : 'none');
   $('#changePasswordBtn').style.display = window.dailyOpsAuth?.enabled && window.dailyOpsAuth?.authMode !== 'kiosk' ? '' : 'none';
   $('#signOutBtn').style.display = window.dailyOpsAuth?.enabled ? '' : 'none';
@@ -4486,6 +4515,17 @@ document.addEventListener('click', async event => {
     if (targetView === 'helpView' && !canUseManage()) return toast('Only managers and above can access Help');
     if (isMaintenanceTech() && targetView !== 'rolloutView' && !['homeView', 'maintenanceView', 'fpcView', 'maintenanceLogView', 'noticesView'].includes(targetView)) return toast('This role can only access Dashboard, Notices, Maintenance, FPC, Work Log, and authorized rollouts');
     switchView(targetView);
+    const openCardId = sectionButton.dataset.openManageCard;
+    if (openCardId) {
+      const card = $(`#${openCardId}`);
+      const group = card?.closest('.manage-group-card');
+      [group, card].filter(Boolean).forEach(item => {
+        item.classList.remove('collapsed');
+        const indicator = item.querySelector(':scope > .collapsible-header .collapse-indicator');
+        if (indicator) indicator.textContent = '−';
+      });
+      card?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
     return;
   }
 

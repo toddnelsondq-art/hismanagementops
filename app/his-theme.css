@@ -95,6 +95,35 @@ button{
   border-radius:22px;
 }
 
+.manage-group-items{
+  display:grid;
+  gap:16px;
+}
+
+.manage-group-items > .card,
+.manage-group-items > .section-hub-card{
+  margin:0;
+}
+
+.manage-setup-link{
+  width:100%;
+}
+
+.dashboard-clickable{
+  cursor:pointer;
+  transition:transform .16s ease, box-shadow .16s ease;
+}
+
+.dashboard-clickable:hover{
+  transform:translateY(-2px);
+  box-shadow:0 14px 30px rgba(13,46,88,.13);
+}
+
+.dashboard-clickable:focus-within{
+  outline:3px solid rgba(31,111,178,.25);
+  outline-offset:2px;
+}
+
 .card p,
 .hint{
   font-size:16px;

@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="assets/pwa-icon-180.png">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="temperature.css">
-  <link rel="stylesheet" href="his-theme.css?v=2026-08-29-location-notice-security">
+  <link rel="stylesheet" href="his-theme.css?v=2026-08-29-manage-groups">
   <style>
     .receiving-issue-tools,.receiving-issue-list{width:100%;margin-top:12px}
     .receiving-issue{border-top:1px solid var(--line);padding:10px 0}
@@ -84,7 +84,7 @@
         </label>
       </article>
 
-      <article class="card dashboard-alerts-card" id="dashboardAlertsCard">
+      <article class="card dashboard-alerts-card dashboard-clickable" id="dashboardAlertsCard" data-section-view="calendarView">
         <div class="maintenance-row compact">
           <div>
             <p class="eyebrow">ALERTS</p>
@@ -95,7 +95,7 @@
         <div id="dashboardAlertList" class="calendar-event-list"></div>
       </article>
 
-      <article class="card dashboard-upcoming-card" id="dashboardUpcomingTasksCard">
+      <article class="card dashboard-upcoming-card dashboard-clickable" id="dashboardUpcomingTasksCard" data-section-view="maintenanceView">
         <div class="maintenance-row compact">
           <div>
             <p class="eyebrow">NEXT 15 DAYS</p>
@@ -108,7 +108,7 @@
       </article>
 
       <div class="dashboard-grid">
-        <article class="card dashboard-card ops-dashboard-card">
+        <article class="card dashboard-card ops-dashboard-card dashboard-clickable" data-section-view="taskListsView">
           <div>
             <p class="eyebrow">DAILY OPS</p>
             <h3>Cleaning + temp logs</h3>
@@ -123,7 +123,7 @@
           </div>
         </article>
 
-        <article class="card dashboard-card">
+        <article class="card dashboard-card dashboard-clickable" data-section-view="maintenanceView">
           <div>
             <p class="eyebrow">MAINTENANCE</p>
             <h3>Work orders</h3>
@@ -138,7 +138,7 @@
           </div>
         </article>
 
-        <article class="card dashboard-card">
+        <article class="card dashboard-card dashboard-clickable" data-section-view="fpcView">
           <div>
             <p class="eyebrow">FPC</p>
             <h3>Repair items</h3>
@@ -154,7 +154,7 @@
         </article>
       </div>
 
-      <article class="card dashboard-progress-card">
+      <article class="card dashboard-progress-card dashboard-clickable" data-section-view="taskListsView">
         <div class="maintenance-row compact">
           <div>
             <p class="eyebrow">PROGRESS DETAIL</p>
@@ -1151,12 +1151,18 @@
       </div>
 
       <div class="section-hub-grid" id="manageSectionHub">
-        <button class="section-hub-card" data-section-view="locationsView" type="button"><span>⌖</span><b>Locations</b><small>Addresses, phone numbers, and store setup</small></button>
-        <button class="section-hub-card" data-section-view="receiptsView" type="button"><span>🧾</span><b>Receipts</b><small>Private purchase receipt archive</small></button>
-        <button class="section-hub-card" data-section-view="inspectionsView" type="button"><span>✓</span><b>Store inspections</b><small>Visit checklist, scores, and trends</small></button>
         <button class="section-hub-card" data-section-view="rolloutView" type="button"><span>▣</span><b>Location Rollout</b><small>Equipment, setup, verification, and handoff</small></button>
-        <button class="section-hub-card" data-section-view="helpView" type="button"><span>?</span><b>Help</b><small>Navigation and feature guide</small></button>
       </div>
+
+      <article class="card collapsible-card manage-group-card" id="manageUsersGroup">
+        <h3>Users</h3>
+        <div id="manageUsersGroupItems" class="manage-group-items"></div>
+      </article>
+
+      <article class="card collapsible-card manage-group-card" id="manageSetupGroup">
+        <h3>Setup</h3>
+        <div id="manageSetupGroupItems" class="manage-group-items"></div>
+      </article>
 
       <article class="card form-card collapsible-card" id="managerNotificationPreferencesCard">
         <h3>My notifications &amp; reports</h3>
@@ -1210,7 +1216,7 @@
         <div id="popCampaignAdminList"></div>
       </article>
 
-      <article class="card form-card collapsible-card">
+      <article class="card form-card collapsible-card" id="todayTaskAdminCard">
         <h3>Add a task for today</h3>
         <label>Task description
           <input id="newTask" placeholder="e.g. Deep clean ice machine">
@@ -1478,13 +1484,13 @@
         <div id="userList"></div>
       </article>
 
-      <article class="card collapsible-card">
+      <article class="card collapsible-card" id="missingChecklistAdminCard">
         <h3>Locations missing today's checklist</h3>
         <p class="hint">For now this is the notification list. When email/text service is connected, these are the stores that would notify Area Managers and the Director of Operations.</p>
         <div id="overdueList"></div>
       </article>
 
-      <article class="card team collapsible-card">
+      <article class="card team collapsible-card" id="teamProgressAdminCard">
         <h3>Today's team progress</h3>
         <span class="avatar" id="teamAvatar">--</span>
         <div>
@@ -1516,8 +1522,10 @@
     <button data-view="resourcesView"><span class="nav-icon">🔗</span><span>Resources</span></button>
     <button data-view="smallwaresView"><span class="nav-icon">🧺</span><span>Smallwares</span></button>
     <button data-view="managementReportsView"><span class="nav-icon">!</span><span>Incidents</span></button>
+    <button data-view="inspectionsView"><span class="nav-icon">✓</span><span>Store Inspections</span></button>
+    <button data-view="receiptsView"><span class="nav-icon">🧾</span><span>Receipts</span></button>
+    <button data-view="helpView"><span class="nav-icon">?</span><span>Help</span></button>
     <button data-view="manageView" id="sideManageNav"><span class="nav-icon">⚙</span><span>Manage</span></button>
-    <button data-view="rolloutView"><span class="nav-icon">▣</span><span>Rollout</span></button>
     <button data-view="calendarView"><span class="nav-icon">📅</span><span>Calendar</span></button>
     <div class="side-user">
       <details class="side-account-menu">
@@ -1945,9 +1953,9 @@
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-29-6"></script>
+  <script src="version.js?v=2026-08-29-7"></script>
   <script src="auth.js?v=2026-07-29-kiosk-pin"></script>
-  <script src="app.js?v=2026-08-29-location-notice-security"></script>
+  <script src="app.js?v=2026-08-29-manage-groups"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>
