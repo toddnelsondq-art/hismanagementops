@@ -617,6 +617,10 @@ function canUseMaintenanceWorkLog(user = currentUser()) {
   return isMaintenanceTech(user) || isFullAccess(user) || (user.role === 'Area Manager' && maintenanceWorkLog.mode === 'hours-only');
 }
 
+function canUseMaintenanceWorkLogReport(user = currentUser()) {
+  return !isMaintenanceTech(user) && ['Area Manager', 'Director of Operations', 'Owner'].includes(user.role) && canUseMaintenanceWorkLog(user);
+}
+
 function canUseLocationHealth(user = currentUser()) {
   return ['Area Manager', 'Director of Operations', 'Owner'].includes(user.role);
 }
@@ -2160,6 +2164,40 @@ function fpcScopedRecords() {
   return records.filter(record => record.locationId === fpcLocationId);
 }
 
+function fpcItemPhotos(item = {}) {
+  const source = Array.isArray(item.photos) ? item.photos : (item.photoUrl ? [{ url: item.photoUrl, name: item.photoName || 'FPC photo' }] : []);
+  const seen = new Set();
+  return source.map(photo => typeof photo === 'string' ? { url: photo, name: 'FPC photo' } : photo)
+    .map(photo => ({ url: String(photo?.url || '').trim(), name: String(photo?.name || 'FPC photo').trim() }))
+    .filter(photo => photo.url && !seen.has(photo.url) && seen.add(photo.url))
+    .slice(0, 9);
+}
+
+function fpcPhotoGalleryHtml(item = {}) {
+  const photos = fpcItemPhotos(item);
+  if (!photos.length) return '';
+  return `<div class="fpc-photo-gallery">${photos.map((photo, index) => `
+    <a class="fpc-photo-link" href="${escapeHtml(photo.url)}" target="_blank" rel="noopener" title="${escapeHtml(photo.name || `Photo ${index + 1}`)}">
+      ${isImageUrl(photo.url) ? `<img src="${escapeHtml(photo.url)}" alt="FPC attachment ${index + 1}">` : '<span class="link-icon">🔗</span>'}
+      <span>${escapeHtml(photo.name || `Photo ${index + 1}`)}</span>
+    </a>`).join('')}</div>`;
+}
+
+function parseFpcPhotoLinks(value = '') {
+  const links = String(value).split(/[\r\n]+/).map(link => link.trim()).filter(Boolean);
+  const invalid = links.find(link => !/^https?:\/\//i.test(link));
+  if (invalid) throw new Error('Every photo link must begin with http:// or https://');
+  return links.map((url, index) => ({ url, name: `Shared photo or folder link ${index + 1}` }));
+}
+
+async function newFpcPhotos(fileInput, linkInput, maximum = 9) {
+  const files = [...(fileInput?.files || [])];
+  const links = parseFpcPhotoLinks(linkInput?.value || '');
+  if (files.length + links.length > maximum) throw new Error(`You can add ${maximum} more photo${maximum === 1 ? '' : 's'} or link${maximum === 1 ? '' : 's'} to this item`);
+  const uploaded = await Promise.all(files.map(async file => ({ url: await uploadFileDirectToSupabase(file, 'fpc-item-photo'), name: file.name })));
+  return [...uploaded, ...links];
+}
+
 function storeDocsVisibleLocations() {
   return locations.filter(location => isFullAccess() || userLocationIds().includes(location.id));
 }
@@ -2272,7 +2310,12 @@ function editMaintenanceLogEntry(id) {
 function renderMaintenanceWorkLog() {
   if (!$('#maintenanceLogView')) return;
   const allowed = canUseMaintenanceWorkLog();
-  document.querySelectorAll('[data-view="maintenanceLogView"]').forEach(button => { button.style.display = allowed ? '' : 'none'; });
+  const maintenanceUser = isMaintenanceTech();
+  document.querySelectorAll('.maintenance-worklog-menu-link').forEach(button => { button.style.display = allowed && maintenanceUser ? '' : 'none'; });
+  const reportAllowed = canUseMaintenanceWorkLogReport();
+  $('#maintenanceWorkLogReportCard').hidden = !reportAllowed;
+  document.querySelectorAll('.maintenance-worklog-report-link').forEach(button => { button.style.display = reportAllowed ? '' : 'none'; });
+  $('#exportMaintenanceWorkLogBtn').style.display = reportAllowed ? '' : 'none';
   if (!allowed) return;
   const fullView = maintenanceWorkLog.mode === 'full';
   $('#maintenanceLogFormCard').style.display = maintenanceWorkLog.canEdit ? '' : 'none';
@@ -2305,6 +2348,27 @@ function renderMaintenanceWorkLog() {
       ${maintenanceWorkLog.canEdit ? `<button class="ghost" data-maintenance-log-edit="${escapeHtml(entry.id)}" type="button">Edit workday</button>` : ''}
     </article>` : `
     <article class="card maintenance-hours-row"><div><b>${escapeHtml(entry.technicianName || 'Maintenance Tech')}</b><p>${escapeHtml(prettyDate(entry.date))}</p></div><strong>${entry.actualHours === null || entry.actualHours === undefined ? 'Not submitted' : `${Number(entry.actualHours).toFixed(2).replace(/\.00$/, '')} hours`}</strong></article>`).join('') : '<div class="empty">No maintenance schedule or work-log entries match this period.</div>';
+}
+
+function exportMaintenanceWorkLog() {
+  if (!canUseMaintenanceWorkLogReport()) return toast('Maintenance Work Log report access has not been granted');
+  const entries = filteredMaintenanceLogEntries();
+  if (!entries.length) return toast('There are no Work Log entries in the selected period');
+  const fullView = maintenanceWorkLog.mode === 'full';
+  const headers = fullView
+    ? ['Team Member', 'Date', 'Status', 'Scheduled Start', 'Scheduled End', 'Scheduled Hours', 'Actual Start', 'Actual End', 'Break Minutes', 'Actual Hours', 'Locations', 'Planned Work', 'Accomplishments', 'Notes']
+    : ['Team Member', 'Date', 'Status', 'Actual Hours'];
+  const rows = entries.map(entry => fullView
+    ? [entry.technicianName, entry.date, entry.status, entry.scheduledStart, entry.scheduledEnd, entry.scheduledHours, entry.actualStart, entry.actualEnd, entry.breakMinutes, entry.actualHours, (entry.locationIds || []).map(locationName).join('; '), entry.plannedWork, entry.accomplishments, entry.notes]
+    : [entry.technicianName, entry.date, entry.status, entry.actualHours]);
+  const csvCell = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
+  const csv = [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\r\n');
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  link.download = `his-ops-maintenance-work-log-${dateKey}.csv`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  toast('Maintenance Work Log exported');
 }
 
 function renderLocationHealth() {
@@ -2557,12 +2621,7 @@ function renderFpc() {
               <div>
                 <b>${escapeHtml(item.description)}</b>
                 <p class="hint">${escapeHtml(item.priority || 'Medium')} priority${item.assignedTo ? ` · Assigned to ${escapeHtml(item.assignedTo)}` : ''}${item.targetDate ? ` · Target ${escapeHtml(item.targetDate)}` : ''}</p>
-                ${item.photoUrl ? `
-                  <a class="fpc-photo-link" href="${escapeHtml(item.photoUrl)}" target="_blank" rel="noopener">
-                    ${isImageUrl(item.photoUrl) ? `<img src="${escapeHtml(item.photoUrl)}" alt="FPC item photo">` : '<span class="link-icon">🔗</span>'}
-                    <span>${escapeHtml(item.photoName || 'View item photo')}</span>
-                  </a>
-                ` : ''}
+                ${fpcPhotoGalleryHtml(item)}
               </div>
               <div class="row-actions">
                 <select data-fpc-status="${escapeHtml(record.id)}|${escapeHtml(item.id)}">
@@ -2918,7 +2977,8 @@ function applyRoleAccess(user) {
   document.querySelectorAll('[data-view="noticesView"]').forEach(button => button.style.display = '');
   document.querySelectorAll('[data-view="maintenanceView"]').forEach(button => button.style.display = showHub ? '' : 'none');
   document.querySelectorAll('[data-view="fpcView"]').forEach(button => button.style.display = showHub ? '' : 'none');
-  document.querySelectorAll('[data-view="maintenanceLogView"]').forEach(button => button.style.display = showMaintenanceLog ? '' : 'none');
+  document.querySelectorAll('.maintenance-worklog-menu-link').forEach(button => button.style.display = showMaintenanceLog && tech ? '' : 'none');
+  document.querySelectorAll('.maintenance-worklog-report-link').forEach(button => button.style.display = showMaintenanceLog && !tech ? '' : 'none');
   document.querySelectorAll('[data-view="locationHealthView"]').forEach(button => button.style.display = showLocationHealth ? '' : 'none');
   document.querySelectorAll('[data-view="calendarView"]').forEach(button => button.style.display = showHub && !tech ? '' : 'none');
   document.querySelectorAll('[data-view="storeDocsView"]').forEach(button => button.style.display = showHub && !tech ? '' : 'none');
@@ -4085,9 +4145,8 @@ async function saveFpcItem() {
   const description = $('#fpcItemDescription').value.trim();
   if (!description) return toast('Enter the FPC repair item');
   try {
-    const photoFile = $('#fpcItemPhoto')?.files?.[0];
-    const photoLink = $('#fpcItemPhotoLink')?.value.trim() || '';
-    const photoUrl = photoFile ? await uploadFileDirectToSupabase(photoFile, 'fpc-item-photo') : photoLink;
+    const photos = await newFpcPhotos($('#fpcItemPhoto'), $('#fpcItemPhotoLink'));
+    if (photos.length > 9) return toast('An FPC repair item can have no more than 9 photos or links');
     fpc = await api('/api/fpc/item', {
       method: 'POST',
       body: JSON.stringify({
@@ -4098,8 +4157,7 @@ async function saveFpcItem() {
         priority: $('#fpcItemPriority').value,
         ...assignmentPayload('fpc'),
         targetDate: $('#fpcItemTargetDate').value,
-        photoUrl,
-        photoName: photoFile?.name || (photoLink ? 'Shared photo link' : '')
+        photos
       })
     });
     $('#fpcItemDescription').value = '';
@@ -4144,9 +4202,10 @@ function openFpcItemDialog(recordId, itemId) {
   $('#editFpcTargetDate').value = toDateInput(item.targetDate);
   $('#editFpcPhoto').value = '';
   if ($('#editFpcPhotoLink')) $('#editFpcPhotoLink').value = '';
-  $('#editFpcPhotoCurrent').innerHTML = item.photoUrl
-    ? `<a class="fpc-photo-link" href="${escapeHtml(item.photoUrl)}" target="_blank" rel="noopener">${isImageUrl(item.photoUrl) ? `<img src="${escapeHtml(item.photoUrl)}" alt="Current FPC item photo">` : '<span class="link-icon">🔗</span>'}<span>${escapeHtml(item.photoName || 'Current photo')}</span></a>`
-    : '<p class="hint">No photo attached yet.</p>';
+  const photos = fpcItemPhotos(item);
+  $('#editFpcPhotoCurrent').innerHTML = photos.length
+    ? `<p class="hint">Uncheck an attachment to remove it when you save.</p><div class="fpc-photo-gallery">${photos.map((photo, index) => `<div class="fpc-photo-manage"><a class="fpc-photo-link" href="${escapeHtml(photo.url)}" target="_blank" rel="noopener">${isImageUrl(photo.url) ? `<img src="${escapeHtml(photo.url)}" alt="Current FPC attachment ${index + 1}">` : '<span class="link-icon">🔗</span>'}<span>${escapeHtml(photo.name || `Photo ${index + 1}`)}</span></a><label class="check"><input type="checkbox" data-fpc-photo-keep="${index}" checked> Keep</label></div>`).join('')}</div>`
+    : '<p class="hint">No photos or links attached yet.</p>';
   $('#fpcItemDialog').showModal();
 }
 
@@ -4156,9 +4215,11 @@ async function saveFpcEdit() {
   const description = $('#editFpcDescription').value.trim();
   if (!description) return toast('Enter the FPC item description');
   try {
-    const photoFile = $('#editFpcPhoto')?.files?.[0];
-    const photoLink = $('#editFpcPhotoLink')?.value.trim() || '';
-    const photoUrl = photoFile ? await uploadFileDirectToSupabase(photoFile, 'fpc-item-photo') : (photoLink || undefined);
+    const { item } = findFpcItem(recordId, itemId);
+    const existingPhotos = fpcItemPhotos(item).filter((photo, index) => document.querySelector(`[data-fpc-photo-keep="${index}"]`)?.checked);
+    const addedPhotos = await newFpcPhotos($('#editFpcPhoto'), $('#editFpcPhotoLink'), 9 - existingPhotos.length);
+    const photos = [...existingPhotos, ...addedPhotos].filter((photo, index, list) => list.findIndex(entry => entry.url === photo.url) === index);
+    if (photos.length > 9) return toast('An FPC repair item can have no more than 9 photos or links');
     fpc = await api('/api/fpc/item/update', {
       method: 'POST',
       body: JSON.stringify({
@@ -4169,7 +4230,7 @@ async function saveFpcEdit() {
         status: $('#editFpcStatus').value,
         ...assignmentPayload('editFpc'),
         targetDate: $('#editFpcTargetDate').value,
-        ...(photoUrl ? { photoUrl, photoName: photoFile?.name || (photoLink ? 'Shared photo link' : '') } : {})
+        photos
       })
     });
     if ($('#editFpcPhotoLink')) $('#editFpcPhotoLink').value = '';
@@ -4296,7 +4357,7 @@ async function previewFpcImport(file) {
     rows.slice(headerIndex + 1).forEach((values, offset) => {
       const rowNumber = headerIndex + offset + 2;
       const row = Object.fromEntries(headers.map((header, index) => [header, values[index]]));
-      const meaningfulValues = [row.location, row.store, row.locationid, row.inspectiondate, row.date, row.repairitem, row.description, row.item, row.targetdate, row.duedate, row.assignedto, row.photofolderlink, row.photolink, row.link];
+      const meaningfulValues = [row.location, row.store, row.locationid, row.inspectiondate, row.date, row.repairitem, row.description, row.item, row.targetdate, row.duedate, row.assignedto, row.photofolderlink, row.photofolderlinks, row.photolink, row.photolinks, row.link];
       if (!meaningfulValues.some(value => String(value ?? '').trim())) return;
       const location = fpcImportLocation(row.location || row.store || row.locationid);
       const inspectionDate = fpcImportDate(row.inspectiondate || row.date);
@@ -4305,22 +4366,23 @@ async function previewFpcImport(file) {
       const description = String(row.repairitem || row.description || row.item || '').trim();
       const priority = ['High', 'Medium', 'Low'].find(value => value.toLowerCase() === String(row.priority || 'Medium').trim().toLowerCase());
       const status = ['Open', 'In Progress', 'Completed'].find(value => value.toLowerCase() === String(row.status || 'Open').trim().toLowerCase());
-      const photoUrl = String(row.photofolderlink || row.photolink || row.link || '').trim();
+      const photoLinks = String(row.photofolderlink || row.photofolderlinks || row.photolink || row.photolinks || row.link || '').split(/[;\r\n]+/).map(link => link.trim()).filter(Boolean);
       if (!location) errors.push(`Row ${rowNumber}: Location was not found or is not assigned to you.`);
       if (!inspectionDate) errors.push(`Row ${rowNumber}: Enter a valid Inspection Date.`);
       if (!description) errors.push(`Row ${rowNumber}: Repair Item is required.`);
       if (!priority) errors.push(`Row ${rowNumber}: Priority must be High, Medium, or Low.`);
       if (!status) errors.push(`Row ${rowNumber}: Status must be Open, In Progress, or Completed.`);
       if (targetDateValue && !targetDate) errors.push(`Row ${rowNumber}: Enter a valid Target Date or leave it blank.`);
-      if (photoUrl && !/^https?:\/\//i.test(photoUrl)) errors.push(`Row ${rowNumber}: Photo / Folder Link must begin with http:// or https://.`);
-      if (!location || !inspectionDate || !description || !priority || !status || (targetDateValue && !targetDate) || (photoUrl && !/^https?:\/\//i.test(photoUrl))) return;
+      if (photoLinks.length > 9) errors.push(`Row ${rowNumber}: Use no more than 9 photo or folder links.`);
+      if (photoLinks.some(link => !/^https?:\/\//i.test(link))) errors.push(`Row ${rowNumber}: Every Photo / Folder Link must begin with http:// or https://.`);
+      if (!location || !inspectionDate || !description || !priority || !status || (targetDateValue && !targetDate) || photoLinks.length > 9 || photoLinks.some(link => !/^https?:\/\//i.test(link))) return;
       const duplicateKey = `${location.id}|${inspectionDate}|${description}`.toLowerCase();
       if (seen.has(duplicateKey)) {
         errors.push(`Row ${rowNumber}: Duplicate repair item in this file.`);
         return;
       }
       seen.add(duplicateKey);
-      pendingFpcImport.push({ locationId: location.id, locationName: location.name, inspectionDate, description, priority, targetDate, status, assignedTo: String(row.assignedto || '').trim(), photoUrl });
+      pendingFpcImport.push({ locationId: location.id, locationName: location.name, inspectionDate, description, priority, targetDate, status, assignedTo: String(row.assignedto || '').trim(), photos: photoLinks.map((url, index) => ({ url, name: `Imported photo or folder link ${index + 1}` })) });
     });
     const sample = pendingFpcImport.slice(0, 12);
     preview.innerHTML = `
@@ -6168,6 +6230,7 @@ $('#cancelMaintenanceLogBtn').onclick = () => {
   renderMaintenanceWorkLog();
 };
 $('#saveMaintenanceHoursPermissionsBtn').onclick = saveMaintenanceHoursPermissions;
+$('#exportMaintenanceWorkLogBtn').onclick = exportMaintenanceWorkLog;
 $('#saveRolloutPermissionsBtn').onclick = saveRolloutPermissions;
 $('#rolloutLocation').onchange = event => { rolloutLocationId = event.target.value; localStorage.setItem('dqops-rollout-location', rolloutLocationId); renderRollout(); };
 $('#customizeDashboardBtn').onclick = openDashboardCustomization;

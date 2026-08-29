@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="assets/pwa-icon-180.png">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="temperature.css">
-  <link rel="stylesheet" href="his-theme.css?v=2026-08-29-manage-groups">
+  <link rel="stylesheet" href="his-theme.css?v=2026-08-29-fpc-photo-gallery">
   <style>
     .receiving-issue-tools,.receiving-issue-list{width:100%;margin-top:12px}
     .receiving-issue{border-top:1px solid var(--line);padding:10px 0}
@@ -384,7 +384,7 @@
     <section id="maintenanceLogView" class="view">
       <div class="date">
         <div><p>MAINTENANCE TEAM</p><h2>Schedule &amp; Daily Log</h2></div>
-        <span class="status" id="maintenanceLogTotal">0 hours</span>
+        <div class="row-actions"><span class="status" id="maintenanceLogTotal">0 hours</span><button id="exportMaintenanceWorkLogBtn" class="ghost" type="button">Export CSV</button></div>
       </div>
 
       <article class="card form-card" id="maintenanceLogFormCard">
@@ -472,6 +472,14 @@
           <h2>Checklist history</h2>
         </div>
       </div>
+      <article class="card report-destination-card" id="maintenanceWorkLogReportCard" hidden>
+        <div>
+          <p class="eyebrow">MAINTENANCE REPORT</p>
+          <h3>Maintenance Work Log</h3>
+          <p class="hint">Review and export the maintenance schedule and recorded hours available to your account.</p>
+        </div>
+        <button class="ghost maintenance-worklog-report-link" data-section-view="maintenanceLogView" type="button">View work log</button>
+      </article>
       <article class="card export-card">
         <div>
           <h3>Export reports</h3>
@@ -631,11 +639,11 @@
         <label>Target date
           <input id="fpcItemTargetDate" type="date">
         </label>
-        <label>Photo showing what needs to be done
-          <input id="fpcItemPhoto" type="file" accept="image/*" capture="environment">
+        <label>Photos showing what needs to be done (up to 9)
+          <input id="fpcItemPhoto" type="file" accept="image/*" multiple>
         </label>
-        <label>Or paste photo/shared folder link
-          <input id="fpcItemPhotoLink" type="url" placeholder="https://drive.google.com/...">
+        <label>Photo or shared-folder links — one per line
+          <textarea id="fpcItemPhotoLink" rows="3" placeholder="https://drive.google.com/...&#10;https://example.com/photo.jpg"></textarea>
         </label>
         <button id="saveFpcItemBtn" type="button">Add FPC item</button>
       </article>
@@ -1052,7 +1060,7 @@
 
         <article class="card help-section" id="help-maintenance-log">
           <h3>Maintenance Schedule &amp; Daily Log</h3>
-          <p>Maintenance team members can enter a planned work schedule and later update the same day with actual start and end time, unpaid break minutes, locations, accomplishments, and follow-up notes. Worked hours are calculated automatically. The Director of Operations and Owner can review full entries and decide which Area Managers may see hours-only summaries.</p>
+          <p>Maintenance team members open Work Log from the main menu to enter a planned schedule and later record actual time, locations, accomplishments, and follow-up notes. Directors and Owners review full entries under Resources → Reports and decide which Area Managers may see hours-only summaries. Authorized report viewers can export the entries available to them as a CSV file.</p>
           <a href="#helpContents">Back to contents</a>
         </article>
 
@@ -1064,7 +1072,7 @@
 
         <article class="card help-section" id="help-fpc">
           <h3>FPC</h3>
-          <p>Stores facility-performance inspection files and the repair or correction items created from them. Select a location, open the appropriate inspection, and update each item’s assignment, priority, target date, comments, photos, and status.</p>
+          <p>Stores facility-performance inspection files and the repair or correction items created from them. Select a location, open the appropriate inspection, and update each item’s assignment, priority, target date, comments, and status. Each repair item can include up to nine uploaded photos or shared links displayed in a thumbnail gallery.</p>
           <a href="#helpContents">Back to contents</a>
         </article>
 
@@ -1082,7 +1090,7 @@
 
         <article class="card help-section" id="help-reports">
           <h3>Reports</h3>
-          <p>Review completed checklist and temperature-log history. Filter by the locations you are allowed to view, open a completed day for details, and use the available export tools when records need to be saved or shared.</p>
+          <p>Review completed checklist and temperature-log history. Filter by the locations you are allowed to view, open a completed day for details, and use the available export tools when records need to be saved or shared. Authorized Area Managers and above also see the Maintenance Work Log report here.</p>
           <a href="#helpContents">Back to contents</a>
         </article>
 
@@ -1529,7 +1537,7 @@
     <button data-view="tempLogsView"><span class="nav-icon">◒</span><span>Temp Logs</span></button>
     <button data-view="maintenanceView"><span class="nav-icon">🔧</span><span>Maintenance</span></button>
     <button data-view="locationHealthView"><span class="nav-icon">●</span><span>Location Health</span></button>
-    <button data-view="maintenanceLogView"><span class="nav-icon">🕒</span><span>Work Log</span></button>
+    <button class="maintenance-worklog-menu-link" data-view="maintenanceLogView"><span class="nav-icon">🕒</span><span>Work Log</span></button>
     <button data-view="resourcesView"><span class="nav-icon">🔗</span><span>Resources</span></button>
     <button data-view="smallwaresView"><span class="nav-icon">🧺</span><span>Smallwares</span></button>
     <button data-view="managementReportsView"><span class="nav-icon">!</span><span>Incidents</span></button>
@@ -1554,7 +1562,7 @@
     <button data-view="tempLogsView">◒<span>Temps</span></button>
     <button data-view="maintenanceView">🔧<span>Maint.</span></button>
     <button data-view="locationHealthView">●<span>Health</span></button>
-    <button data-view="maintenanceLogView">🕒<span>Work Log</span></button>
+    <button class="maintenance-worklog-menu-link" data-view="maintenanceLogView">🕒<span>Work Log</span></button>
     <button data-view="resourcesView">🔗<span>Resources</span></button>
     <button data-view="smallwaresView">🧺<span>Items</span></button>
     <button data-view="managementReportsView">!<span>Incidents</span></button>
@@ -1775,11 +1783,11 @@
         <input id="editFpcTargetDate" type="date">
       </label>
       <div id="editFpcPhotoCurrent" class="fpc-photo-current"></div>
-      <label>Add or replace photo
-        <input id="editFpcPhoto" type="file" accept="image/*" capture="environment">
+      <label>Add photos (up to 9 total)
+        <input id="editFpcPhoto" type="file" accept="image/*" multiple>
       </label>
-      <label>Or paste replacement photo/shared link
-        <input id="editFpcPhotoLink" type="url" placeholder="https://drive.google.com/...">
+      <label>Add photo or shared-folder links — one per line
+        <textarea id="editFpcPhotoLink" rows="3" placeholder="https://drive.google.com/...&#10;https://example.com/photo.jpg"></textarea>
       </label>
       <button id="saveFpcEditBtn" value="default">Save FPC item</button>
     </form>
@@ -1964,9 +1972,9 @@
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-29-8"></script>
+  <script src="version.js?v=2026-08-29-10"></script>
   <script src="auth.js?v=2026-07-29-kiosk-pin"></script>
-  <script src="app.js?v=2026-08-29-fpc-import"></script>
+  <script src="app.js?v=2026-08-29-fpc-photo-gallery"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>

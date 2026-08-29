@@ -124,6 +124,30 @@ button{
   outline-offset:2px;
 }
 
+.report-destination-card{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:20px;
+  margin-bottom:18px;
+}
+
+.report-destination-card[hidden]{
+  display:none;
+}
+
+.report-destination-card h3,
+.report-destination-card p{
+  margin-top:0;
+}
+
+@media (max-width:700px){
+  .report-destination-card{
+    align-items:stretch;
+    flex-direction:column;
+  }
+}
+
 .card p,
 .hint{
   font-size:16px;
@@ -1462,6 +1486,43 @@ button.danger{
   .auth-secondary{
     font-size:18px;
   }
+}
+
+.fpc-photo-gallery{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(118px,1fr));
+  gap:10px;
+  margin-top:12px;
+  max-width:760px;
+}
+
+.fpc-photo-gallery .fpc-photo-link{
+  align-items:stretch;
+  flex-direction:column;
+  margin:0;
+  min-width:0;
+  padding:8px;
+}
+
+.fpc-photo-gallery .fpc-photo-link img,
+.fpc-photo-gallery .fpc-photo-link .link-icon{
+  width:100%;
+  height:96px;
+}
+
+.fpc-photo-gallery .fpc-photo-link span:last-child{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.fpc-photo-manage{
+  min-width:0;
+}
+
+.fpc-photo-manage > .check{
+  margin:6px 0 0;
+  justify-content:center;
 }
 
 #maintenanceLogView .form-grid.three-col{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}

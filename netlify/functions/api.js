@@ -9,7 +9,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.16.0';
+const APP_VERSION = '1.17.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -2264,6 +2264,21 @@ async function saveFpcInspection(payload, actor) {
   return fpcState(actor);
 }
 
+function normalizeFpcPhotos(payload = {}) {
+  const source = Array.isArray(payload.photos)
+    ? payload.photos
+    : (payload.photoUrl ? [{ url: payload.photoUrl, name: payload.photoName || 'FPC photo' }] : []);
+  if (source.length > 9) throw Object.assign(new Error('An FPC repair item can have no more than 9 photos or links'), { statusCode: 400 });
+  const seen = new Set();
+  return source.map(photo => typeof photo === 'string' ? { url: photo, name: 'FPC photo' } : photo)
+    .map(photo => ({ url: String(photo?.url || '').trim(), name: String(photo?.name || 'FPC photo').trim().slice(0, 180) }))
+    .filter(photo => photo.url && !seen.has(photo.url) && seen.add(photo.url))
+    .map(photo => {
+      if (!/^https?:\/\//i.test(photo.url)) throw Object.assign(new Error('Every FPC photo link must begin with http:// or https://'), { statusCode: 400 });
+      return photo;
+    });
+}
+
 async function saveFpcItem(payload, actor) {
   if (AUTH_REQUIRED && !canManage(actor)) throw Object.assign(new Error('Only managers and above can edit FPC records'), { statusCode: 403 });
   const records = await readFpcRecords();
@@ -2285,6 +2300,7 @@ async function saveFpcItem(payload, actor) {
   }
   const description = String(payload.description || '').trim();
   if (!description) throw Object.assign(new Error('FPC item description is required'), { statusCode: 400 });
+  const photos = normalizeFpcPhotos(payload);
   const item = {
     id: payload.itemId || `FPCITEM-${Date.now()}`,
     description,
@@ -2300,8 +2316,9 @@ async function saveFpcItem(payload, actor) {
     vendorName: payload.vendorName || '',
     assignmentNotify: payload.assignmentNotify || 'none',
     targetDate: payload.targetDate || '',
-    photoUrl: payload.photoUrl || '',
-    photoName: payload.photoName || '',
+    photos,
+    photoUrl: photos[0]?.url || '',
+    photoName: photos[0]?.name || '',
     comments: payload.comments || [],
     createdBy: actor?.name || payload.createdBy || 'Manager',
     createdAt: new Date().toISOString(),
@@ -2336,14 +2353,13 @@ async function importFpcItems(payload, actor) {
     const description = String(source.description || '').trim();
     const priority = priorities.get(String(source.priority || 'Medium').toLowerCase());
     const status = statuses.get(String(source.status || 'Open').toLowerCase());
-    const photoUrl = String(source.photoUrl || '').trim();
+    const photos = normalizeFpcPhotos(source);
     if (!location || (AUTH_REQUIRED && !canAccessLocation(actor, locationId))) throw Object.assign(new Error(`Import row ${rowNumber}: You do not have access to that location`), { statusCode: 403 });
     if (!/^\d{4}-\d{2}-\d{2}$/.test(inspectionDate)) throw Object.assign(new Error(`Import row ${rowNumber}: Inspection Date is invalid`), { statusCode: 400 });
     if (targetDate && !/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) throw Object.assign(new Error(`Import row ${rowNumber}: Target Date is invalid`), { statusCode: 400 });
     if (!description) throw Object.assign(new Error(`Import row ${rowNumber}: Repair Item is required`), { statusCode: 400 });
     if (!priority) throw Object.assign(new Error(`Import row ${rowNumber}: Priority is invalid`), { statusCode: 400 });
     if (!status) throw Object.assign(new Error(`Import row ${rowNumber}: Status is invalid`), { statusCode: 400 });
-    if (photoUrl && !/^https?:\/\//i.test(photoUrl)) throw Object.assign(new Error(`Import row ${rowNumber}: Photo / Folder Link is invalid`), { statusCode: 400 });
 
     let record = records.find(entry => entry.active !== false && entry.locationId === locationId && entry.inspectionDate === inspectionDate);
     if (!record) {
@@ -2359,7 +2375,7 @@ async function importFpcItems(payload, actor) {
     const values = {
       description, priority, status, targetDate,
       assignedTo: String(source.assignedTo || '').trim(),
-      photoUrl, photoName: photoUrl ? 'Imported photo or folder link' : '',
+      photos, photoUrl: photos[0]?.url || '', photoName: photos[0]?.name || '',
       updatedAt: new Date().toISOString()
     };
     if (existing) {
@@ -2387,9 +2403,14 @@ async function updateFpcItem(payload, actor) {
   const item = record?.items?.find(entry => entry.id === payload.itemId);
   if (!item) throw Object.assign(new Error('FPC item not found'), { statusCode: 404 });
   if (AUTH_REQUIRED && !canAccessLocation(actor, record.locationId)) throw Object.assign(new Error('You can only update FPC records for your assigned location'), { statusCode: 403 });
-  ['description', 'priority', 'status', 'assignedTo', 'assignmentType', 'assigneeId', 'assigneeName', 'assigneeEmail', 'assigneePhone', 'vendorId', 'vendorName', 'assignmentNotify', 'targetDate', 'photoUrl', 'photoName'].forEach(key => {
+  ['description', 'priority', 'status', 'assignedTo', 'assignmentType', 'assigneeId', 'assigneeName', 'assigneeEmail', 'assigneePhone', 'vendorId', 'vendorName', 'assignmentNotify', 'targetDate'].forEach(key => {
     if (payload[key] !== undefined) item[key] = payload[key];
   });
+  if (payload.photos !== undefined || payload.photoUrl !== undefined) {
+    item.photos = normalizeFpcPhotos(payload);
+    item.photoUrl = item.photos[0]?.url || '';
+    item.photoName = item.photos[0]?.name || '';
+  }
   item.assignmentEmail = await sendAssignmentEmail({ ...item, locationName: record.locationName }, 'FPC repair item');
   item.updatedAt = new Date().toISOString();
   await writeMaintenanceKey('fpcRecords', records);
