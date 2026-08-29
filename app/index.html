@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="assets/pwa-icon-180.png">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="temperature.css">
-  <link rel="stylesheet" href="his-theme.css?v=2026-08-29-notification-preferences">
+  <link rel="stylesheet" href="his-theme.css?v=2026-08-29-pop-readerboard">
   <style>
     .receiving-issue-tools,.receiving-issue-list{width:100%;margin-top:12px}
     .receiving-issue{border-top:1px solid var(--line);padding:10px 0}
@@ -1189,6 +1189,25 @@
         <button id="saveManagerNotificationPreferencesBtn" type="button">Save my settings</button>
       </article>
 
+      <article class="card form-card collapsible-card" id="popCampaignAdminCard">
+        <h3>Monthly POP &amp; readerboard setup</h3>
+        <p class="hint">Publish the images, installation instructions, and digital readerboard message stores need now or within the next 30 days.</p>
+        <input id="popCampaignId" type="hidden">
+        <label>Campaign or promotion name<input id="popCampaignTitle" placeholder="e.g. September Blizzard promotion"></label>
+        <div class="notification-report-grid">
+          <label>Display beginning<input id="popCampaignStartDate" type="date"></label>
+          <label>Complete by<input id="popCampaignDueDate" type="date"></label>
+        </div>
+        <label>POP installation instructions<textarea id="popCampaignInstructions" rows="3" placeholder="Describe which posters, menu panels, decals, or other images must be changed."></textarea></label>
+        <label>Digital readerboard message<textarea id="popCampaignReaderboard" rows="3" placeholder="Enter the exact message that should appear on the readerboard."></textarea></label>
+        <label>POP image or instruction file<input id="popCampaignAttachment" type="file" accept="image/*,application/pdf"></label>
+        <label>Or shared file link<input id="popCampaignAttachmentUrl" type="url" placeholder="https://..."></label>
+        <div><b>Locations</b><div id="popCampaignLocations" class="location-checks"></div></div>
+        <div class="row-actions"><button id="cancelPopCampaignBtn" class="ghost" type="button" hidden>Cancel edit</button><button id="savePopCampaignBtn" type="button">Publish update</button></div>
+        <h4>Published updates</h4>
+        <div id="popCampaignAdminList"></div>
+      </article>
+
       <article class="card form-card collapsible-card">
         <h3>Add a task for today</h3>
         <label>Task description
@@ -1910,9 +1929,9 @@
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-29-3"></script>
+  <script src="version.js?v=2026-08-29-4"></script>
   <script src="auth.js?v=2026-07-29-kiosk-pin"></script>
-  <script src="app.js?v=2026-08-29-notification-preferences"></script>
+  <script src="app.js?v=2026-08-29-pop-readerboard"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>

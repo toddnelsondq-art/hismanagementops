@@ -430,6 +430,17 @@ nav button[data-view="manageView"]{order:12}
 .preference-channels{margin:8px 0}
 .notification-report-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(160px,.45fr);gap:12px}
 @media(max-width:620px){.notification-report-grid{grid-template-columns:1fr}}
+.pop-campaign-row{border-top:1px solid var(--line);padding:18px 0}
+.pop-campaign-row:first-child{border-top:0}
+.pop-campaign-row.overdue{border-left:5px solid #c33;padding-left:14px}
+.pop-campaign-heading,.pop-location-status{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.pop-campaign-heading h4{margin:0}
+.readerboard-message{margin:12px 0;padding:13px;border-radius:12px;background:#eef3fa}
+.readerboard-message p{font-size:18px;font-weight:800;color:var(--ink);white-space:pre-wrap}
+.pop-location-list{margin-top:12px}
+.pop-location-status{border-top:1px solid var(--line);padding:10px 0}
+.pop-location-status button{padding:9px 12px}
+@media(max-width:620px){.pop-campaign-heading,.pop-location-status{align-items:flex-start;flex-direction:column}.pop-campaign-heading .button-link{width:100%;text-align:center}}
 
 .page-back-button{
   display:inline-flex;

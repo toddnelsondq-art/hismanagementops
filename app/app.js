@@ -211,6 +211,7 @@ const dashboardWidgetCatalog = [
   { id: 'shortcuts', label: 'Quick links' },
   { id: 'alerts', label: 'Upcoming visits and events' },
   { id: 'upcoming', label: 'Upcoming maintenance and FPC tasks' },
+  { id: 'marketing', label: 'POP & readerboard updates', required: true },
   { id: 'incidents', label: 'Incident Reports' },
   { id: 'operations', label: 'Cleaning and temperature logs' },
   { id: 'maintenance', label: 'Maintenance work orders' },
@@ -241,6 +242,7 @@ let managerNotificationPreferences = {
     performanceReport: { cadence: 'none', sendTime: '08:00', channels: ['email'], includeTasks: true, includeTemps: true, includePm: true }
   }
 };
+let popCampaigns = { campaigns: [], canManage: false };
 let storeAlarms = { canSend: false, active: [], history: [] };
 let storeAlarmAudioContext = null;
 let storeAlarmToneTimer = null;
@@ -275,6 +277,8 @@ $('#todayLabel').textContent = new Date().toLocaleDateString(undefined, {
 if ($('#receiptDate')) $('#receiptDate').value = dateKey;
 if ($('#inspectionDate')) $('#inspectionDate').value = dateKey;
 if ($('#managementReportOccurredAt')) $('#managementReportOccurredAt').value = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+if ($('#popCampaignStartDate')) $('#popCampaignStartDate').value = dateKey;
+if ($('#popCampaignDueDate')) $('#popCampaignDueDate').value = dateKey;
 
 function setupDailyOpsLayout() {
   const todayView = $('#todayView');
@@ -399,14 +403,18 @@ function setupCustomizableDashboard() {
   inspectionCard.className = 'card dashboard-card dashboard-widget';
   inspectionCard.id = 'dashboardInspectionCard';
   inspectionCard.innerHTML = '<div><p class="eyebrow">STORE VISITS</p><h3>Inspection performance</h3></div><div id="dashboardInspectionSummary"></div><button class="ghost" data-section-view="inspectionsView" type="button">Open inspections</button>';
+  const marketingCard = document.createElement('article');
+  marketingCard.className = 'card dashboard-widget';
+  marketingCard.id = 'dashboardMarketingCard';
+  marketingCard.innerHTML = '<div class="maintenance-row compact"><div><p class="eyebrow">NOW + NEXT 30 DAYS</p><h3>POP &amp; readerboard updates</h3></div><span class="status" id="dashboardMarketingCount">0 updates</span></div><div id="dashboardMarketingList"></div>';
 
-  const widgets = { shortcuts, alerts, upcoming, incidents: incidentCard, operations: metricCards[0], maintenance: metricCards[1], fpc: metricCards[2], inspections: inspectionCard, progress };
+  const widgets = { shortcuts, alerts, upcoming, marketing: marketingCard, incidents: incidentCard, operations: metricCards[0], maintenance: metricCards[1], fpc: metricCards[2], inspections: inspectionCard, progress };
   dashboardWidgetCatalog.forEach(widget => {
     const element = widgets[widget.id];
     if (!element) return;
     element.dataset.dashboardWidget = widget.id;
     element.classList.add('dashboard-widget');
-    if (['shortcuts', 'alerts', 'upcoming', 'progress'].includes(widget.id)) element.classList.add('widget-wide');
+    if (['shortcuts', 'alerts', 'upcoming', 'marketing', 'progress'].includes(widget.id)) element.classList.add('widget-wide');
     area.appendChild(element);
   });
   metricGrid?.remove();
@@ -711,6 +719,7 @@ async function loadState() {
     alertSettings = state.alertSettings || alertSettings;
     notificationLogs = state.notificationLogs || notificationLogs;
     managerNotificationPreferences = state.managerNotificationPreferences || managerNotificationPreferences;
+    popCampaigns = state.popCampaigns || popCampaigns;
     calendarEvents = state.calendarEvents || calendarEvents;
     managementReports = state.managementReports || managementReports;
     if (state.dashboardPreferences?.preferences) {
@@ -1579,6 +1588,7 @@ function render() {
   renderTaskTemplates();
   renderAlertRules();
   renderManagerNotificationPreferences();
+  renderPopCampaigns();
   renderNotificationLogs();
   renderTemperatureStandards();
   renderInStoreReminders();
@@ -1694,7 +1704,8 @@ function canCustomizeDashboard(user = currentUser()) {
 
 function normalizeClientDashboardPreferences(value = {}) {
   const allIds = dashboardWidgetCatalog.map(widget => widget.id);
-  const visible = Array.isArray(value.visible) ? value.visible.filter(id => allIds.includes(id)) : allIds;
+  const requiredIds = dashboardWidgetCatalog.filter(widget => widget.required).map(widget => widget.id);
+  const visible = Array.isArray(value.visible) ? [...new Set([...value.visible.filter(id => allIds.includes(id)), ...requiredIds])] : allIds;
   const suppliedOrder = Array.isArray(value.order) ? value.order.filter(id => allIds.includes(id)) : [];
   return { visible: [...new Set(visible)], order: [...new Set([...suppliedOrder, ...allIds])], defaultRange: ['day', 'week', 'month'].includes(value.defaultRange) ? value.defaultRange : 'day', defaultLocationId: String(value.defaultLocationId || 'all') };
 }
@@ -1726,7 +1737,8 @@ function applyDashboardPreferences(activeUser = currentUser()) {
   area.querySelectorAll('[data-dashboard-widget]').forEach(widget => {
     const id = widget.dataset.dashboardWidget;
     const permitted = (id !== 'incidents' || canUseManagementReports(activeUser)) && (id !== 'inspections' || canAddStoreDocuments(activeUser)) && (!['operations', 'progress'].includes(id) || canUseDailyOps(activeUser));
-    widget.style.display = dashboardPreferences.visible.includes(id) && permitted ? '' : 'none';
+    const required = dashboardWidgetCatalog.find(item => item.id === id)?.required;
+    widget.style.display = (required || dashboardPreferences.visible.includes(id)) && permitted ? '' : 'none';
   });
   $('#customizeDashboardBtn').style.display = dashboardPreferencesCustomizable && canCustomizeDashboard(activeUser) ? '' : 'none';
   renderDashboardWidgetSummaries();
@@ -1741,7 +1753,7 @@ function renderDashboardCustomization() {
   $('#dashboardDefaultLocation').value = editingDashboardPreferences.defaultLocationId;
   $('#dashboardWidgetSettings').innerHTML = editingDashboardPreferences.order.map((id, index) => {
     const widget = dashboardWidgetCatalog.find(item => item.id === id);
-    return `<div class="dashboard-widget-setting"><label class="check"><input type="checkbox" data-dashboard-widget-visible="${escapeHtml(id)}" ${editingDashboardPreferences.visible.includes(id) ? 'checked' : ''}> ${escapeHtml(widget?.label || id)}</label><div class="row-actions"><button class="ghost" data-dashboard-widget-move="${escapeHtml(id)}|up" ${index === 0 ? 'disabled' : ''} type="button">Up</button><button class="ghost" data-dashboard-widget-move="${escapeHtml(id)}|down" ${index === editingDashboardPreferences.order.length - 1 ? 'disabled' : ''} type="button">Down</button></div></div>`;
+    return `<div class="dashboard-widget-setting"><label class="check"><input type="checkbox" data-dashboard-widget-visible="${escapeHtml(id)}" ${editingDashboardPreferences.visible.includes(id) ? 'checked' : ''} ${widget?.required ? 'disabled' : ''}> ${escapeHtml(widget?.label || id)}${widget?.required ? ' (always shown)' : ''}</label><div class="row-actions"><button class="ghost" data-dashboard-widget-move="${escapeHtml(id)}|up" ${index === 0 ? 'disabled' : ''} type="button">Up</button><button class="ghost" data-dashboard-widget-move="${escapeHtml(id)}|down" ${index === editingDashboardPreferences.order.length - 1 ? 'disabled' : ''} type="button">Down</button></div></div>`;
   }).join('');
 }
 
@@ -1827,6 +1839,7 @@ function renderDashboard(visibleLocations, activeUser) {
   $('#fpcChartHint').textContent = 'Current FPC repair item completion for the selected location view.';
   renderDashboardProgress();
   renderUpcomingMaintenanceTasks(visibleLocations, activeUser);
+  renderPopCampaigns();
   applyDashboardPreferences(activeUser);
 }
 
@@ -3365,6 +3378,106 @@ function renderManagerNotificationPreferences() {
   });
 }
 
+function campaignLocations(campaign) {
+  const allowed = accessibleLocationIds();
+  const selected = dashboardLocationId === 'all' ? allowed : [dashboardLocationId];
+  return (campaign.locationIds || []).filter(locationId => selected.includes(locationId));
+}
+
+function campaignIsInDashboardWindow(campaign) {
+  const startsIn = daysUntil(campaign.startDate || campaign.dueDate);
+  const incomplete = campaignLocations(campaign).some(locationId => !campaign.completions?.[locationId]);
+  return (startsIn >= 0 && startsIn <= 30) || (startsIn < 0 && incomplete);
+}
+
+function renderPopCampaigns() {
+  if (!$('#dashboardMarketingList')) return;
+  const visible = (popCampaigns.campaigns || []).filter(campaign => campaignLocations(campaign).length && campaignIsInDashboardWindow(campaign));
+  $('#dashboardMarketingCount').textContent = `${visible.length} update${visible.length === 1 ? '' : 's'}`;
+  $('#dashboardMarketingList').innerHTML = visible.length ? visible.map(campaign => {
+    const locationsHtml = campaignLocations(campaign).map(locationId => {
+      const completion = campaign.completions?.[locationId];
+      return `<div class="pop-location-status"><span><b>${escapeHtml(locationName(locationId))}</b>${completion ? ` · Completed by ${escapeHtml(completion.completedBy || 'Store team')} ${new Date(completion.completedAt).toLocaleDateString()}` : ' · Not completed'}</span>${completion ? '<span class="pill">Complete</span>' : `<button data-pop-complete="${escapeHtml(campaign.id)}|${escapeHtml(locationId)}" type="button">Mark completed</button>`}</div>`;
+    }).join('');
+    return `<article class="pop-campaign-row ${campaign.dueDate < dateKey && campaignLocations(campaign).some(id => !campaign.completions?.[id]) ? 'overdue' : ''}"><div class="pop-campaign-heading"><div><h4>${escapeHtml(campaign.title)}</h4><p class="hint">Display ${escapeHtml(prettyDate(campaign.startDate))} · Complete by ${escapeHtml(prettyDate(campaign.dueDate || campaign.startDate))}</p></div>${campaign.attachmentUrl ? `<a class="button-link ghost" href="${escapeHtml(campaign.attachmentUrl)}" target="_blank" rel="noopener">Open POP file</a>` : ''}</div>${campaign.popInstructions ? `<p><b>POP:</b> ${escapeHtml(campaign.popInstructions)}</p>` : ''}${campaign.readerboardMessage ? `<div class="readerboard-message"><b>Readerboard message</b><p>${escapeHtml(campaign.readerboardMessage)}</p></div>` : ''}<div class="pop-location-list">${locationsHtml}</div></article>`;
+  }).join('') : '<p class="hint">No POP or readerboard changes are due now or in the next 30 days.</p>';
+  renderPopCampaignAdmin();
+}
+
+function resetPopCampaignForm() {
+  $('#popCampaignId').value = '';
+  $('#popCampaignTitle').value = '';
+  $('#popCampaignStartDate').value = dateKey;
+  $('#popCampaignDueDate').value = dateKey;
+  $('#popCampaignInstructions').value = '';
+  $('#popCampaignReaderboard').value = '';
+  $('#popCampaignAttachment').value = '';
+  $('#popCampaignAttachmentUrl').value = '';
+  $('#cancelPopCampaignBtn').hidden = true;
+  $('#savePopCampaignBtn').textContent = 'Publish update';
+  renderPopCampaignAdmin();
+  document.querySelectorAll('#popCampaignLocations input').forEach(input => { input.checked = true; });
+}
+
+function renderPopCampaignAdmin() {
+  const card = $('#popCampaignAdminCard');
+  if (!card) return;
+  card.style.display = popCampaigns.canManage ? '' : 'none';
+  if (!popCampaigns.canManage) return;
+  const selected = [...document.querySelectorAll('#popCampaignLocations input:checked')].map(input => input.value);
+  const allowed = locations.filter(location => isFullAccess() || userLocationIds().includes(location.id));
+  $('#popCampaignLocations').innerHTML = allowed.map(location => `<label class="location-check"><input type="checkbox" value="${escapeHtml(location.id)}" ${selected.length ? (selected.includes(location.id) ? 'checked' : '') : 'checked'}> ${escapeHtml(location.name)}</label>`).join('');
+  $('#popCampaignAdminList').innerHTML = (popCampaigns.campaigns || []).length ? popCampaigns.campaigns.map(campaign => `<article class="card maintenance-row compact"><div><b>${escapeHtml(campaign.title)}</b><p>${escapeHtml(prettyDate(campaign.startDate))} · ${(campaign.locationIds || []).length} location${campaign.locationIds?.length === 1 ? '' : 's'}</p><p class="hint">${Object.keys(campaign.completions || {}).length} completed</p></div>${campaign.editable !== false ? `<div class="row-actions"><button data-pop-edit="${escapeHtml(campaign.id)}" type="button">Edit</button><button class="danger" data-pop-delete="${escapeHtml(campaign.id)}" type="button">Remove</button></div>` : '<span class="pill">View only</span>'}</article>`).join('') : '<p class="hint">No monthly updates have been published yet.</p>';
+}
+
+function editPopCampaign(id) {
+  const campaign = (popCampaigns.campaigns || []).find(item => item.id === id);
+  if (!campaign) return;
+  $('#popCampaignId').value = campaign.id;
+  $('#popCampaignTitle').value = campaign.title || '';
+  $('#popCampaignStartDate').value = campaign.startDate || '';
+  $('#popCampaignDueDate').value = campaign.dueDate || campaign.startDate || '';
+  $('#popCampaignInstructions').value = campaign.popInstructions || '';
+  $('#popCampaignReaderboard').value = campaign.readerboardMessage || '';
+  $('#popCampaignAttachmentUrl').value = campaign.attachmentUrl || '';
+  document.querySelectorAll('#popCampaignLocations input').forEach(input => { input.checked = (campaign.locationIds || []).includes(input.value); });
+  $('#cancelPopCampaignBtn').hidden = false;
+  $('#savePopCampaignBtn').textContent = 'Save changes';
+  $('#popCampaignAdminCard').classList.remove('collapsed');
+  $('#popCampaignAdminCard .collapsible-body').style.display = '';
+  $('#popCampaignAdminCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function savePopCampaign() {
+  const locationIds = [...document.querySelectorAll('#popCampaignLocations input:checked')].map(input => input.value);
+  if (!$('#popCampaignTitle').value.trim() || !$('#popCampaignStartDate').value) return toast('Enter a campaign name and display date');
+  if (!locationIds.length) return toast('Choose at least one location');
+  try {
+    const file = $('#popCampaignAttachment').files?.[0];
+    const attachment = file ? { name: file.name, type: file.type, dataUrl: await receiptFileToDataUrl(file) } : null;
+    popCampaigns = await api('/api/pop-campaigns/campaign', { method: 'POST', body: JSON.stringify({ id: $('#popCampaignId').value || undefined, title: $('#popCampaignTitle').value.trim(), startDate: $('#popCampaignStartDate').value, dueDate: $('#popCampaignDueDate').value || $('#popCampaignStartDate').value, popInstructions: $('#popCampaignInstructions').value.trim(), readerboardMessage: $('#popCampaignReaderboard').value.trim(), attachment, attachmentUrl: $('#popCampaignAttachmentUrl').value.trim(), locationIds }) });
+    resetPopCampaignForm(); renderPopCampaigns(); toast('POP and readerboard update published');
+  } catch (error) { toast(`Update did not save: ${error.message}`); }
+}
+
+async function completePopCampaign(id, locationId, completed = true) {
+  try {
+    popCampaigns = await api('/api/pop-campaigns/complete', { method: 'POST', body: JSON.stringify({ id, locationId, completed }) });
+    renderPopCampaigns(); toast(completed ? 'Location marked complete' : 'Completion removed');
+  } catch (error) { toast(`Completion did not save: ${error.message}`); }
+}
+
+async function deletePopCampaign(id) {
+  if (!confirm('Remove this POP and readerboard update?')) return;
+  try { popCampaigns = await api('/api/pop-campaigns/delete', { method: 'POST', body: JSON.stringify({ id }) }); resetPopCampaignForm(); renderPopCampaigns(); toast('Update removed'); }
+  catch (error) { toast(`Update did not remove: ${error.message}`); }
+}
+
+async function refreshPopCampaignsQuietly() {
+  if (!apiOnline) return;
+  try { popCampaigns = await api('/api/pop-campaigns/state'); renderPopCampaigns(); } catch {}
+}
+
 function selectedPreferenceChannels(key) {
   return [...document.querySelectorAll(`[data-pref-channel="${key}"]:checked`)].map(input => input.value);
 }
@@ -4468,6 +4581,16 @@ document.addEventListener('click', async event => {
 
   const alertDeleteButton = event.target.closest('[data-alert-delete]');
   if (alertDeleteButton) await deleteAlertRule(alertDeleteButton.dataset.alertDelete);
+
+  const popCompleteButton = event.target.closest('[data-pop-complete]');
+  if (popCompleteButton) {
+    const [campaignId, locationId] = popCompleteButton.dataset.popComplete.split('|');
+    await completePopCampaign(campaignId, locationId);
+  }
+  const popEditButton = event.target.closest('[data-pop-edit]');
+  if (popEditButton) editPopCampaign(popEditButton.dataset.popEdit);
+  const popDeleteButton = event.target.closest('[data-pop-delete]');
+  if (popDeleteButton) await deletePopCampaign(popDeleteButton.dataset.popDelete);
 
   const resourceEditButton = event.target.closest('[data-resource-edit]');
   if (resourceEditButton) editResource(resourceEditButton.dataset.resourceEdit);
@@ -5849,6 +5972,8 @@ $('#customizeDashboardBtn').onclick = openDashboardCustomization;
 $('#saveDashboardBtn').onclick = saveDashboardCustomization;
 $('#resetDashboardBtn').onclick = resetDashboardCustomization;
 $('#saveManagerNotificationPreferencesBtn').onclick = saveManagerNotificationPreferences;
+$('#savePopCampaignBtn').onclick = savePopCampaign;
+$('#cancelPopCampaignBtn').onclick = resetPopCampaignForm;
 $('#checkForUpdatesBtn').onclick = checkForAppUpdate;
 $('#helpRefreshNowBtn').onclick = refreshToAppUpdate;
 $('#refreshAppUpdateBtn').onclick = refreshToAppUpdate;
@@ -5911,6 +6036,7 @@ document.addEventListener('pointerdown', unlockStoreAlarmAudio, { once: true });
 loadState();
 window.setInterval(loadStoreAlarmState, 20000);
 window.setInterval(refreshNoticesQuietly, 60000);
+window.setInterval(refreshPopCampaignsQuietly, 300000);
 window.setInterval(() => {
   if (!dayTempsAvailable() && selectedTempSession === 'Day') render();
   else renderInStoreReminders();

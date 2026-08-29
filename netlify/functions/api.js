@@ -9,7 +9,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.12.0';
+const APP_VERSION = '1.13.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -2761,6 +2761,86 @@ async function deleteCalendarEvent(id, actor) {
   return calendarState(actor);
 }
 
+async function readPopCampaigns() {
+  const campaigns = await readMaintenanceKey('popReaderboardCampaigns', []);
+  return Array.isArray(campaigns) ? campaigns : [];
+}
+
+function popCampaignVisible(campaign, actor) {
+  if (!AUTH_REQUIRED || isFullAccess(actor)) return true;
+  const assigned = userLocationIds(actor);
+  return (campaign.locationIds || []).some(locationId => assigned.includes(locationId));
+}
+
+async function popCampaignState(actor) {
+  const campaigns = (await readPopCampaigns())
+    .filter(campaign => campaign.active !== false && popCampaignVisible(campaign, actor))
+    .sort((a, b) => String(a.startDate || a.dueDate).localeCompare(String(b.startDate || b.dueDate)))
+    .map(campaign => ({ ...campaign, editable: !AUTH_REQUIRED || (actor?.role !== MAINTENANCE_ROLE && canManage(actor) && (isFullAccess(actor) || (campaign.locationIds || []).every(locationId => userLocationIds(actor).includes(locationId)))) }));
+  return { campaigns, canManage: !AUTH_REQUIRED || (actor?.role !== MAINTENANCE_ROLE && canManage(actor)) };
+}
+
+async function savePopCampaign(payload, actor) {
+  if (AUTH_REQUIRED && (actor?.role === MAINTENANCE_ROLE || !canManage(actor))) throw Object.assign(new Error('Only Managers and above can manage POP updates'), { statusCode: 403 });
+  const title = String(payload.title || '').trim();
+  const startDate = String(payload.startDate || '').trim();
+  const dueDate = String(payload.dueDate || startDate).trim();
+  if (!title || !startDate) throw Object.assign(new Error('Campaign name and display date are required'), { statusCode: 400 });
+  const permitted = isFullAccess(actor) ? (await readLocations()).map(location => location.id) : userLocationIds(actor);
+  const requested = Array.isArray(payload.locationIds) ? [...new Set(payload.locationIds.map(String))] : [];
+  const locationIds = requested.filter(locationId => permitted.includes(locationId));
+  if (!locationIds.length) throw Object.assign(new Error('Choose at least one assigned location'), { statusCode: 400 });
+  const campaigns = await readPopCampaigns();
+  const id = payload.id || `POP-${Date.now()}`;
+  let campaign = campaigns.find(item => item.id === id);
+  if (campaign && !popCampaignVisible(campaign, actor)) throw Object.assign(new Error('You cannot edit this POP update'), { statusCode: 403 });
+  if (AUTH_REQUIRED && campaign && !isFullAccess(actor) && (campaign.locationIds || []).some(locationId => !permitted.includes(locationId))) throw Object.assign(new Error('Only a Director or Owner can edit a multi-area POP update'), { statusCode: 403 });
+  const attachmentUrl = payload.attachment?.dataUrl
+    ? await saveAttachment({ ...payload.attachment, kind: 'pop-readerboard', name: payload.attachment.name || title })
+    : String(payload.attachmentUrl || campaign?.attachmentUrl || '').trim();
+  if (!campaign) {
+    campaign = { id, completions: {}, createdAt: new Date().toISOString(), createdBy: actor?.name || 'Manager', active: true };
+    campaigns.push(campaign);
+  }
+  Object.assign(campaign, {
+    title, startDate, dueDate, locationIds,
+    popInstructions: String(payload.popInstructions || '').trim(),
+    readerboardMessage: String(payload.readerboardMessage || '').trim(),
+    attachmentUrl,
+    attachmentName: payload.attachment?.name || payload.attachmentName || campaign.attachmentName || '',
+    updatedAt: new Date().toISOString(), updatedBy: actor?.name || 'Manager', active: true
+  });
+  campaign.completions ||= {};
+  await writeMaintenanceKey('popReaderboardCampaigns', campaigns);
+  return popCampaignState(actor);
+}
+
+async function completePopCampaign(payload, actor) {
+  const campaigns = await readPopCampaigns();
+  const campaign = campaigns.find(item => item.id === payload.id && item.active !== false);
+  if (!campaign || !popCampaignVisible(campaign, actor)) throw Object.assign(new Error('POP update was not found'), { statusCode: 404 });
+  const locationId = actor?.authMode === 'kiosk' ? actor.location_id : String(payload.locationId || userLocationIds(actor)[0] || '');
+  if (!campaign.locationIds.includes(locationId) || (AUTH_REQUIRED && !canAccessLocation(actor, locationId))) throw Object.assign(new Error('You cannot complete this update for that location'), { statusCode: 403 });
+  campaign.completions ||= {};
+  if (payload.completed === false) delete campaign.completions[locationId];
+  else campaign.completions[locationId] = { completedAt: new Date().toISOString(), completedBy: actor?.name || 'Store employee', completedById: actor?.id || '' };
+  campaign.updatedAt = new Date().toISOString();
+  await writeMaintenanceKey('popReaderboardCampaigns', campaigns);
+  return popCampaignState(actor);
+}
+
+async function deletePopCampaign(id, actor) {
+  if (AUTH_REQUIRED && (actor?.role === MAINTENANCE_ROLE || !canManage(actor))) throw Object.assign(new Error('Only Managers and above can remove POP updates'), { statusCode: 403 });
+  const campaigns = await readPopCampaigns();
+  const campaign = campaigns.find(item => item.id === id);
+  if (!campaign || !popCampaignVisible(campaign, actor)) throw Object.assign(new Error('POP update was not found'), { statusCode: 404 });
+  if (AUTH_REQUIRED && !isFullAccess(actor) && (campaign.locationIds || []).some(locationId => !userLocationIds(actor).includes(locationId))) throw Object.assign(new Error('Only a Director or Owner can remove a multi-area POP update'), { statusCode: 403 });
+  campaign.active = false;
+  campaign.updatedAt = new Date().toISOString();
+  await writeMaintenanceKey('popReaderboardCampaigns', campaigns);
+  return popCampaignState(actor);
+}
+
 async function saveSmallwaresRequest(payload, actor) {
   if (AUTH_REQUIRED && !canManage(actor)) throw Object.assign(new Error('Only managers and above can request smallwares'), { statusCode: 403 });
   const locationId = payload.locationId || DEFAULT_LOCATION_ID;
@@ -2942,7 +3022,7 @@ async function updateManagementReport(payload, actor) {
   return managementReportsState(actor);
 }
 
-const DASHBOARD_WIDGETS = ['shortcuts', 'alerts', 'upcoming', 'incidents', 'operations', 'maintenance', 'fpc', 'inspections', 'progress'];
+const DASHBOARD_WIDGETS = ['shortcuts', 'alerts', 'upcoming', 'marketing', 'incidents', 'operations', 'maintenance', 'fpc', 'inspections', 'progress'];
 
 function defaultDashboardPreferences() {
   return { visible: [...DASHBOARD_WIDGETS], order: [...DASHBOARD_WIDGETS], defaultRange: 'day', defaultLocationId: 'all' };
@@ -2950,7 +3030,7 @@ function defaultDashboardPreferences() {
 
 function normalizeDashboardPreferences(value = {}) {
   const defaults = defaultDashboardPreferences();
-  const visible = Array.isArray(value.visible) ? value.visible.filter(id => DASHBOARD_WIDGETS.includes(id)) : defaults.visible;
+  const visible = Array.isArray(value.visible) ? [...new Set([...value.visible.filter(id => DASHBOARD_WIDGETS.includes(id)), 'marketing'])] : defaults.visible;
   const suppliedOrder = Array.isArray(value.order) ? value.order.filter(id => DASHBOARD_WIDGETS.includes(id)) : [];
   const order = [...new Set([...suppliedOrder, ...DASHBOARD_WIDGETS])];
   return {
@@ -3528,7 +3608,7 @@ exports.handler = async event => {
         throw Object.assign(new Error('No accessible location is assigned to this account'), { statusCode: 403 });
       }
       const historyScope = actor?.authMode === 'kiosk' ? 'location' : (query.historyScope || 'location');
-      const [day, history, overdue, taskTemplates, notices, alertSettings, notificationLogs, calendarEvents, managementReports, dashboardPreferences, managerNotificationPreferences, users, locations] = await Promise.all([
+      const [day, history, overdue, taskTemplates, notices, alertSettings, notificationLogs, calendarEvents, managementReports, dashboardPreferences, managerNotificationPreferences, popCampaigns, users, locations] = await Promise.all([
         readDay(locationId, date),
         readHistory(historyScope === 'all' ? null : locationId),
         readOverdue(date),
@@ -3540,6 +3620,7 @@ exports.handler = async event => {
         managementReportsState(actor).catch(() => ({ reports: [] })),
         dashboardPreferencesState(actor).catch(() => ({ preferences: defaultDashboardPreferences(), customizable: false })),
         managerNotificationPreferencesState(actor).catch(() => ({ allowed: false, preferences: defaultManagerNotificationPreferences() })),
+        popCampaignState(actor).catch(() => ({ campaigns: [], canManage: false })),
         readUsers(),
         readLocations()
       ]);
@@ -3557,6 +3638,7 @@ exports.handler = async event => {
         managementReports,
         dashboardPreferences,
         managerNotificationPreferences,
+        popCampaigns,
         users: actor?.authMode === 'kiosk' ? users.filter(user => user.id === actor.id) : users,
         locations
       });
@@ -3590,6 +3672,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/management-reports/state') return json(200, await managementReportsState(actor));
     if (method === 'GET' && apiPath === '/dashboard/preferences') return json(200, await dashboardPreferencesState(actor));
     if (method === 'GET' && apiPath === '/notification-preferences') return json(200, await managerNotificationPreferencesState(actor));
+    if (method === 'GET' && apiPath === '/pop-campaigns/state') return json(200, await popCampaignState(actor));
 
     if (method === 'POST' && apiPath === '/day') {
       const locationId = body.locationId || DEFAULT_LOCATION_ID;
@@ -3718,6 +3801,9 @@ exports.handler = async event => {
     if (method === 'POST' && apiPath === '/dashboard/preferences') return json(200, await saveDashboardPreferences(body, actor));
     if (method === 'POST' && apiPath === '/dashboard/preferences/reset') return json(200, await resetDashboardPreferences(actor));
     if (method === 'POST' && apiPath === '/notification-preferences') return json(200, await saveManagerNotificationPreferences(body, actor));
+    if (method === 'POST' && apiPath === '/pop-campaigns/campaign') return json(200, await savePopCampaign(body, actor));
+    if (method === 'POST' && apiPath === '/pop-campaigns/complete') return json(200, await completePopCampaign(body, actor));
+    if (method === 'POST' && apiPath === '/pop-campaigns/delete') return json(200, await deletePopCampaign(body.id, actor));
 
     if (method === 'POST' && apiPath === '/maintenance/work-order') {
       const workOrder = await writeWorkOrder(body, actor);
