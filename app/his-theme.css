@@ -424,6 +424,13 @@ nav button[data-view="manageView"]{order:12}
   background:conic-gradient(#16a34a calc(var(--pct) * 1%), #e9eff6 0);
 }
 
+.preference-setting{border-top:1px solid var(--line);padding:15px 0}
+.preference-setting:first-of-type{margin-top:12px}
+.preference-setting h4{margin:0 0 8px}
+.preference-channels{margin:8px 0}
+.notification-report-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(160px,.45fr);gap:12px}
+@media(max-width:620px){.notification-report-grid{grid-template-columns:1fr}}
+
 .page-back-button{
   display:inline-flex;
   align-items:center;

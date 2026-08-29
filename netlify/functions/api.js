@@ -9,7 +9,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.11.2';
+const APP_VERSION = '1.12.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -1626,6 +1626,7 @@ async function readNotices(actor = null) {
   const actorRole = actor?.role || '';
   return notices
     .filter(notice => notice.active !== false)
+    .filter(notice => !Array.isArray(notice.targetUserIds) || !notice.targetUserIds.length || notice.targetUserIds.includes(actorId))
     .filter(notice => !Array.isArray(notice.targetRoles) || !notice.targetRoles.length || notice.targetRoles.includes(actorRole))
     .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
     .map(notice => ({
@@ -2053,7 +2054,119 @@ async function checkAlerts(query = {}, actor = null) {
     }))));
   }
   const storeAlarmEscalations = dryRun ? [] : await escalateStoreAlarms(now);
-  return { dryRun, date, alerts, storeAlarmEscalations };
+  const managerNotifications = dryRun ? { sent: [] } : await checkManagerNotificationSchedules(now);
+  return { dryRun, date, alerts, storeAlarmEscalations, managerNotifications };
+}
+
+function localWeekday(now = new Date()) {
+  return new Intl.DateTimeFormat('en-US', { timeZone: ALERT_TIME_ZONE, weekday: 'long' }).format(now);
+}
+
+function reportPeriodKey(cadence, date) {
+  if (cadence === 'daily') return date;
+  if (cadence === 'monthly') return date.slice(0, 7);
+  const value = new Date(`${date}T12:00:00Z`);
+  value.setUTCDate(value.getUTCDate() - value.getUTCDay());
+  return value.toISOString().slice(0, 10);
+}
+
+function reportIsDue(report, now) {
+  if (!report || report.cadence === 'none' || !timeHasPassed(report.sendTime, now)) return false;
+  if (report.cadence === 'weekly') return localWeekday(now) === 'Monday';
+  if (report.cadence === 'monthly') return localDate(ALERT_TIME_ZONE, now).endsWith('-01');
+  return report.cadence === 'daily';
+}
+
+async function performanceReportText(user, preferences) {
+  const range = preferences.performanceReport.cadence === 'daily' ? 'day' : preferences.performanceReport.cadence === 'weekly' ? 'week' : 'month';
+  const summary = await dashboardSummary(user, range, 'all');
+  const { dates } = dateRange(range);
+  const [locations, templates, definitions] = await Promise.all([readLocations(), readTaskTemplates(), readTemperatureDefinitions()]);
+  const assigned = isFullAccess(user) ? locations : locations.filter(location => userLocationIds(user).includes(location.id));
+  const tasks = { completed: 0, total: 0 }, temps = { completed: 0, total: 0 };
+  for (const location of assigned) for (const date of dates) {
+    const payload = await readDay(location.id, date);
+    const scheduled = Array.isArray(payload.tasks) ? payload.tasks : templates.filter(task => task.active !== false && taskScheduledForDate(task, location.id, date));
+    tasks.total += scheduled.length;
+    tasks.completed += scheduled.filter(task => task.done).length;
+    const required = new Set();
+    Object.entries(definitions).filter(([, list]) => list.requiredDaily !== false).forEach(([listName, list]) => Object.entries(list.areas || {}).forEach(([area, items]) => items.forEach(item => ['Day', 'Afternoon'].forEach(session => required.add(`${listName}|${area}|${item}|${session}`)))));
+    const logged = new Set((payload.temps || []).map(temp => `${readingList(temp)}|${temp.area}|${temp.item}|${readingSession(temp)}`));
+    temps.total += required.size;
+    temps.completed += [...required].filter(key => logged.has(key)).length;
+  }
+  const lines = [`HIS OPS ${preferences.performanceReport.cadence} performance report`, `${summary.start} through ${summary.end}`];
+  if (preferences.performanceReport.includeTasks) lines.push(`Tasks: ${tasks.completed} of ${tasks.total} completed (${dashboardPercent(tasks.completed, tasks.total)}%).`);
+  if (preferences.performanceReport.includeTemps) lines.push(`Temperature checks: ${temps.completed} of ${temps.total} completed (${dashboardPercent(temps.completed, temps.total)}%).`);
+  if (preferences.performanceReport.includePm) lines.push(`Maintenance and PM: ${summary.maintenance.completed} completed; ${summary.maintenance.open} still open.`);
+  if (summary.progress?.mode === 'locations') (summary.progress.rows || []).forEach(row => lines.push(`${row.label}: ${row.percent}% of daily operations completed.`));
+  return lines.join('\n');
+}
+
+async function checkManagerNotificationSchedules(now = new Date()) {
+  const [users, locations, stored, deliveryState, definitions] = await Promise.all([
+    readUsers(), readLocations(), readMaintenanceKey('managerNotificationPreferences', {}),
+    readMaintenanceKey('managerNotificationDeliveryState', {}), readTemperatureDefinitions()
+  ]);
+  const date = localDate(ALERT_TIME_ZONE, now);
+  const sent = [];
+  for (const user of users.filter(managerNotificationAllowed)) {
+    const preferences = normalizeManagerNotificationPreferences(stored[user.id] || {});
+    const assigned = isFullAccess(user) ? locations : locations.filter(location => userLocationIds(user).includes(location.id));
+    if (preferences.incompleteTemps.enabled && timeHasPassed(preferences.incompleteTemps.dueTime, now)) {
+      for (const location of assigned) {
+        const key = `${user.id}|incompleteTemps|${location.id}|${date}`;
+        if (deliveryState[key]) continue;
+        const dayPayload = await readDay(location.id, date);
+        const required = Object.keys(definitions).filter(name => definitions[name]?.requiredDaily !== false);
+        const details = required.flatMap(name => ['Day', 'Afternoon'].map(session => ({ name, session, ...tempListIncomplete(dayPayload, `${name}|${session}`, definitions) }))).filter(item => item.incomplete);
+        if (!details.length) continue;
+        const text = `${location.name}: required temperature logs are incomplete after ${preferences.incompleteTemps.dueTime}. ${details.map(item => `${item.name} ${item.session}: ${item.detail}`).join('; ')}`;
+        sent.push(...await sendPreferredNotification({ recipient: user, channels: preferences.incompleteTemps.channels, type: 'Incomplete temperature log', title: 'HIS OPS temperature log reminder', text, locationId: location.id, locationName: location.name }));
+        deliveryState[key] = new Date().toISOString();
+      }
+    }
+    if (reportIsDue(preferences.performanceReport, now)) {
+      const period = reportPeriodKey(preferences.performanceReport.cadence, date);
+      const key = `${user.id}|performanceReport|${preferences.performanceReport.cadence}|${period}`;
+      if (!deliveryState[key]) {
+        const text = await performanceReportText(user, preferences);
+        sent.push(...await sendPreferredNotification({ recipient: user, channels: preferences.performanceReport.channels, type: 'Performance report', title: `HIS OPS ${preferences.performanceReport.cadence} performance report`, text }));
+        deliveryState[key] = new Date().toISOString();
+      }
+    }
+  }
+  await writeMaintenanceKey('managerNotificationDeliveryState', deliveryState);
+  return { sent };
+}
+
+async function notifyOutOfRangeTemperature(locationId, readings = []) {
+  if (!readings.length) return [];
+  const [users, locations, stored] = await Promise.all([readUsers(), readLocations(), readMaintenanceKey('managerNotificationPreferences', {})]);
+  const location = locations.find(item => item.id === locationId);
+  const sent = [];
+  for (const user of users.filter(managerNotificationAllowed).filter(item => isFullAccess(item) || userLocationIds(item).includes(locationId))) {
+    const preferences = normalizeManagerNotificationPreferences(stored[user.id] || {});
+    if (!preferences.outOfRangeTemps.enabled) continue;
+    const text = readings.map(reading => `${location?.name || locationId}: ${reading.item || 'Temperature'} was ${reading.value}°F. Action: ${reading.correctiveAction || 'Corrective action recorded'}.`).join('\n');
+    sent.push(...await sendPreferredNotification({ recipient: user, channels: preferences.outOfRangeTemps.channels, type: 'Out-of-range temperature', title: 'HIS OPS out-of-range temperature', text, locationId, locationName: location?.name || locationId }));
+  }
+  return sent;
+}
+
+async function notifyNewMaintenanceRequest(workOrder) {
+  const [users, appLocations, maintenanceLocations, stored] = await Promise.all([readUsers(), readLocations(), readMaintenanceKey('locations', []), readMaintenanceKey('managerNotificationPreferences', {})]);
+  const maintenanceLocation = maintenanceLocations.find(item => String(item['Location ID']) === String(workOrder['Location ID']));
+  const locationName = workOrder['Location Name'] || maintenanceLocation?.['Location Name'] || '';
+  const appLocation = appLocations.find(item => item.name === locationName);
+  const sent = [];
+  for (const user of users.filter(item => canAreaManage(item) && (isFullAccess(item) || (appLocation && userLocationIds(item).includes(appLocation.id))))) {
+    const preferences = normalizeManagerNotificationPreferences(stored[user.id] || {});
+    if (!preferences.newMaintenanceRequest.enabled) continue;
+    const text = `${locationName || 'An assigned location'} submitted ${workOrder['Work Order ID']}: ${workOrder['Issue Description'] || workOrder.Category || 'New maintenance request'}. Priority: ${workOrder.Priority || 'Medium'}.`;
+    sent.push(...await sendPreferredNotification({ recipient: user, channels: preferences.newMaintenanceRequest.channels, type: 'New maintenance request', title: 'HIS OPS new maintenance request', text, locationId: appLocation?.id || '', locationName }));
+  }
+  return sent;
 }
 
 async function readFpcRecords() {
@@ -2214,6 +2327,88 @@ async function saveStoreDocument(payload, actor) {
   });
   await writeMaintenanceKey('storeDocuments', documents);
   return storeDocumentsState();
+}
+
+function defaultManagerNotificationPreferences() {
+  return {
+    incompleteTemps: { enabled: false, dueTime: '14:00', channels: ['in-app'] },
+    outOfRangeTemps: { enabled: false, channels: ['in-app'] },
+    newMaintenanceRequest: { enabled: false, channels: ['in-app'] },
+    performanceReport: { cadence: 'none', sendTime: '08:00', channels: ['email'], includeTasks: true, includeTemps: true, includePm: true }
+  };
+}
+
+function managerNotificationAllowed(actor) {
+  return Boolean(actor && actor.role !== MAINTENANCE_ROLE && canManage(actor));
+}
+
+function cleanChannels(channels, fallback = ['in-app']) {
+  const allowed = new Set(['email', 'sms', 'in-app']);
+  const clean = Array.isArray(channels) ? [...new Set(channels.filter(channel => allowed.has(channel)))] : [];
+  return clean.length ? clean : fallback;
+}
+
+function normalizeManagerNotificationPreferences(input = {}) {
+  const defaults = defaultManagerNotificationPreferences();
+  const validTime = value => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value || ''));
+  const cadence = ['none', 'daily', 'weekly', 'monthly'].includes(input.performanceReport?.cadence) ? input.performanceReport.cadence : 'none';
+  return {
+    incompleteTemps: {
+      enabled: Boolean(input.incompleteTemps?.enabled),
+      dueTime: validTime(input.incompleteTemps?.dueTime) ? input.incompleteTemps.dueTime : defaults.incompleteTemps.dueTime,
+      channels: cleanChannels(input.incompleteTemps?.channels)
+    },
+    outOfRangeTemps: { enabled: Boolean(input.outOfRangeTemps?.enabled), channels: cleanChannels(input.outOfRangeTemps?.channels) },
+    newMaintenanceRequest: { enabled: Boolean(input.newMaintenanceRequest?.enabled), channels: cleanChannels(input.newMaintenanceRequest?.channels) },
+    performanceReport: {
+      cadence,
+      sendTime: validTime(input.performanceReport?.sendTime) ? input.performanceReport.sendTime : defaults.performanceReport.sendTime,
+      channels: cleanChannels(input.performanceReport?.channels, ['email']),
+      includeTasks: input.performanceReport?.includeTasks !== false,
+      includeTemps: input.performanceReport?.includeTemps !== false,
+      includePm: input.performanceReport?.includePm !== false
+    }
+  };
+}
+
+async function managerNotificationPreferencesState(actor) {
+  const allowed = !AUTH_REQUIRED || managerNotificationAllowed(actor);
+  if (!allowed) return { allowed: false, preferences: defaultManagerNotificationPreferences() };
+  const stored = await readMaintenanceKey('managerNotificationPreferences', {});
+  return { allowed: true, preferences: normalizeManagerNotificationPreferences(stored?.[actor?.id] || {}) };
+}
+
+async function saveManagerNotificationPreferences(payload, actor) {
+  if (AUTH_REQUIRED && !managerNotificationAllowed(actor)) throw Object.assign(new Error('Notification settings are available to Managers and above'), { statusCode: 403 });
+  const stored = await readMaintenanceKey('managerNotificationPreferences', {});
+  const preferences = normalizeManagerNotificationPreferences(payload.preferences || payload);
+  stored[actor?.id || 'local-manager'] = { ...preferences, updatedAt: new Date().toISOString() };
+  await writeMaintenanceKey('managerNotificationPreferences', stored);
+  return { allowed: true, preferences };
+}
+
+async function addPersonalAppNotice(recipient, title, message) {
+  const notices = await readMaintenanceKey('notices', []);
+  notices.push({ id: `notice-personal-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`, title, message, targetUserIds: [recipient.id], createdBy: 'HIS OPS', createdAt: new Date().toISOString(), readBy: [], active: true });
+  await writeMaintenanceKey('notices', notices.slice(-2000));
+  return { delivered: true };
+}
+
+async function sendPreferredNotification({ recipient, channels, type, title, text, locationId = '', locationName = '' }) {
+  const logs = [];
+  for (const channel of cleanChannels(channels)) {
+    let result;
+    try {
+      if (channel === 'email') result = await sendEmailMessage({ to: recipient.email, subject: title, text });
+      else if (channel === 'sms') result = await sendTwilioSms(recipient.phone, text);
+      else result = await addPersonalAppNotice(recipient, title, text);
+    } catch (error) {
+      result = { delivered: false, reason: error.message || 'Notification provider failed' };
+    }
+    logs.push({ type, channel, title, detail: text, locationId, locationName, recipientId: recipient.id, recipientName: recipient.name, to: channel === 'email' ? recipient.email : channel === 'sms' ? recipient.phone : 'HIS OPS', delivered: Boolean(result.delivered), skipped: Boolean(result.skipped), status: result.status ? String(result.status) : '', reason: result.reason || '' });
+  }
+  await appendNotificationLogs(logs);
+  return logs;
 }
 
 async function importSpreadsheetChecklistTemplates(payload = {}, actor) {
@@ -3049,6 +3244,7 @@ async function writeWorkOrder(payload, actor) {
   workOrders.push(item);
   item.assignmentEmail = await sendAssignmentEmail({ ...item, title: item['Issue Description'], locationName: item['Location Name'] }, 'work order');
   await writeMaintenanceKey('workOrders', workOrders);
+  await notifyNewMaintenanceRequest(item).catch(error => console.error('Manager maintenance notification failed', error));
   return item;
 }
 
@@ -3332,7 +3528,7 @@ exports.handler = async event => {
         throw Object.assign(new Error('No accessible location is assigned to this account'), { statusCode: 403 });
       }
       const historyScope = actor?.authMode === 'kiosk' ? 'location' : (query.historyScope || 'location');
-      const [day, history, overdue, taskTemplates, notices, alertSettings, notificationLogs, calendarEvents, managementReports, dashboardPreferences, users, locations] = await Promise.all([
+      const [day, history, overdue, taskTemplates, notices, alertSettings, notificationLogs, calendarEvents, managementReports, dashboardPreferences, managerNotificationPreferences, users, locations] = await Promise.all([
         readDay(locationId, date),
         readHistory(historyScope === 'all' ? null : locationId),
         readOverdue(date),
@@ -3343,6 +3539,7 @@ exports.handler = async event => {
         calendarState(actor).catch(() => ({ events: [] })),
         managementReportsState(actor).catch(() => ({ reports: [] })),
         dashboardPreferencesState(actor).catch(() => ({ preferences: defaultDashboardPreferences(), customizable: false })),
+        managerNotificationPreferencesState(actor).catch(() => ({ allowed: false, preferences: defaultManagerNotificationPreferences() })),
         readUsers(),
         readLocations()
       ]);
@@ -3359,6 +3556,7 @@ exports.handler = async event => {
         calendarEvents,
         managementReports,
         dashboardPreferences,
+        managerNotificationPreferences,
         users: actor?.authMode === 'kiosk' ? users.filter(user => user.id === actor.id) : users,
         locations
       });
@@ -3391,12 +3589,13 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/smallwares/state') return json(200, await smallwaresState());
     if (method === 'GET' && apiPath === '/management-reports/state') return json(200, await managementReportsState(actor));
     if (method === 'GET' && apiPath === '/dashboard/preferences') return json(200, await dashboardPreferencesState(actor));
+    if (method === 'GET' && apiPath === '/notification-preferences') return json(200, await managerNotificationPreferencesState(actor));
 
     if (method === 'POST' && apiPath === '/day') {
       const locationId = body.locationId || DEFAULT_LOCATION_ID;
       if (AUTH_REQUIRED && !canAccessLocation(actor, locationId)) throw Object.assign(new Error('You do not have access to that location'), { statusCode: 403 });
+      const savedDay = await readDay(locationId, body.date);
       if (body.date === localDate() && localHour() >= 14) {
-        const savedDay = await readDay(locationId, body.date);
         const savedDayTemps = (savedDay.temps || []).filter(reading => readingSession(reading) === 'Day').length;
         const submittedDayTemps = (body.day?.temps || []).filter(reading => readingSession(reading) === 'Day').length;
         if (submittedDayTemps > savedDayTemps) {
@@ -3404,6 +3603,10 @@ exports.handler = async event => {
         }
       }
       await writeDay(locationId, body.date, body.day);
+      const readingKey = reading => `${reading.list || ''}|${reading.session || ''}|${reading.area || ''}|${reading.item || ''}|${reading.value}|${reading.time || ''}`;
+      const priorReadings = new Set((savedDay.temps || []).map(readingKey));
+      const newOutOfRange = (body.day?.temps || []).filter(reading => (reading.outOfRange || reading.correctiveAction) && !priorReadings.has(readingKey(reading)));
+      if (newOutOfRange.length) await notifyOutOfRangeTemperature(locationId, newOutOfRange).catch(error => console.error('Temperature notification failed', error));
       return json(200, {
         history: await readHistory(locationId),
         overdue: await readOverdue(body.date)
@@ -3514,6 +3717,7 @@ exports.handler = async event => {
     if (method === 'POST' && apiPath === '/management-reports/update') return json(200, await updateManagementReport(body, actor));
     if (method === 'POST' && apiPath === '/dashboard/preferences') return json(200, await saveDashboardPreferences(body, actor));
     if (method === 'POST' && apiPath === '/dashboard/preferences/reset') return json(200, await resetDashboardPreferences(actor));
+    if (method === 'POST' && apiPath === '/notification-preferences') return json(200, await saveManagerNotificationPreferences(body, actor));
 
     if (method === 'POST' && apiPath === '/maintenance/work-order') {
       const workOrder = await writeWorkOrder(body, actor);

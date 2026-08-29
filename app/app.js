@@ -232,6 +232,15 @@ let pendingChecklistImport = [];
 let notices = [];
 let alertSettings = { rules: [], logs: [] };
 let notificationLogs = [];
+let managerNotificationPreferences = {
+  allowed: false,
+  preferences: {
+    incompleteTemps: { enabled: false, dueTime: '14:00', channels: ['in-app'] },
+    outOfRangeTemps: { enabled: false, channels: ['in-app'] },
+    newMaintenanceRequest: { enabled: false, channels: ['in-app'] },
+    performanceReport: { cadence: 'none', sendTime: '08:00', channels: ['email'], includeTasks: true, includeTemps: true, includePm: true }
+  }
+};
 let storeAlarms = { canSend: false, active: [], history: [] };
 let storeAlarmAudioContext = null;
 let storeAlarmToneTimer = null;
@@ -701,6 +710,7 @@ async function loadState() {
     notices = state.notices || [];
     alertSettings = state.alertSettings || alertSettings;
     notificationLogs = state.notificationLogs || notificationLogs;
+    managerNotificationPreferences = state.managerNotificationPreferences || managerNotificationPreferences;
     calendarEvents = state.calendarEvents || calendarEvents;
     managementReports = state.managementReports || managementReports;
     if (state.dashboardPreferences?.preferences) {
@@ -1568,6 +1578,7 @@ function render() {
   renderHistory();
   renderTaskTemplates();
   renderAlertRules();
+  renderManagerNotificationPreferences();
   renderNotificationLogs();
   renderTemperatureStandards();
   renderInStoreReminders();
@@ -3316,6 +3327,74 @@ function reportMarkup(report) {
     </article>
     ${(entry.receivingIssues || []).length ? `<article class="card report-card"><h3>Receiving issues</h3>${entry.receivingIssues.map(issue => `<div class="report-line"><span>!</span><div><b>${escapeHtml(issue.note || 'Photo-only issue')}</b><p>${escapeHtml(formatClockTime(issue.time || ''))}${issue.userName ? ` · ${escapeHtml(issue.userName)}` : ''}</p>${issue.photoUrl ? `<a href="${escapeHtml(fullPhotoUrl(issue.photoUrl))}" target="_blank" rel="noopener">View photo</a>` : issue.photoData ? `<a href="${escapeHtml(issue.photoData)}" target="_blank" rel="noopener">View photo</a>` : ''}</div></div>`).join('')}</article>` : ''}
   `;
+}
+
+async function refreshNoticesQuietly() {
+  if (!apiOnline) return;
+  try {
+    notices = (await api('/api/notices')).notices || [];
+    renderNotices();
+  } catch {}
+}
+
+function preferenceChannelHtml(key, channels = []) {
+  const options = [['sms', 'Text'], ['email', 'Email'], ['in-app', 'App notification']];
+  return `<b>Send by</b><div class="location-checks">${options.map(([value, label]) => `<label class="location-check"><input type="checkbox" data-pref-channel="${escapeHtml(key)}" value="${value}" ${channels.includes(value) ? 'checked' : ''}> ${label}</label>`).join('')}</div>`;
+}
+
+function renderManagerNotificationPreferences() {
+  const card = $('#managerNotificationPreferencesCard');
+  if (!card) return;
+  const allowed = Boolean(managerNotificationPreferences.allowed && canUseManage() && !isMaintenanceTech());
+  card.style.display = allowed ? '' : 'none';
+  if (!allowed) return;
+  const prefs = managerNotificationPreferences.preferences;
+  $('#prefIncompleteTempsEnabled').checked = Boolean(prefs.incompleteTemps.enabled);
+  $('#prefIncompleteTempsTime').value = prefs.incompleteTemps.dueTime || '14:00';
+  $('#prefOutOfRangeEnabled').checked = Boolean(prefs.outOfRangeTemps.enabled);
+  $('#prefMaintenanceEnabled').checked = Boolean(prefs.newMaintenanceRequest.enabled);
+  $('#prefMaintenanceRequestRow').style.display = isAboveStore() ? '' : 'none';
+  $('#prefReportCadence').value = prefs.performanceReport.cadence || 'none';
+  $('#prefReportTime').value = prefs.performanceReport.sendTime || '08:00';
+  $('#prefReportTasks').checked = prefs.performanceReport.includeTasks !== false;
+  $('#prefReportTemps').checked = prefs.performanceReport.includeTemps !== false;
+  $('#prefReportPm').checked = prefs.performanceReport.includePm !== false;
+  document.querySelectorAll('[data-preference-channels]').forEach(container => {
+    const key = container.dataset.preferenceChannels;
+    container.innerHTML = preferenceChannelHtml(key, prefs[key]?.channels || []);
+  });
+}
+
+function selectedPreferenceChannels(key) {
+  return [...document.querySelectorAll(`[data-pref-channel="${key}"]:checked`)].map(input => input.value);
+}
+
+async function saveManagerNotificationPreferences() {
+  const channels = key => selectedPreferenceChannels(key);
+  const enabledKeys = [
+    ['prefIncompleteTempsEnabled', 'incompleteTemps'],
+    ['prefOutOfRangeEnabled', 'outOfRangeTemps'],
+    ['prefMaintenanceEnabled', 'newMaintenanceRequest']
+  ];
+  for (const [inputId, key] of enabledKeys) {
+    if ($(`#${inputId}`).checked && !channels(key).length) return toast('Choose at least one delivery method for each enabled alert');
+  }
+  if ($('#prefReportCadence').value !== 'none' && !channels('performanceReport').length) return toast('Choose how to deliver the performance report');
+  try {
+    managerNotificationPreferences = await api('/api/notification-preferences', {
+      method: 'POST',
+      body: JSON.stringify({ preferences: {
+        incompleteTemps: { enabled: $('#prefIncompleteTempsEnabled').checked, dueTime: $('#prefIncompleteTempsTime').value || '14:00', channels: channels('incompleteTemps') },
+        outOfRangeTemps: { enabled: $('#prefOutOfRangeEnabled').checked, channels: channels('outOfRangeTemps') },
+        newMaintenanceRequest: { enabled: $('#prefMaintenanceEnabled').checked, channels: channels('newMaintenanceRequest') },
+        performanceReport: { cadence: $('#prefReportCadence').value, sendTime: $('#prefReportTime').value || '08:00', channels: channels('performanceReport'), includeTasks: $('#prefReportTasks').checked, includeTemps: $('#prefReportTemps').checked, includePm: $('#prefReportPm').checked }
+      } })
+    });
+    renderManagerNotificationPreferences();
+    toast('Your notification settings were saved');
+  } catch (error) {
+    toast(`Settings did not save: ${error.message}`);
+  }
 }
 
 function reportDocument(reports) {
@@ -5703,7 +5782,7 @@ $('#createKioskCodeBtn').onclick = async () => {
     toast(`Could not create setup code: ${error.message}`);
   }
 };
-$('#noticesBtn').onclick = () => switchView('noticesView');
+$('#noticesBtn').onclick = async () => { await refreshNoticesQuietly(); switchView('noticesView'); };
 $('#addTemplateTaskBtn').onclick = savePermanentTask;
 $('#checklistImportFile').onchange = event => previewChecklistImport(event.target.files?.[0]);
 $('#importChecklistItemsBtn').onclick = importChecklistItems;
@@ -5769,6 +5848,7 @@ $('#rolloutLocation').onchange = event => { rolloutLocationId = event.target.val
 $('#customizeDashboardBtn').onclick = openDashboardCustomization;
 $('#saveDashboardBtn').onclick = saveDashboardCustomization;
 $('#resetDashboardBtn').onclick = resetDashboardCustomization;
+$('#saveManagerNotificationPreferencesBtn').onclick = saveManagerNotificationPreferences;
 $('#checkForUpdatesBtn').onclick = checkForAppUpdate;
 $('#helpRefreshNowBtn').onclick = refreshToAppUpdate;
 $('#refreshAppUpdateBtn').onclick = refreshToAppUpdate;
@@ -5830,6 +5910,7 @@ setupAppUpdateFlow();
 document.addEventListener('pointerdown', unlockStoreAlarmAudio, { once: true });
 loadState();
 window.setInterval(loadStoreAlarmState, 20000);
+window.setInterval(refreshNoticesQuietly, 60000);
 window.setInterval(() => {
   if (!dayTempsAvailable() && selectedTempSession === 'Day') render();
   else renderInStoreReminders();

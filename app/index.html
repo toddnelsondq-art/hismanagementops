@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="assets/pwa-icon-180.png">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="temperature.css">
-  <link rel="stylesheet" href="his-theme.css?v=2026-08-29-resource-locations">
+  <link rel="stylesheet" href="his-theme.css?v=2026-08-29-notification-preferences">
   <style>
     .receiving-issue-tools,.receiving-issue-list{width:100%;margin-top:12px}
     .receiving-issue{border-top:1px solid var(--line);padding:10px 0}
@@ -1156,6 +1156,39 @@
         <button class="section-hub-card" data-section-view="helpView" type="button"><span>?</span><b>Help</b><small>Navigation and feature guide</small></button>
       </div>
 
+      <article class="card form-card collapsible-card" id="managerNotificationPreferencesCard" data-start-open="true">
+        <h3>My notifications &amp; reports</h3>
+        <p class="hint">Choose your own alerts for assigned locations. Texts go to your employee phone number and emails go to your employee email address.</p>
+        <div class="preference-setting">
+          <label class="check"><input type="checkbox" id="prefIncompleteTempsEnabled"> Temperature logs are not complete by</label>
+          <input id="prefIncompleteTempsTime" type="time" value="14:00">
+          <div class="preference-channels" data-preference-channels="incompleteTemps"></div>
+        </div>
+        <div class="preference-setting">
+          <label class="check"><input type="checkbox" id="prefOutOfRangeEnabled"> A temperature is outside its allowed range</label>
+          <div class="preference-channels" data-preference-channels="outOfRangeTemps"></div>
+        </div>
+        <div class="preference-setting" id="prefMaintenanceRequestRow">
+          <label class="check"><input type="checkbox" id="prefMaintenanceEnabled"> A new maintenance request is submitted for one of my locations</label>
+          <div class="preference-channels" data-preference-channels="newMaintenanceRequest"></div>
+          <p class="hint">This option applies to Area Managers, Directors, and Owners.</p>
+        </div>
+        <div class="preference-setting">
+          <h4>Location performance report</h4>
+          <div class="notification-report-grid">
+            <label>Frequency<select id="prefReportCadence"><option value="none">Do not send</option><option value="daily">Daily</option><option value="weekly">Weekly — Monday</option><option value="monthly">Monthly — first day</option></select></label>
+            <label>Send after<input id="prefReportTime" type="time" value="08:00"></label>
+          </div>
+          <div class="preference-channels" data-preference-channels="performanceReport"></div>
+          <div class="location-checks">
+            <label class="location-check"><input type="checkbox" id="prefReportTasks" checked> Checklist completion</label>
+            <label class="location-check"><input type="checkbox" id="prefReportTemps" checked> Temperature completion</label>
+            <label class="location-check"><input type="checkbox" id="prefReportPm" checked> Maintenance &amp; PM status</label>
+          </div>
+        </div>
+        <button id="saveManagerNotificationPreferencesBtn" type="button">Save my settings</button>
+      </article>
+
       <article class="card form-card collapsible-card">
         <h3>Add a task for today</h3>
         <label>Task description
@@ -1877,9 +1910,9 @@
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-29-2"></script>
+  <script src="version.js?v=2026-08-29-3"></script>
   <script src="auth.js?v=2026-07-29-kiosk-pin"></script>
-  <script src="app.js?v=2026-08-29-resource-locations"></script>
+  <script src="app.js?v=2026-08-29-notification-preferences"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>
