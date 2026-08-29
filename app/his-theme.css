@@ -441,6 +441,22 @@ nav button[data-view="manageView"]{order:12}
   line-height:1;
 }
 
+.resource-location-picker{
+  margin:14px 0;
+  padding:12px;
+  border:1px solid #d9e2ee;
+  border-radius:12px;
+}
+
+.resource-location-picker legend{
+  padding:0 6px;
+  font-weight:750;
+}
+
+.resource-location-picker .hint{
+  margin:4px 0 9px;
+}
+
 .help-intro p{
   margin-top:8px;
   color:var(--muted);

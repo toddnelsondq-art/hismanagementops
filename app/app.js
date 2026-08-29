@@ -2122,18 +2122,33 @@ function resourcesVisibleLocations() {
   return locations.filter(location => isFullAccess() || userLocationIds().includes(location.id));
 }
 
+function resourceLocationIds(resource = {}) {
+  if (Array.isArray(resource.locationIds) && resource.locationIds.length) return resource.locationIds.map(String);
+  return resource.locationId && resource.locationId !== 'all' ? [String(resource.locationId)] : [];
+}
+
+function resourceLocationLabel(resource = {}) {
+  const assigned = resourceLocationIds(resource);
+  if (!assigned.length) return 'All assigned locations';
+  const names = assigned.map(locationName);
+  return names.length <= 2 ? names.join(', ') : `${names.length} selected locations`;
+}
+
 function scopedResources() {
   const actor = currentUser();
   const allowed = resourcesVisibleLocations().map(location => location.id);
   const list = (resources.resources || []).filter(resource => {
     if (resource.active === false) return false;
-    const resourceLocation = resource.locationId || 'all';
-    const locationAllowed = resourceLocation === 'all' || allowed.includes(resourceLocation);
+    const assignedLocations = resourceLocationIds(resource);
+    const locationAllowed = !assignedLocations.length || assignedLocations.some(locationId => allowed.includes(locationId));
     const roleAllowed = roleRank(actor.role) >= roleRank(resource.minRole || 'Employee');
     return locationAllowed && roleAllowed;
   });
   if (resourcesLocationId === 'all') return list;
-  return list.filter(resource => (resource.locationId || 'all') === 'all' || resource.locationId === resourcesLocationId);
+  return list.filter(resource => {
+    const assignedLocations = resourceLocationIds(resource);
+    return !assignedLocations.length || assignedLocations.includes(resourcesLocationId);
+  });
 }
 
 function smallwaresVisibleLocations() {
@@ -2559,13 +2574,16 @@ function renderResources() {
   $('#resourcesLocation').value = resourcesLocationId;
   resourcesLocationId = $('#resourcesLocation').value;
 
-  if ($('#resourceLocation')) {
-    const selectedAdminLocation = $('#resourceLocation').value || 'all';
-    $('#resourceLocation').innerHTML = [
-      '<option value="all">All assigned locations</option>',
-      ...visibleLocations.map(location => `<option value="${location.id}">${escapeHtml(location.name)}</option>`)
-    ].join('');
-    $('#resourceLocation').value = [...$('#resourceLocation').options].some(option => option.value === selectedAdminLocation) ? selectedAdminLocation : 'all';
+  if ($('#resourceLocations')) {
+    const initialized = $('#resourceLocations').children.length > 0;
+    const selectedIds = initialized
+      ? [...document.querySelectorAll('#resourceLocations input:checked')].map(input => input.value)
+      : [];
+    const allSelected = initialized ? $('#resourceAllLocations').checked : true;
+    $('#resourceLocations').innerHTML = visibleLocations.map(location => `
+      <label class="location-check"><input type="checkbox" value="${escapeHtml(location.id)}" ${selectedIds.includes(location.id) ? 'checked' : ''} ${allSelected ? 'disabled' : ''}> ${escapeHtml(location.name)}</label>
+    `).join('');
+    $('#resourceAllLocations').checked = allSelected;
   }
   $('#resourcesAdminCard').style.display = canManageResources() ? '' : 'none';
   document.querySelectorAll('#resourcesSectionHub [data-section-view]').forEach(button => {
@@ -2580,7 +2598,7 @@ function renderResources() {
   $('#resourcesList').innerHTML = list.length ? list.map(resource => `
     <article class="resource-row-wrap">
       <a class="card resource-row resource-row-link" href="${escapeHtml(resource.url)}" target="_blank" rel="noopener">
-        <div><b>${escapeHtml(resource.title)}</b><p>${escapeHtml(resource.category || 'General')} · ${resource.locationId === 'all' || !resource.locationId ? 'All assigned locations' : escapeHtml(resource.locationName || locationName(resource.locationId))} · ${escapeHtml(resource.minRole || 'Employee')}+</p>${resource.notes ? `<p>${escapeHtml(resource.notes)}</p>` : ''}</div>
+        <div><b>${escapeHtml(resource.title)}</b><p>${escapeHtml(resource.category || 'General')} · ${escapeHtml(resourceLocationLabel(resource))} · ${escapeHtml(resource.minRole || 'Employee')}+</p>${resource.notes ? `<p>${escapeHtml(resource.notes)}</p>` : ''}</div>
         <span class="resource-open-label">Open <span aria-hidden="true">↗</span></span>
       </a>
       ${canManageResources() ? `<button class="resource-pencil" data-resource-edit="${escapeHtml(resource.id)}" type="button" title="Edit or delete ${escapeHtml(resource.title)}" aria-label="Edit or delete ${escapeHtml(resource.title)}">✎</button>` : ''}
@@ -3985,7 +4003,8 @@ function resetResourceForm() {
   $('#resourceUrl').value = '';
   $('#resourceCategory').value = 'General';
   $('#resourceMinRole').value = 'Employee';
-  if ($('#resourceLocation')) $('#resourceLocation').value = 'all';
+  if ($('#resourceAllLocations')) $('#resourceAllLocations').checked = true;
+  document.querySelectorAll('#resourceLocations input').forEach(input => { input.checked = false; input.disabled = true; });
   $('#resourceNotes').value = '';
   $('#saveResourceBtn').textContent = 'Save resource';
   $('#resourceFormTitle').textContent = 'Add resource link';
@@ -4001,12 +4020,21 @@ function editResource(id) {
   $('#resourceUrl').value = resource.url || '';
   $('#resourceCategory').value = resource.category || 'General';
   $('#resourceMinRole').value = resource.minRole || 'Employee';
-  if ($('#resourceLocation')) $('#resourceLocation').value = resource.locationId || 'all';
   $('#resourceNotes').value = resource.notes || '';
   $('#saveResourceBtn').textContent = 'Save changes';
   $('#resourceFormTitle').textContent = 'Edit resource link';
   $('#deleteEditingResourceBtn').hidden = false;
   renderResources();
+  const assignedLocations = resourceLocationIds(resource);
+  $('#resourceAllLocations').checked = !assignedLocations.length;
+  document.querySelectorAll('#resourceLocations input').forEach(input => {
+    input.disabled = !assignedLocations.length;
+    input.checked = assignedLocations.includes(input.value);
+  });
+  const card = $('#resourcesAdminCard');
+  card.classList.remove('collapsed');
+  const indicator = card.querySelector('.collapse-indicator');
+  if (indicator) indicator.textContent = '−';
   $('#resourcesAdminCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -4016,7 +4044,10 @@ async function saveResource() {
   const url = $('#resourceUrl').value.trim();
   if (!title) return toast('Enter a resource title');
   if (!/^https?:\/\//i.test(url)) return toast('Enter a full web address starting with https://');
-  const locationId = $('#resourceLocation').value || 'all';
+  const allLocations = $('#resourceAllLocations').checked;
+  const locationIds = [...document.querySelectorAll('#resourceLocations input:checked')].map(input => input.value);
+  if (!allLocations && !locationIds.length) return toast('Select at least one location or choose all assigned locations');
+  const locationId = allLocations ? 'all' : locationIds[0];
   try {
     resources = await api('/api/resources/resource', {
       method: 'POST',
@@ -4027,7 +4058,8 @@ async function saveResource() {
         category: $('#resourceCategory').value,
         minRole: $('#resourceMinRole').value,
         locationId,
-        locationName: locationId === 'all' ? 'All assigned locations' : locationName(locationId),
+        locationIds: allLocations ? [] : locationIds,
+        locationName: allLocations ? 'All assigned locations' : locationIds.map(locationName).join(', '),
         notes: $('#resourceNotes').value.trim()
       })
     });
@@ -4556,6 +4588,18 @@ document.addEventListener('change', async event => {
     resourcesLocationId = event.target.value;
     localStorage.setItem('resources-location', resourcesLocationId);
     renderResources();
+  }
+
+  if (event.target.matches('#resourceAllLocations')) {
+    const allSelected = event.target.checked;
+    document.querySelectorAll('#resourceLocations input').forEach(input => {
+      input.disabled = allSelected;
+      if (allSelected) input.checked = false;
+    });
+  }
+
+  if (event.target.matches('#resourceLocations input') && event.target.checked) {
+    $('#resourceAllLocations').checked = false;
   }
 
   if (event.target.matches('#smallwaresLocation')) {

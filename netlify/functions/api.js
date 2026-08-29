@@ -9,7 +9,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.11.1';
+const APP_VERSION = '1.11.2';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -2468,6 +2468,7 @@ async function saveResource(payload, actor) {
     category: payload.category || 'General',
     minRole: payload.minRole || 'Employee',
     locationId: payload.locationId || 'all',
+    locationIds: Array.isArray(payload.locationIds) ? [...new Set(payload.locationIds.map(String).filter(Boolean))] : [],
     locationName: payload.locationName || '',
     notes: payload.notes || '',
     updatedAt: new Date().toISOString(),
