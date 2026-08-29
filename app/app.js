@@ -231,6 +231,7 @@ let dashboardMetrics = {
 };
 let taskTemplates = baseTasks.map(task => ({ ...task, section: 'Opening', active: true }));
 let pendingChecklistImport = [];
+let pendingFpcImport = [];
 let notices = [];
 let showPreviousNotices = false;
 let alertSettings = { rules: [], logs: [] };
@@ -4251,6 +4252,106 @@ function resetResourceForm() {
   renderResources();
 }
 
+function fpcImportDate(value) {
+  if (!value) return '';
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+  if (typeof value === 'number' && window.XLSX?.SSF) {
+    const parsed = XLSX.SSF.parse_date_code(value);
+    if (parsed) return `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+  }
+  const text = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+  const match = text.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2}|\d{4})$/);
+  if (match) {
+    const year = match[3].length === 2 ? Number(`20${match[3]}`) : Number(match[3]);
+    return `${year}-${match[1].padStart(2, '0')}-${match[2].padStart(2, '0')}`;
+  }
+  return '';
+}
+
+function fpcImportLocation(value) {
+  const key = String(value || '').toLowerCase().replace(/dairy\s*queen|\bdq\b|\bstore\b/g, '').replace(/[^a-z0-9]+/g, '');
+  return fpcVisibleLocations().find(location => String(location.id).toLowerCase() === String(value || '').toLowerCase() || location.name.toLowerCase() === String(value || '').toLowerCase() || location.name.toLowerCase().replace(/dairy\s*queen|\bdq\b|\bstore\b/g, '').replace(/[^a-z0-9]+/g, '') === key);
+}
+
+async function previewFpcImport(file) {
+  const preview = $('#fpcImportPreview');
+  const importButton = $('#importFpcItemsBtn');
+  pendingFpcImport = [];
+  importButton.disabled = true;
+  if (!file) {
+    preview.innerHTML = '<p class="hint">Choose a completed template to preview the repair items here.</p>';
+    return;
+  }
+  try {
+    if (!window.XLSX) throw new Error('The spreadsheet reader did not load. Refresh HIS OPS and try again.');
+    const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '', raw: true });
+    const headerIndex = rows.findIndex(row => row.some(value => String(value).toLowerCase().replace(/[^a-z0-9]/g, '') === 'repairitem'));
+    if (headerIndex < 0) throw new Error('The Repair Item heading was not found. Please use the HIS OPS template.');
+    const headers = rows[headerIndex].map(value => String(value).toLowerCase().replace(/[^a-z0-9]/g, ''));
+    const errors = [];
+    const seen = new Set();
+    rows.slice(headerIndex + 1).forEach((values, offset) => {
+      const rowNumber = headerIndex + offset + 2;
+      const row = Object.fromEntries(headers.map((header, index) => [header, values[index]]));
+      const meaningfulValues = [row.location, row.store, row.locationid, row.inspectiondate, row.date, row.repairitem, row.description, row.item, row.targetdate, row.duedate, row.assignedto, row.photofolderlink, row.photolink, row.link];
+      if (!meaningfulValues.some(value => String(value ?? '').trim())) return;
+      const location = fpcImportLocation(row.location || row.store || row.locationid);
+      const inspectionDate = fpcImportDate(row.inspectiondate || row.date);
+      const targetDateValue = row.targetdate || row.duedate || '';
+      const targetDate = fpcImportDate(targetDateValue);
+      const description = String(row.repairitem || row.description || row.item || '').trim();
+      const priority = ['High', 'Medium', 'Low'].find(value => value.toLowerCase() === String(row.priority || 'Medium').trim().toLowerCase());
+      const status = ['Open', 'In Progress', 'Completed'].find(value => value.toLowerCase() === String(row.status || 'Open').trim().toLowerCase());
+      const photoUrl = String(row.photofolderlink || row.photolink || row.link || '').trim();
+      if (!location) errors.push(`Row ${rowNumber}: Location was not found or is not assigned to you.`);
+      if (!inspectionDate) errors.push(`Row ${rowNumber}: Enter a valid Inspection Date.`);
+      if (!description) errors.push(`Row ${rowNumber}: Repair Item is required.`);
+      if (!priority) errors.push(`Row ${rowNumber}: Priority must be High, Medium, or Low.`);
+      if (!status) errors.push(`Row ${rowNumber}: Status must be Open, In Progress, or Completed.`);
+      if (targetDateValue && !targetDate) errors.push(`Row ${rowNumber}: Enter a valid Target Date or leave it blank.`);
+      if (photoUrl && !/^https?:\/\//i.test(photoUrl)) errors.push(`Row ${rowNumber}: Photo / Folder Link must begin with http:// or https://.`);
+      if (!location || !inspectionDate || !description || !priority || !status || (targetDateValue && !targetDate) || (photoUrl && !/^https?:\/\//i.test(photoUrl))) return;
+      const duplicateKey = `${location.id}|${inspectionDate}|${description}`.toLowerCase();
+      if (seen.has(duplicateKey)) {
+        errors.push(`Row ${rowNumber}: Duplicate repair item in this file.`);
+        return;
+      }
+      seen.add(duplicateKey);
+      pendingFpcImport.push({ locationId: location.id, locationName: location.name, inspectionDate, description, priority, targetDate, status, assignedTo: String(row.assignedto || '').trim(), photoUrl });
+    });
+    const sample = pendingFpcImport.slice(0, 12);
+    preview.innerHTML = `
+      <div class="checklist-import-summary ${errors.length ? 'has-errors' : ''}"><b>${pendingFpcImport.length} valid repair item${pendingFpcImport.length === 1 ? '' : 's'}</b><span>${errors.length ? `${errors.length} issue${errors.length === 1 ? '' : 's'} must be corrected` : 'Ready to import'}</span></div>
+      ${sample.length ? `<div class="table-scroll"><table><thead><tr><th>Location</th><th>Inspection</th><th>Repair item</th><th>Priority</th><th>Target</th><th>Status</th></tr></thead><tbody>${sample.map(item => `<tr><td>${escapeHtml(item.locationName)}</td><td>${escapeHtml(item.inspectionDate)}</td><td>${escapeHtml(item.description)}</td><td>${escapeHtml(item.priority)}</td><td>${escapeHtml(item.targetDate || '—')}</td><td>${escapeHtml(item.status)}</td></tr>`).join('')}</tbody></table></div>${pendingFpcImport.length > sample.length ? `<p class="hint">Previewing the first ${sample.length} items.</p>` : ''}` : ''}
+      ${errors.length ? `<ul class="import-errors">${errors.slice(0, 20).map(error => `<li>${escapeHtml(error)}</li>`).join('')}</ul>${errors.length > 20 ? `<p class="hint">Plus ${errors.length - 20} more issues.</p>` : ''}` : ''}`;
+    importButton.disabled = Boolean(errors.length || !pendingFpcImport.length);
+  } catch (error) {
+    preview.innerHTML = `<p class="import-error">Could not read this file: ${escapeHtml(error.message)}</p>`;
+  }
+}
+
+async function importFpcItems() {
+  if (!pendingFpcImport.length) return toast('Choose and preview an FPC repair list first');
+  if (!confirm(`Import ${pendingFpcImport.length} FPC repair items? Matching items will be updated instead of duplicated.`)) return;
+  const button = $('#importFpcItemsBtn');
+  button.disabled = true;
+  try {
+    const response = await api('/api/fpc/items/import', { method: 'POST', body: JSON.stringify({ items: pendingFpcImport }) });
+    fpc = response.state;
+    pendingFpcImport = [];
+    $('#fpcImportFile').value = '';
+    $('#fpcImportPreview').innerHTML = `<p class="success-text">Imported ${response.importedCount} repair items: ${response.createdCount} added and ${response.updatedCount} updated.</p>`;
+    render();
+    toast('FPC repair list imported');
+  } catch (error) {
+    button.disabled = false;
+    toast(`FPC repair list did not import: ${error.message}`);
+  }
+}
+
 function resetNoticeForm() {
   $('#noticeId').value = '';
   $('#noticeTitle').value = '';
@@ -6042,6 +6143,8 @@ $('#acknowledgeStoreAlarmBtn').onclick = acknowledgeStoreAlarm;
 $('#enableAlarmSoundBtn').onclick = () => { soundStoreAlarmTone(); startStoreAlarmTone(); };
 $('#saveFpcInspectionBtn').onclick = saveFpcInspection;
 $('#saveFpcItemBtn').onclick = saveFpcItem;
+$('#fpcImportFile').onchange = event => previewFpcImport(event.target.files?.[0]);
+$('#importFpcItemsBtn').onclick = importFpcItems;
 $('#saveFpcEditBtn').onclick = saveFpcEdit;
 $('#saveStoreDocBtn').onclick = saveStoreDocument;
 $('#saveReceiptBtn').onclick = saveReceipt;

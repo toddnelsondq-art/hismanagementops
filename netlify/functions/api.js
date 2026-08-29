@@ -9,7 +9,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.15.0';
+const APP_VERSION = '1.16.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -2315,6 +2315,71 @@ async function saveFpcItem(payload, actor) {
   return fpcState(actor);
 }
 
+async function importFpcItems(payload, actor) {
+  if (AUTH_REQUIRED && !canManage(actor)) throw Object.assign(new Error('Only managers and above can import FPC repair items'), { statusCode: 403 });
+  const items = Array.isArray(payload.items) ? payload.items : [];
+  if (!items.length) throw Object.assign(new Error('No FPC repair items were provided'), { statusCode: 400 });
+  if (items.length > 500) throw Object.assign(new Error('Import no more than 500 FPC repair items at once'), { statusCode: 400 });
+  const [records, appLocations] = await Promise.all([readFpcRecords(), readLocations()]);
+  const locationMap = new Map(appLocations.map(location => [String(location.id), location]));
+  const priorities = new Map(['High', 'Medium', 'Low'].map(value => [value.toLowerCase(), value]));
+  const statuses = new Map(['Open', 'In Progress', 'Completed'].map(value => [value.toLowerCase(), value]));
+  let createdCount = 0;
+  let updatedCount = 0;
+
+  items.forEach((source, index) => {
+    const rowNumber = index + 1;
+    const locationId = String(source.locationId || '').trim();
+    const location = locationMap.get(locationId);
+    const inspectionDate = String(source.inspectionDate || '').slice(0, 10);
+    const targetDate = String(source.targetDate || '').slice(0, 10);
+    const description = String(source.description || '').trim();
+    const priority = priorities.get(String(source.priority || 'Medium').toLowerCase());
+    const status = statuses.get(String(source.status || 'Open').toLowerCase());
+    const photoUrl = String(source.photoUrl || '').trim();
+    if (!location || (AUTH_REQUIRED && !canAccessLocation(actor, locationId))) throw Object.assign(new Error(`Import row ${rowNumber}: You do not have access to that location`), { statusCode: 403 });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(inspectionDate)) throw Object.assign(new Error(`Import row ${rowNumber}: Inspection Date is invalid`), { statusCode: 400 });
+    if (targetDate && !/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) throw Object.assign(new Error(`Import row ${rowNumber}: Target Date is invalid`), { statusCode: 400 });
+    if (!description) throw Object.assign(new Error(`Import row ${rowNumber}: Repair Item is required`), { statusCode: 400 });
+    if (!priority) throw Object.assign(new Error(`Import row ${rowNumber}: Priority is invalid`), { statusCode: 400 });
+    if (!status) throw Object.assign(new Error(`Import row ${rowNumber}: Status is invalid`), { statusCode: 400 });
+    if (photoUrl && !/^https?:\/\//i.test(photoUrl)) throw Object.assign(new Error(`Import row ${rowNumber}: Photo / Folder Link is invalid`), { statusCode: 400 });
+
+    let record = records.find(entry => entry.active !== false && entry.locationId === locationId && entry.inspectionDate === inspectionDate);
+    if (!record) {
+      record = {
+        id: nextFpcId(records), locationId, locationName: location.name, inspectionDate,
+        inspectionName: 'Imported repair list', createdBy: actor?.name || 'Manager',
+        createdAt: new Date().toISOString(), items: [], active: true
+      };
+      records.unshift(record);
+    }
+    record.items ||= [];
+    const existing = record.items.find(item => String(item.description || '').trim().toLowerCase() === description.toLowerCase());
+    const values = {
+      description, priority, status, targetDate,
+      assignedTo: String(source.assignedTo || '').trim(),
+      photoUrl, photoName: photoUrl ? 'Imported photo or folder link' : '',
+      updatedAt: new Date().toISOString()
+    };
+    if (existing) {
+      Object.assign(existing, values);
+      updatedCount += 1;
+    } else {
+      record.items.push({
+        id: `FPCITEM-${Date.now()}-${index}`, ...values,
+        assignmentType: '', assigneeId: '', assigneeName: '', assigneeEmail: '', assigneePhone: '',
+        vendorId: '', vendorName: '', assignmentNotify: 'none', comments: [],
+        createdBy: actor?.name || 'Manager', createdAt: new Date().toISOString()
+      });
+      createdCount += 1;
+    }
+  });
+
+  await writeMaintenanceKey('fpcRecords', records);
+  return { importedCount: items.length, createdCount, updatedCount, state: await fpcState(actor) };
+}
+
 async function updateFpcItem(payload, actor) {
   if (AUTH_REQUIRED && !canManage(actor)) throw Object.assign(new Error('Only managers and above can edit FPC records'), { statusCode: 403 });
   const records = await readFpcRecords();
@@ -3859,6 +3924,9 @@ exports.handler = async event => {
     }
     if (method === 'POST' && apiPath === '/fpc/item') {
       return json(200, await saveFpcItem(body, actor));
+    }
+    if (method === 'POST' && apiPath === '/fpc/items/import') {
+      return json(200, await importFpcItems(body, actor));
     }
     if (method === 'POST' && apiPath === '/fpc/item/update') {
       return json(200, await updateFpcItem(body, actor));

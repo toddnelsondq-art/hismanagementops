@@ -640,6 +640,17 @@
         <button id="saveFpcItemBtn" type="button">Add FPC item</button>
       </article>
 
+      <article class="card form-card collapsible-card" id="fpcImportCard">
+        <h3>Import repair list</h3>
+        <p class="hint">Upload several repair items at once from Excel or CSV. Review the preview before anything is saved.</p>
+        <a class="button-link ghost" href="assets/FPC_Repair_List_Import_Template.xlsx" download>Download FPC import template</a>
+        <label>Choose completed Excel or CSV file
+          <input id="fpcImportFile" type="file" accept=".xlsx,.xls,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+        </label>
+        <div id="fpcImportPreview" class="checklist-import-preview"><p class="hint">Choose a completed template to preview the repair items here.</p></div>
+        <button id="importFpcItemsBtn" type="button" disabled>Import reviewed repair items</button>
+      </article>
+
       <div id="fpcList"></div>
     </section>
 
@@ -1953,9 +1964,9 @@
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-29-7"></script>
+  <script src="version.js?v=2026-08-29-8"></script>
   <script src="auth.js?v=2026-07-29-kiosk-pin"></script>
-  <script src="app.js?v=2026-08-29-manage-groups"></script>
+  <script src="app.js?v=2026-08-29-fpc-import"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>
