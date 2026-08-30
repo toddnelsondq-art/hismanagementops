@@ -1,0 +1,19 @@
+{
+  "name": "his-ops",
+  "version": "1.19.0",
+  "private": true,
+  "description": "HIS OPS web and native application",
+  "scripts": {
+    "android:sync": "cap sync android",
+    "android:open": "cap open android",
+    "android:run": "cap run android",
+    "android:build:debug": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-android.ps1"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.0",
+    "@capacitor/core": "8.5.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.0"
+  }
+}

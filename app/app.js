@@ -90,6 +90,8 @@ const weekdayOptions = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 
 const maintenanceRole = 'Maintenance Tech';
 const dateKey = new Date().toISOString().slice(0, 10);
 const $ = selector => document.querySelector(selector);
+const isNativeApp = () => Boolean(window.Capacitor?.isNativePlatform?.());
+const apiUrl = path => isNativeApp() && String(path).startsWith('/api/') ? `https://dqops.net${path}` : path;
 let waitingAppServiceWorker = null;
 let updateRefreshRequested = false;
 let currentDeploymentId = '';
@@ -100,7 +102,7 @@ function showAppVersion(version = window.DQ_OPS_VERSION || '1.0.0', build = wind
 }
 
 async function deployedAppVersion() {
-  const response = await fetch(`/api/version?t=${Date.now()}`, { cache: 'no-store' });
+  const response = await fetch(apiUrl(`/api/version?t=${Date.now()}`), { cache: 'no-store' });
   if (!response.ok) throw new Error('Version service unavailable');
   return response.json();
 }
@@ -119,7 +121,7 @@ function refreshToAppUpdate() {
 }
 
 async function checkForAppUpdate() {
-  if (!('serviceWorker' in navigator) || location.protocol !== 'https:') return toast('Update checks are available on the hosted app');
+  if (isNativeApp() || !('serviceWorker' in navigator) || location.protocol !== 'https:') return toast('Android app updates are installed through Google Play');
   const button = $('#checkForUpdatesBtn');
   if (button) { button.disabled = true; button.textContent = 'Checking…'; }
   try {
@@ -146,7 +148,7 @@ async function checkForAppUpdate() {
 
 async function setupAppUpdateFlow() {
   showAppVersion();
-  if (!('serviceWorker' in navigator) || location.protocol !== 'https:') return;
+  if (isNativeApp() || !('serviceWorker' in navigator) || location.protocol !== 'https:') return;
   try {
     const deployed = await deployedAppVersion();
     currentDeploymentId = deployed.build || '';
@@ -561,7 +563,7 @@ async function api(path, options = {}) {
     window.dailyOpsAuth.token = authToken;
   }
   const { headers: optionHeaders = {}, ...requestOptions } = options;
-  const response = await fetch(path, {
+  const response = await fetch(apiUrl(path), {
     ...requestOptions,
     headers: {
       'Content-Type': 'application/json',
@@ -607,7 +609,7 @@ async function apiBlob(path) {
     if (error) throw new Error('Your sign-in could not be refreshed. Please sign in again.');
     authToken = data.session?.access_token || '';
   }
-  const response = await fetch(path, { headers: authToken ? { Authorization: `Bearer ${authToken}` } : {} });
+  const response = await fetch(apiUrl(path), { headers: authToken ? { Authorization: `Bearer ${authToken}` } : {} });
   if (!response.ok) {
     const text = await response.text();
     try { throw new Error(JSON.parse(text).error || text); } catch (error) { if (error instanceof SyntaxError) throw new Error(text || 'Request failed'); throw error; }

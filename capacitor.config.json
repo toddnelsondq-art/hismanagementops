@@ -1,0 +1,11 @@
+{
+  "appId": "com.avgguysbs.hisops",
+  "appName": "HIS OPS",
+  "webDir": "app",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "backgroundColor": "#0b182d"
+  }
+}

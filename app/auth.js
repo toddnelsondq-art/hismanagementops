@@ -15,8 +15,16 @@
   window.dailyOpsAuth = state;
   window.dailyOpsAuthReady = start();
 
+  function isNativeApp() {
+    return Boolean(window.Capacitor?.isNativePlatform?.());
+  }
+
+  function apiUrl(path) {
+    return isNativeApp() && String(path).startsWith('/api/') ? `https://dqops.net${path}` : path;
+  }
+
   function isHostedSite() {
-    return !['localhost', '127.0.0.1', ''].includes(window.location.hostname) && window.location.protocol !== 'file:';
+    return isNativeApp() || (!['localhost', '127.0.0.1', ''].includes(window.location.hostname) && window.location.protocol !== 'file:');
   }
 
   function escapeHtml(value = '') {
@@ -38,7 +46,7 @@
   }
 
   async function request(path, options = {}, token = '') {
-    const response = await fetch(path, {
+    const response = await fetch(apiUrl(path), {
       ...options,
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(options.headers || {}) }
     });
@@ -191,7 +199,7 @@
 
   async function start() {
     try {
-      const response = await fetch('/api/public-config', { cache: 'no-store' });
+      const response = await fetch(apiUrl('/api/public-config'), { cache: 'no-store' });
       if (!response.ok) return isHostedSite() ? blockHostedApp('Hosted login is not connected yet.') : state;
       const config = await response.json();
       state.enabled = Boolean(config.authEnabled);

@@ -9,7 +9,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.18.2';
+const APP_VERSION = '1.19.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -113,7 +113,10 @@ function json(statusCode, body) {
     statusCode,
     headers: {
       'Content-Type': 'application/json',
-      'Cache-Control': 'no-store'
+      'Cache-Control': 'no-store',
+      'Access-Control-Allow-Origin': 'https://localhost',
+      'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+      'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS'
     },
     body: JSON.stringify(body)
   };
@@ -3759,6 +3762,8 @@ exports.handler = async event => {
     const method = event.httpMethod;
     const query = event.queryStringParameters || {};
     const body = event.body ? JSON.parse(event.body) : {};
+
+    if (method === 'OPTIONS') return json(200, {});
 
     if (method === 'GET' && apiPath === '/version') {
       return json(200, {
