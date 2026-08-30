@@ -6173,7 +6173,7 @@ async function importFinancialReport() {
     clearFinancialReportPreview();
     await loadDashboardState();
     render();
-    toast(`Imported ${result.imported} location reports for ${result.reportDate}`);
+    toast(`${result.replacedExisting ? 'Updated' : 'Imported'} ${result.imported} location reports for ${result.reportDate}`);
   } catch (error) {
     toast(`Financial report did not import: ${error.message}`);
     $('#financialImportStatus').textContent = error.message;

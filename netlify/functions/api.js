@@ -9,7 +9,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.22.1';
+const APP_VERSION = '1.22.2';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -1214,11 +1214,25 @@ function cleanFinancialNumber(value, { integer = false, percent = false, require
   return integer ? Math.round(number) : Math.round(number * 100000) / 100000;
 }
 
+function uniqueFinancialImportRows(rows = [], limit = 20) {
+  const seen = new Set();
+  const unique = [];
+  for (const row of rows) {
+    const sourceIdentity = row.source_hash || row.source_filename || row.id;
+    const key = `${row.report_date || ''}|${sourceIdentity || ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(row);
+    if (unique.length >= limit) break;
+  }
+  return unique;
+}
+
 async function recentFinancialImports(actor) {
   if (AUTH_REQUIRED && !isFullAccess(actor)) return [];
   try {
-    const rows = await supabase(`/rest/v1/financial_report_imports?${tenantQuery()}&select=*&order=created_at.desc&limit=20`);
-    return rows.map(row => ({
+    const rows = await supabase(`/rest/v1/financial_report_imports?${tenantQuery()}&select=*&order=created_at.desc&limit=100`);
+    return uniqueFinancialImportRows(rows).map(row => ({
       id: row.id,
       reportDate: row.report_date,
       comparisonDate: row.comparison_date,
@@ -1245,7 +1259,7 @@ async function importFinancialReports(payload = {}, actor) {
   const allLocations = await readLocations();
   const locationIds = new Set(allLocations.map(location => location.id));
   const seen = new Set();
-  const importId = crypto.randomUUID();
+  let importId = crypto.randomUUID();
   const importedAt = new Date().toISOString();
   const sourceFilename = String(payload.sourceFilename || 'Financial recap.xlsx').slice(0, 200);
   const sourceHash = String(payload.sourceHash || '').slice(0, 128);
@@ -1291,20 +1305,36 @@ async function importFinancialReports(payload = {}, actor) {
   });
   const reportDates = [...new Set(reportRows.map(row => row.business_date))];
   if (reportDates.length !== 1) throw Object.assign(new Error('Each workbook import must contain one current report date'), { statusCode: 400 });
+  let replacedExisting = false;
   try {
-    await supabase('/rest/v1/financial_report_imports', {
-      method: 'POST',
-      body: JSON.stringify(withTenant({
-        id: importId,
-        report_date: reportDates[0],
-        comparison_date: reportRows.find(row => row.comparison_date)?.comparison_date || null,
-        source_filename: sourceFilename,
-        source_hash: sourceHash,
-        location_count: reportRows.length,
-        imported_by: actor?.name || actor?.email || 'Director',
-        imported_by_id: actor?.id || ''
-      }))
+    const sourceFilter = sourceHash
+      ? `source_hash=eq.${encodeURIComponent(sourceHash)}`
+      : `source_filename=eq.${encodeURIComponent(sourceFilename)}`;
+    const existingImports = await supabase(`/rest/v1/financial_report_imports?${tenantQuery()}&report_date=eq.${encodeURIComponent(reportDates[0])}&${sourceFilter}&select=id&order=created_at.asc&limit=1`);
+    const auditPayload = withTenant({
+      report_date: reportDates[0],
+      comparison_date: reportRows.find(row => row.comparison_date)?.comparison_date || null,
+      source_filename: sourceFilename,
+      source_hash: sourceHash,
+      location_count: reportRows.length,
+      imported_by: actor?.name || actor?.email || 'Director',
+      imported_by_id: actor?.id || '',
+      created_at: importedAt
     });
+    if (existingImports[0]?.id) {
+      importId = existingImports[0].id;
+      replacedExisting = true;
+      reportRows.forEach(row => { row.import_id = importId; });
+      await supabase(`/rest/v1/financial_report_imports?${tenantQuery()}&id=eq.${encodeURIComponent(importId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(auditPayload)
+      });
+    } else {
+      await supabase('/rest/v1/financial_report_imports', {
+        method: 'POST',
+        body: JSON.stringify({ ...auditPayload, id: importId })
+      });
+    }
     await supabase('/rest/v1/financial_daily_metrics?on_conflict=tenant_id,location_id,business_date', {
       method: 'POST',
       headers: { Prefer: 'resolution=merge-duplicates' },
@@ -1316,7 +1346,7 @@ async function importFinancialReports(payload = {}, actor) {
     }
     throw error;
   }
-  return { imported: reportRows.length, reportDate: reportDates[0], state: await financialReportState(actor, { range: 'day', locationId: 'all' }) };
+  return { imported: reportRows.length, reportDate: reportDates[0], replacedExisting, state: await financialReportState(actor, { range: 'day', locationId: 'all' }) };
 }
 
 async function dashboardSummary(actor, range = 'day', locationId = 'all') {
@@ -3936,7 +3966,7 @@ async function updateManagementReport(payload, actor) {
   return managementReportsState(actor);
 }
 
-const DASHBOARD_WIDGETS = ['alerts', 'upcoming', 'marketing', 'incidents', 'taskLists', 'weeklyCleaning', 'tempLogs', 'maintenance', 'fpc', 'inspections', 'progress'];
+const DASHBOARD_WIDGETS = ['financials', 'alerts', 'upcoming', 'marketing', 'incidents', 'taskLists', 'weeklyCleaning', 'tempLogs', 'maintenance', 'fpc', 'inspections', 'progress'];
 
 function defaultDashboardPreferences() {
   return { visible: [...DASHBOARD_WIDGETS], order: [...DASHBOARD_WIDGETS], defaultRange: 'day', defaultLocationId: 'all' };
@@ -4487,7 +4517,7 @@ async function saveAttachment(payload) {
   return `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${filename}`;
 }
 
-if (process.env.NODE_ENV === 'test') exports.__test = { financialDateRange };
+if (process.env.NODE_ENV === 'test') exports.__test = { financialDateRange, uniqueFinancialImportRows, normalizeDashboardPreferences };
 
 exports.handler = async event => {
   try {
@@ -4501,7 +4531,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/version') {
       return json(200, {
         version: APP_VERSION,
-        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.30.02'
+        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.30.03'
       });
     }
 
