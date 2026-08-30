@@ -9,7 +9,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.22.0';
+const APP_VERSION = '1.22.1';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -1043,6 +1043,15 @@ function financialPercentChange(current, prior) {
   return priorValue > 0 ? Math.round(((currentValue - priorValue) / priorValue) * 1000) / 10 : null;
 }
 
+function financialDateRange(range = 'day', anchorDate = localDate()) {
+  const safeAnchor = /^\d{4}-\d{2}-\d{2}$/.test(String(anchorDate || '')) ? String(anchorDate) : localDate();
+  const endDate = new Date(`${safeAnchor}T12:00:00Z`);
+  const startDate = new Date(endDate);
+  if (range === 'week') startDate.setUTCDate(endDate.getUTCDate() - endDate.getUTCDay());
+  if (range === 'month') startDate.setUTCDate(1);
+  return { start: startDate.toISOString().slice(0, 10), end: safeAnchor };
+}
+
 function financialEmptySummary(range, locationId, start, end, extra = {}) {
   return {
     allowed: true,
@@ -1125,7 +1134,7 @@ function financialAggregate(rows = [], locationNames = new Map()) {
 }
 
 async function financialSummary(actor, range = 'day', locationId = 'all') {
-  const { start, end } = dateRange(range);
+  const { start, end } = financialDateRange(range);
   if (AUTH_REQUIRED) {
     const entitlement = await effectiveSubscription(tenantId());
     if (!entitlement.features.advanced_reports) return { ...financialEmptySummary(range, locationId, start, end), allowed: false };
@@ -1139,8 +1148,8 @@ async function financialSummary(actor, range = 'day', locationId = 'all') {
     ? actorLocationIds.filter(id => id === locationId)
     : actorLocationIds;
   if (!selectedLocationIds.length) return financialEmptySummary(range, locationId, start, end);
-  const queryStartDate = new Date(`${start}T12:00:00Z`);
-  if (range === 'day') queryStartDate.setUTCDate(queryStartDate.getUTCDate() - 45);
+  const queryStartDate = new Date(`${end}T12:00:00Z`);
+  queryStartDate.setUTCDate(queryStartDate.getUTCDate() - 400);
   const queryStart = queryStartDate.toISOString().slice(0, 10);
   let rows;
   try {
@@ -1154,17 +1163,11 @@ async function financialSummary(actor, range = 'day', locationId = 'all') {
     }
     throw error;
   }
-  let selected = rows.filter(row => selectedLocationIds.includes(row.location_id));
-  let effectiveStart = start;
-  let effectiveEnd = end;
-  if (range === 'day' && !selected.some(row => row.business_date === end) && selected.length) {
-    const latestDate = selected.reduce((latest, row) => String(row.business_date) > latest ? String(row.business_date) : latest, '');
-    selected = selected.filter(row => row.business_date === latestDate);
-    effectiveStart = latestDate;
-    effectiveEnd = latestDate;
-  } else if (range === 'day') {
-    selected = selected.filter(row => row.business_date === end);
-  }
+  const available = rows.filter(row => selectedLocationIds.includes(row.location_id));
+  if (!available.length) return financialEmptySummary(range, locationId, start, end);
+  const latestDate = available.reduce((latest, row) => String(row.business_date) > latest ? String(row.business_date) : latest, '');
+  const anchoredRange = financialDateRange(range, latestDate);
+  const selected = available.filter(row => dateInRange(row.business_date, anchoredRange.start, anchoredRange.end));
   const locationNames = new Map(allLocations.map(location => [location.id, location.name]));
   const totals = financialAggregate(selected, locationNames);
   const grouped = selected.reduce((groups, row) => {
@@ -1191,8 +1194,9 @@ async function financialSummary(actor, range = 'day', locationId = 'all') {
     migrationReady: true,
     range,
     locationId,
-    start: effectiveStart,
-    end: effectiveEnd,
+    start: anchoredRange.start,
+    end: anchoredRange.end,
+    latestBusinessDate: latestDate,
     reportCount: selected.length,
     locationCount: byLocation.length,
     totals,
@@ -4483,6 +4487,8 @@ async function saveAttachment(payload) {
   return `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${filename}`;
 }
 
+if (process.env.NODE_ENV === 'test') exports.__test = { financialDateRange };
+
 exports.handler = async event => {
   try {
     const apiPath = event.path.replace(/^\/api/, '').replace(/^\/\.netlify\/functions\/api/, '') || '/';
@@ -4495,7 +4501,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/version') {
       return json(200, {
         version: APP_VERSION,
-        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.30.01'
+        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.30.02'
       });
     }
 
