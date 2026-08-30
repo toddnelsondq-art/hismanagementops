@@ -252,6 +252,19 @@ let managerNotificationPreferences = {
   }
 };
 let popCampaigns = { campaigns: [], canManage: false };
+let subscriptionAdmin = {
+  tenantId: 'his-management',
+  canView: false,
+  canEdit: false,
+  migrationReady: false,
+  subscription: { planKey: 'advanced', planName: 'Advanced', status: 'active', features: {}, limits: {} },
+  plans: [],
+  featureCatalog: [],
+  addonCatalog: [],
+  locationAddons: [],
+  tenants: [],
+  locations: []
+};
 let storeAlarms = { canSend: false, active: [], history: [] };
 let storeAlarmAudioContext = null;
 let storeAlarmToneTimer = null;
@@ -764,6 +777,7 @@ async function loadState() {
     notificationLogs = state.notificationLogs || notificationLogs;
     managerNotificationPreferences = state.managerNotificationPreferences || managerNotificationPreferences;
     popCampaigns = state.popCampaigns || popCampaigns;
+    subscriptionAdmin = { ...subscriptionAdmin, ...(state.subscription || {}) };
     calendarEvents = state.calendarEvents || calendarEvents;
     managementReports = state.managementReports || managementReports;
     if (state.dashboardPreferences?.preferences) {
@@ -777,6 +791,9 @@ async function loadState() {
     }
     users = state.users?.length ? state.users : users;
     locations = state.locations?.length ? state.locations : locations;
+    if (subscriptionAdmin.canView) {
+      subscriptionAdmin = await api(`/api/subscription/admin?tenantId=${encodeURIComponent(subscriptionAdmin.tenantId || '')}`).catch(() => subscriptionAdmin);
+    }
     if (window.dailyOpsAuth?.profile?.id) {
       if (!users.some(user => user.id === window.dailyOpsAuth.profile.id)) users = [window.dailyOpsAuth.profile, ...users];
       currentUserId = window.dailyOpsAuth.profile.id;
@@ -1656,6 +1673,7 @@ function render() {
   renderTaskTemplates();
   renderAlertRules();
   renderManagerNotificationPreferences();
+  renderSubscriptionAdmin();
   renderPopCampaigns();
   renderNotificationLogs();
   renderTemperatureStandards();
@@ -3039,29 +3057,34 @@ function applyRoleAccess(user) {
   const showManage = canUseManage(user);
   const showLocations = canViewLocations(user);
   const tech = isMaintenanceTech(user);
-  const showMaintenanceLog = canUseMaintenanceWorkLog(user);
-  const showLocationHealth = canUseLocationHealth(user);
+  const showMaintenance = showHub && subscriptionFeatureEnabled('maintenance');
+  const showMaintenanceLog = canUseMaintenanceWorkLog(user) && subscriptionFeatureEnabled('maintenance_work_logs');
+  const showLocationHealth = canUseLocationHealth(user) && (subscriptionAddonEnabled('thermostats') || subscriptionAddonEnabled('sensors') || subscriptionAddonEnabled('cameras'));
+  const showDailyOperations = canUseDailyOps(user) && subscriptionFeatureEnabled('daily_operations');
   document.querySelectorAll('[data-view="homeView"]').forEach(button => button.style.display = showHub ? '' : 'none');
   document.querySelectorAll('[data-view="noticesView"]').forEach(button => button.style.display = '');
-  document.querySelectorAll('[data-view="maintenanceView"]').forEach(button => button.style.display = showHub ? '' : 'none');
-  document.querySelectorAll('[data-view="fpcView"]').forEach(button => button.style.display = showHub ? '' : 'none');
+  document.querySelectorAll('[data-view="maintenanceView"]').forEach(button => button.style.display = showMaintenance ? '' : 'none');
+  document.querySelectorAll('[data-view="fpcView"]').forEach(button => button.style.display = showHub && subscriptionFeatureEnabled('fpc_repairs') ? '' : 'none');
   document.querySelectorAll('.maintenance-worklog-menu-link').forEach(button => button.style.display = showMaintenanceLog && tech ? '' : 'none');
   document.querySelectorAll('.maintenance-worklog-report-link').forEach(button => button.style.display = showMaintenanceLog && !tech ? '' : 'none');
   document.querySelectorAll('[data-view="locationHealthView"]').forEach(button => button.style.display = showLocationHealth ? '' : 'none');
   document.querySelectorAll('[data-view="calendarView"]').forEach(button => button.style.display = showHub && !tech ? '' : 'none');
   document.querySelectorAll('[data-view="storeDocsView"]').forEach(button => button.style.display = showHub && !tech ? '' : 'none');
   document.querySelectorAll('[data-view="resourcesView"]').forEach(button => button.style.display = '');
-  document.querySelectorAll('[data-view="smallwaresView"]').forEach(button => button.style.display = showHub && !tech ? '' : 'none');
-  document.querySelectorAll('[data-view="managementReportsView"]').forEach(button => button.style.display = canUseManagementReports(user) ? '' : 'none');
-  document.querySelectorAll('[data-view="taskListsView"], [data-view="tempLogsView"], [data-view="todayView"]').forEach(button => button.style.display = canUseDailyOps(user) ? '' : 'none');
+  document.querySelectorAll('[data-view="smallwaresView"]').forEach(button => button.style.display = showHub && !tech && subscriptionFeatureEnabled('smallwares') ? '' : 'none');
+  document.querySelectorAll('[data-view="managementReportsView"]').forEach(button => button.style.display = canUseManagementReports(user) && subscriptionFeatureEnabled('advanced_reports') ? '' : 'none');
+  document.querySelectorAll('[data-view="taskListsView"], [data-view="tempLogsView"], [data-view="todayView"]').forEach(button => button.style.display = showDailyOperations ? '' : 'none');
   document.querySelectorAll('[data-view="historyView"]').forEach(button => button.style.display = showHistory && !tech ? '' : 'none');
   document.querySelectorAll('[data-view="manageView"]').forEach(button => button.style.display = showManage && !tech ? '' : 'none');
-  document.querySelectorAll('[data-view="rolloutView"], [data-section-view="rolloutView"]').forEach(button => button.style.display = rollout.allowed ? '' : 'none');
+  document.querySelectorAll('[data-view="rolloutView"], [data-section-view="rolloutView"]').forEach(button => button.style.display = rollout.allowed && subscriptionFeatureEnabled('rollouts') ? '' : 'none');
   document.querySelectorAll('[data-view="helpView"]').forEach(button => button.style.display = showManage && !tech ? '' : 'none');
   document.querySelectorAll('[data-view="locationsView"]').forEach(button => button.style.display = showLocations ? '' : 'none');
-  document.querySelectorAll('[data-view="receiptsView"], [data-view="inspectionsView"]').forEach(button => button.style.display = canAddStoreDocuments(user) ? '' : 'none');
+  document.querySelectorAll('[data-view="receiptsView"]').forEach(button => button.style.display = canAddStoreDocuments(user) && subscriptionFeatureEnabled('receipts') ? '' : 'none');
+  document.querySelectorAll('[data-view="inspectionsView"]').forEach(button => button.style.display = canAddStoreDocuments(user) && subscriptionFeatureEnabled('inspections') ? '' : 'none');
   document.querySelectorAll('[data-section-view="locationsView"]').forEach(button => button.style.display = showLocations ? '' : 'none');
   document.querySelectorAll('#manageSectionHub [data-section-view="receiptsView"], #manageSectionHub [data-section-view="inspectionsView"]').forEach(button => button.style.display = canAddStoreDocuments(user) ? '' : 'none');
+  if ($('#alertRulesCard')) $('#alertRulesCard').style.display = subscriptionFeatureEnabled('advanced_alerts') ? '' : 'none';
+  if ($('#storeAlarmAdminCard')) $('#storeAlarmAdminCard').style.display = subscriptionFeatureEnabled('advanced_alerts') ? '' : 'none';
   $('#changePasswordBtn').style.display = window.dailyOpsAuth?.enabled && window.dailyOpsAuth?.authMode !== 'kiosk' ? '' : 'none';
   $('#signOutBtn').style.display = window.dailyOpsAuth?.enabled ? '' : 'none';
   $('#sideUserName').textContent = user.name;
@@ -3643,6 +3666,123 @@ async function refreshNoticesQuietly() {
 function preferenceChannelHtml(key, channels = []) {
   const options = [['sms', 'Text'], ['email', 'Email'], ['in-app', 'App notification']];
   return `<b>Send by</b><div class="location-checks">${options.map(([value, label]) => `<label class="location-check"><input type="checkbox" data-pref-channel="${escapeHtml(key)}" value="${value}" ${channels.includes(value) ? 'checked' : ''}> ${label}</label>`).join('')}</div>`;
+}
+
+function subscriptionFeatureEnabled(key) {
+  const features = subscriptionAdmin.subscription?.features;
+  return !features || features[key] !== false;
+}
+
+function subscriptionAddonEnabled(addonKey, locationId = '') {
+  const addons = subscriptionAdmin.locationAddons || [];
+  return addons.some(addon => addon.enabled && addon.addonKey === addonKey && (!locationId || addon.locationId === locationId));
+}
+
+function selectedSubscriptionPlan() {
+  const key = $('#subscriptionPlan')?.value || subscriptionAdmin.subscription?.planKey;
+  return (subscriptionAdmin.plans || []).find(plan => plan.key === key);
+}
+
+function renderSubscriptionFeatures(useEffectiveSubscription = true) {
+  const container = $('#subscriptionFeatureList');
+  if (!container) return;
+  const selectedPlan = selectedSubscriptionPlan();
+  const planFeatures = selectedPlan?.features || {};
+  const effectiveFeatures = subscriptionAdmin.subscription?.features || planFeatures;
+  container.innerHTML = (subscriptionAdmin.featureCatalog || []).map(feature => {
+    const enabled = useEffectiveSubscription ? effectiveFeatures[feature.key] !== false : Boolean(planFeatures[feature.key]);
+    const included = Boolean(planFeatures[feature.key]);
+    return `<label class="subscription-feature ${enabled ? 'enabled' : ''}"><input type="checkbox" data-subscription-feature="${escapeHtml(feature.key)}" ${enabled ? 'checked' : ''} ${subscriptionAdmin.canEdit && subscriptionAdmin.migrationReady ? '' : 'disabled'}><span><b>${escapeHtml(feature.name)}</b><small>${escapeHtml(feature.description)}</small><em>${included ? 'Included in plan' : (enabled ? 'Custom add-on' : 'Not included')}</em></span></label>`;
+  }).join('');
+}
+
+function renderSubscriptionAdmin() {
+  const card = $('#subscriptionAdminCard');
+  if (!card) return;
+  const allowed = Boolean(subscriptionAdmin.canView && isFullAccess());
+  card.hidden = !allowed;
+  card.style.display = allowed ? '' : 'none';
+  if (!allowed) return;
+
+  const subscription = subscriptionAdmin.subscription || {};
+  const plans = subscriptionAdmin.plans || [];
+  $('#subscriptionMigrationStatus').textContent = subscriptionAdmin.migrationReady ? `${subscription.planName || subscription.planKey || 'Plan'} · ${subscription.status || 'active'}` : 'Database setup required';
+  $('#subscriptionMigrationStatus').classList.toggle('subscription-warning', !subscriptionAdmin.migrationReady);
+  $('#subscriptionTenantWrap').hidden = !subscriptionAdmin.platformAdmin || (subscriptionAdmin.tenants || []).length < 2;
+  $('#subscriptionTenant').innerHTML = (subscriptionAdmin.tenants || []).map(tenant => `<option value="${escapeHtml(tenant.id)}" ${tenant.id === subscriptionAdmin.tenantId ? 'selected' : ''}>${escapeHtml(tenant.name || tenant.app_name || tenant.id)}</option>`).join('');
+  $('#subscriptionPlan').innerHTML = plans.map(plan => `<option value="${escapeHtml(plan.key)}" ${plan.key === subscription.planKey ? 'selected' : ''}>${escapeHtml(plan.name)}</option>`).join('');
+  $('#subscriptionStatus').value = subscription.status || 'active';
+  $('#subscriptionTrialEnds').value = String(subscription.trialEndsAt || '').slice(0, 10);
+  $('#subscriptionPeriodEnds').value = String(subscription.currentPeriodEnd || '').slice(0, 10);
+  $('#subscriptionLocationLimit').value = subscription.limits?.locations || '';
+  $('#subscriptionUserLimit').value = subscription.limits?.users || '';
+  $('#subscriptionHistoryDays').value = subscription.limits?.history_days || '';
+  renderSubscriptionFeatures(true);
+
+  const enabledKeys = new Set((subscriptionAdmin.locationAddons || []).filter(addon => addon.enabled).map(addon => `${addon.locationId}|${addon.addonKey}`));
+  $('#subscriptionAddonMatrix').innerHTML = (subscriptionAdmin.locations || locations).length ? `
+    <div class="subscription-addon-row subscription-addon-head"><b>Location</b>${(subscriptionAdmin.addonCatalog || []).map(addon => `<b>${escapeHtml(addon.name)}</b>`).join('')}</div>
+    ${(subscriptionAdmin.locations || locations).map(location => `<div class="subscription-addon-row"><span>${escapeHtml(location.name)}</span>${(subscriptionAdmin.addonCatalog || []).map(addon => `<label title="${escapeHtml(addon.description)}"><input type="checkbox" data-subscription-addon="${escapeHtml(addon.key)}" data-location-id="${escapeHtml(location.id)}" ${enabledKeys.has(`${location.id}|${addon.key}`) ? 'checked' : ''} ${subscriptionAdmin.canEdit && subscriptionAdmin.migrationReady ? '' : 'disabled'}><span class="sr-only">${escapeHtml(addon.name)}</span></label>`).join('')}</div>`).join('')}` : '<p class="hint">No active locations were found for this organization.</p>';
+
+  const editable = Boolean(subscriptionAdmin.canEdit && subscriptionAdmin.migrationReady);
+  card.querySelectorAll('input, select').forEach(control => {
+    if (control.id !== 'subscriptionTenant') control.disabled = !editable;
+  });
+  $('#subscriptionTenant').disabled = !subscriptionAdmin.platformAdmin;
+  $('#saveSubscriptionBtn').disabled = !editable;
+  $('#subscriptionAdminHelp').textContent = !subscriptionAdmin.migrationReady
+    ? 'Run the included Supabase subscription migration once. HIS OPS remains on Advanced with all current features until then.'
+    : subscriptionAdmin.canEdit
+      ? 'Changes take effect immediately. A future Stripe webhook can update these same records without changing the app.'
+      : 'This summary is read-only. Subscription changes are limited to an Average Guys platform administrator.';
+}
+
+async function loadSubscriptionAdmin(tenantId = subscriptionAdmin.tenantId) {
+  try {
+    subscriptionAdmin = await api(`/api/subscription/admin?tenantId=${encodeURIComponent(tenantId || '')}`);
+    renderSubscriptionAdmin();
+  } catch (error) {
+    toast(`Subscription settings did not load: ${error.message}`);
+  }
+}
+
+async function saveSubscriptionAdmin() {
+  const plan = selectedSubscriptionPlan();
+  const featuresOverride = {};
+  document.querySelectorAll('[data-subscription-feature]').forEach(input => {
+    const planEnabled = Boolean(plan?.features?.[input.dataset.subscriptionFeature]);
+    if (input.checked !== planEnabled) featuresOverride[input.dataset.subscriptionFeature] = input.checked;
+  });
+  const locationAddons = [...document.querySelectorAll('[data-subscription-addon]')].map(input => ({
+    locationId: input.dataset.locationId,
+    addonKey: input.dataset.subscriptionAddon,
+    enabled: input.checked,
+    quantity: 1
+  }));
+  try {
+    subscriptionAdmin = await api('/api/subscription/admin', {
+      method: 'POST',
+      body: JSON.stringify({
+        tenantId: subscriptionAdmin.tenantId,
+        planKey: $('#subscriptionPlan').value,
+        status: $('#subscriptionStatus').value,
+        trialEndsAt: $('#subscriptionTrialEnds').value || null,
+        currentPeriodEnd: $('#subscriptionPeriodEnds').value || null,
+        limitsOverride: {
+          locations: Number($('#subscriptionLocationLimit').value || plan?.limits?.locations || 1),
+          users: Number($('#subscriptionUserLimit').value || plan?.limits?.users || 1),
+          history_days: Number($('#subscriptionHistoryDays').value || plan?.limits?.history_days || 90)
+        },
+        featuresOverride,
+        locationAddons
+      })
+    });
+    renderSubscriptionAdmin();
+    applyRoleAccess(currentUser());
+    toast('Subscription and features saved');
+  } catch (error) {
+    toast(`Subscription did not save: ${error.message}`);
+  }
 }
 
 function renderManagerNotificationPreferences() {
@@ -6461,6 +6601,18 @@ $('#customizeDashboardBtn').onclick = openDashboardCustomization;
 $('#saveDashboardBtn').onclick = saveDashboardCustomization;
 $('#resetDashboardBtn').onclick = resetDashboardCustomization;
 $('#saveManagerNotificationPreferencesBtn').onclick = saveManagerNotificationPreferences;
+$('#saveSubscriptionBtn').onclick = saveSubscriptionAdmin;
+$('#reloadSubscriptionBtn').onclick = () => loadSubscriptionAdmin();
+$('#subscriptionTenant').onchange = event => loadSubscriptionAdmin(event.target.value);
+$('#subscriptionPlan').onchange = () => {
+  const plan = selectedSubscriptionPlan();
+  if (plan) {
+    $('#subscriptionLocationLimit').value = plan.limits?.locations || '';
+    $('#subscriptionUserLimit').value = plan.limits?.users || '';
+    $('#subscriptionHistoryDays').value = plan.limits?.history_days || '';
+  }
+  renderSubscriptionFeatures(false);
+};
 $('#cancelNoticeEditBtn').onclick = resetNoticeForm;
 $('#savePopCampaignBtn').onclick = savePopCampaign;
 $('#cancelPopCampaignBtn').onclick = resetPopCampaignForm;

@@ -9,7 +9,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.20.0';
+const APP_VERSION = '1.21.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -20,6 +20,44 @@ const DEFAULT_TENANT_LOGO = process.env.APP_TENANT_LOGO || 'assets/his-managemen
 const ALERT_TIME_ZONE = process.env.ALERT_TIME_ZONE || 'America/Chicago';
 const KIOSK_TOKEN_SECRET = process.env.KIOSK_TOKEN_SECRET || SUPABASE_SERVICE_ROLE_KEY || '';
 const KIOSK_SESSION_SECONDS = 8 * 60 * 60;
+
+const FEATURE_CATALOG = [
+  { key: 'daily_operations', name: 'Daily operations', description: 'Task lists, weekly cleaning, temperature logs, and history.' },
+  { key: 'communications', name: 'Communications', description: 'Notices, calendar events, resources, and store documents.' },
+  { key: 'food_safety_training', name: 'Food safety training', description: 'Employee and manager practice quizzes.' },
+  { key: 'maintenance', name: 'Maintenance', description: 'Work orders, equipment, vendors, and planned maintenance.' },
+  { key: 'fpc_repairs', name: 'FPC repairs', description: 'FPC inspections, repair lists, comments, and photos.' },
+  { key: 'advanced_alerts', name: 'Advanced alerts', description: 'Custom email, text, app alerts, and tablet alarms.' },
+  { key: 'inspections', name: 'Store inspections', description: 'Area-manager inspection forms, history, and score trends.' },
+  { key: 'receipts', name: 'Receipt storage', description: 'Receipt upload, secure storage, and export.' },
+  { key: 'advanced_reports', name: 'Advanced reports', description: 'Incident, compliance, maintenance, and scheduled reports.' },
+  { key: 'smallwares', name: 'Smallwares', description: 'Smallwares requests and approval workflow.' },
+  { key: 'rollouts', name: 'Location rollouts', description: 'Installer checklists and rollout progress tracking.' },
+  { key: 'maintenance_work_logs', name: 'Maintenance work logs', description: 'Maintenance schedules, daily accomplishments, and hours.' }
+];
+
+const ADDON_CATALOG = [
+  { key: 'thermostats', name: 'Thermostats', description: 'Venstar monitoring and remote control.' },
+  { key: 'sensors', name: 'Temperature sensors', description: 'LoRaWAN equipment-temperature monitoring.' },
+  { key: 'cameras', name: 'Camera package', description: 'UniFi camera viewing and location mappings.' }
+];
+
+const DEFAULT_PLAN_DEFINITIONS = {
+  basic: {
+    key: 'basic',
+    name: 'Basic',
+    description: 'Core daily operations for a single organization.',
+    features: ['daily_operations', 'communications', 'food_safety_training'],
+    limits: { locations: 5, users: 75, history_days: 90 }
+  },
+  advanced: {
+    key: 'advanced',
+    name: 'Advanced',
+    description: 'The complete operations and management platform.',
+    features: FEATURE_CATALOG.map(feature => feature.key),
+    limits: { locations: 100, users: 2500, history_days: 730 }
+  }
+};
 
 const DEFAULT_LOCATION_ID = 'store-01';
 const DEFAULT_TASK_SECTIONS = ['All Day', 'Opening', 'Mid-shift', 'Closing'];
@@ -247,6 +285,289 @@ async function readTenantConfig() {
   } catch {
     return tenantConfig();
   }
+}
+
+function platformAdminEmails() {
+  return String(process.env.PLATFORM_ADMIN_EMAILS || '')
+    .split(',')
+    .map(email => email.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function isPlatformAdmin(actor) {
+  const configuredEmails = platformAdminEmails();
+  if (configuredEmails.length) return configuredEmails.includes(String(actor?.email || '').toLowerCase());
+  // Safe bootstrap for the existing HIS workspace. Set PLATFORM_ADMIN_EMAILS before onboarding customers.
+  return tenantId() === DEFAULT_TENANT_ID && isFullAccess(actor);
+}
+
+function normalizeFeatureMap(value = {}) {
+  if (Array.isArray(value)) return Object.fromEntries(value.map(key => [key, true]));
+  return Object.fromEntries(Object.entries(value || {}).map(([key, enabled]) => [key, Boolean(enabled)]));
+}
+
+function planFromRow(row = {}) {
+  const fallback = DEFAULT_PLAN_DEFINITIONS[row.key] || DEFAULT_PLAN_DEFINITIONS.basic;
+  return {
+    key: row.key || fallback.key,
+    name: row.name || fallback.name,
+    description: row.description || fallback.description,
+    features: normalizeFeatureMap(row.features || fallback.features),
+    limits: { ...fallback.limits, ...(row.limits || {}) }
+  };
+}
+
+function defaultSubscriptionFor(organizationId = tenantId()) {
+  const preserveHisAccess = organizationId === DEFAULT_TENANT_ID;
+  const plan = preserveHisAccess ? DEFAULT_PLAN_DEFINITIONS.advanced : DEFAULT_PLAN_DEFINITIONS.basic;
+  return {
+    tenantId: organizationId,
+    planKey: plan.key,
+    status: 'active',
+    provider: 'manual',
+    currentPeriodEnd: '',
+    trialEndsAt: '',
+    featuresOverride: {},
+    limitsOverride: {},
+    fallback: true,
+    preserveHisAccess
+  };
+}
+
+async function readSubscriptionPlans() {
+  try {
+    const rows = await supabase('/rest/v1/subscription_plans?active=eq.true&select=key,name,description,features,limits,sort_order&order=sort_order.asc');
+    if (rows.length) return { plans: rows.map(planFromRow), migrationReady: true };
+  } catch (error) {
+    if (![400, 404].includes(error.statusCode)) console.error('Subscription plans could not be read', error);
+  }
+  return { plans: Object.values(DEFAULT_PLAN_DEFINITIONS).map(planFromRow), migrationReady: false };
+}
+
+async function readTenantSubscription(organizationId = tenantId()) {
+  const fallback = defaultSubscriptionFor(organizationId);
+  try {
+    const rows = await supabase(`/rest/v1/tenant_subscriptions?tenant_id=eq.${encodeURIComponent(organizationId)}&select=*`);
+    const row = rows[0];
+    if (!row) return fallback;
+    return {
+      tenantId: organizationId,
+      planKey: row.plan_key || fallback.planKey,
+      status: row.status || 'active',
+      provider: row.provider || 'manual',
+      providerCustomerId: row.provider_customer_id || '',
+      providerSubscriptionId: row.provider_subscription_id || '',
+      currentPeriodEnd: row.current_period_end || '',
+      trialEndsAt: row.trial_ends_at || '',
+      featuresOverride: normalizeFeatureMap(row.features_override),
+      limitsOverride: row.limits_override || {},
+      fallback: false,
+      preserveHisAccess: false
+    };
+  } catch (error) {
+    if (![400, 404].includes(error.statusCode)) console.error('Tenant subscription could not be read', error);
+    return fallback;
+  }
+}
+
+async function readLocationAddons(organizationId = tenantId()) {
+  try {
+    const rows = await supabase(`/rest/v1/location_addons?tenant_id=eq.${encodeURIComponent(organizationId)}&select=location_id,addon_key,enabled,quantity,settings`);
+    return rows.map(row => ({
+      locationId: row.location_id,
+      addonKey: row.addon_key,
+      enabled: row.enabled !== false,
+      quantity: Number(row.quantity || 1),
+      settings: row.settings || {}
+    }));
+  } catch (error) {
+    if (![400, 404].includes(error.statusCode)) console.error('Location add-ons could not be read', error);
+    if (organizationId === DEFAULT_TENANT_ID) {
+      const locationRows = await supabase(`/rest/v1/locations?tenant_id=eq.${encodeURIComponent(organizationId)}&active=eq.true&select=id`).catch(() => []);
+      return locationRows.flatMap(location => ADDON_CATALOG.map(addon => ({ locationId: location.id, addonKey: addon.key, enabled: true, quantity: 1, settings: {} })));
+    }
+    return [];
+  }
+}
+
+async function effectiveSubscription(organizationId = tenantId()) {
+  const [{ plans, migrationReady }, subscription, locationAddons] = await Promise.all([
+    readSubscriptionPlans(),
+    readTenantSubscription(organizationId),
+    readLocationAddons(organizationId)
+  ]);
+  const plan = plans.find(entry => entry.key === subscription.planKey) || plans[0] || planFromRow(DEFAULT_PLAN_DEFINITIONS.basic);
+  const features = { ...plan.features, ...subscription.featuresOverride };
+  if (subscription.preserveHisAccess) FEATURE_CATALOG.forEach(feature => { features[feature.key] = true; });
+  if (['suspended', 'canceled', 'expired'].includes(subscription.status)) {
+    Object.keys(features).forEach(key => { features[key] = false; });
+  }
+  return {
+    ...subscription,
+    plan,
+    plans,
+    features,
+    limits: { ...plan.limits, ...subscription.limitsOverride },
+    locationAddons,
+    migrationReady
+  };
+}
+
+async function subscriptionAdminState(actor, requestedTenantId = '') {
+  const platformAdmin = isPlatformAdmin(actor);
+  const organizationId = platformAdmin && requestedTenantId ? safeName(requestedTenantId) : tenantId();
+  if (!platformAdmin && organizationId !== tenantId()) throw Object.assign(new Error('You cannot view another organization'), { statusCode: 403 });
+  const [entitlement, tenantRows, locationRows] = await Promise.all([
+    effectiveSubscription(organizationId),
+    platformAdmin
+      ? supabase('/rest/v1/tenants?active=eq.true&select=id,name,app_name&order=name.asc').catch(() => [])
+      : readTenantConfig().then(tenant => [tenant]),
+    supabase(`/rest/v1/locations?tenant_id=eq.${encodeURIComponent(organizationId)}&active=eq.true&select=id,name&order=name.asc`).catch(() => [])
+  ]);
+  return {
+    tenantId: organizationId,
+    canView: Boolean(actor && isFullAccess(actor)),
+    canEdit: platformAdmin,
+    platformAdmin,
+    migrationReady: entitlement.migrationReady,
+    subscription: {
+      planKey: entitlement.planKey,
+      planName: entitlement.plan.name,
+      status: entitlement.status,
+      provider: entitlement.provider,
+      currentPeriodEnd: entitlement.currentPeriodEnd,
+      trialEndsAt: entitlement.trialEndsAt,
+      features: entitlement.features,
+      limits: entitlement.limits
+    },
+    plans: entitlement.plans,
+    featureCatalog: FEATURE_CATALOG,
+    addonCatalog: ADDON_CATALOG,
+    locationAddons: entitlement.locationAddons,
+    tenants: tenantRows,
+    locations: locationRows
+  };
+}
+
+async function saveSubscriptionAdmin(body = {}, actor) {
+  if (!isPlatformAdmin(actor)) throw Object.assign(new Error('Only an Average Guys platform administrator can change subscriptions'), { statusCode: 403 });
+  const organizationId = safeName(body.tenantId || tenantId());
+  const { plans, migrationReady } = await readSubscriptionPlans();
+  if (!migrationReady) throw Object.assign(new Error('Run supabase/add_subscription_entitlements.sql before saving subscription settings'), { statusCode: 409 });
+  const planKey = String(body.planKey || 'basic');
+  if (!plans.some(plan => plan.key === planKey)) throw Object.assign(new Error('Choose a valid subscription plan'), { statusCode: 400 });
+  const allowedStatuses = ['trialing', 'active', 'past_due', 'suspended', 'canceled'];
+  const status = allowedStatuses.includes(body.status) ? body.status : 'active';
+  await supabase('/rest/v1/tenant_subscriptions?on_conflict=tenant_id', {
+    method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates' },
+    body: JSON.stringify({
+      tenant_id: organizationId,
+      plan_key: planKey,
+      status,
+      provider: 'manual',
+      current_period_end: body.currentPeriodEnd || null,
+      trial_ends_at: body.trialEndsAt || null,
+      features_override: normalizeFeatureMap(body.featuresOverride),
+      limits_override: body.limitsOverride || {},
+      updated_by: actor?.email || actor?.name || '',
+      updated_at: new Date().toISOString()
+    })
+  });
+
+  await supabase(`/rest/v1/location_addons?tenant_id=eq.${encodeURIComponent(organizationId)}`, { method: 'DELETE' });
+  const validLocationIds = new Set((await supabase(`/rest/v1/locations?tenant_id=eq.${encodeURIComponent(organizationId)}&select=id`)).map(location => location.id));
+  const validAddonKeys = new Set(ADDON_CATALOG.map(addon => addon.key));
+  const addons = (body.locationAddons || []).filter(addon => addon.enabled && validLocationIds.has(addon.locationId) && validAddonKeys.has(addon.addonKey));
+  if (addons.length) {
+    await supabase('/rest/v1/location_addons', {
+      method: 'POST',
+      body: JSON.stringify(addons.map(addon => ({
+        tenant_id: organizationId,
+        location_id: addon.locationId,
+        addon_key: addon.addonKey,
+        enabled: true,
+        quantity: Math.max(1, Number(addon.quantity || 1)),
+        settings: addon.settings || {},
+        updated_by: actor?.email || actor?.name || '',
+        updated_at: new Date().toISOString()
+      })))
+    });
+  }
+  return subscriptionAdminState(actor, organizationId);
+}
+
+async function assertSubscribedFeature(actor, featureKey, locationId = '') {
+  if (!AUTH_REQUIRED || !actor) return;
+  const entitlement = await effectiveSubscription(tenantId());
+  if (featureKey.startsWith('addon:')) {
+    const addonKey = featureKey.slice(6);
+    const enabled = entitlement.locationAddons.some(addon => addon.enabled && addon.addonKey === addonKey && (!locationId || addon.locationId === locationId));
+    if (!enabled) throw Object.assign(new Error(`${ADDON_CATALOG.find(addon => addon.key === addonKey)?.name || 'This add-on'} is not enabled for this location`), { statusCode: 403 });
+    return;
+  }
+  if (!entitlement.features[featureKey]) {
+    const feature = FEATURE_CATALOG.find(entry => entry.key === featureKey);
+    throw Object.assign(new Error(`${feature?.name || 'This feature'} is not included in this organization's subscription`), { statusCode: 403 });
+  }
+}
+
+async function assertSubscriptionLimit(resource, existingId = '') {
+  const entitlement = await effectiveSubscription(tenantId());
+  const limit = Number(entitlement.limits?.[resource] || 0);
+  if (!limit) return;
+  const table = resource === 'locations' ? 'locations' : 'app_users';
+  const idFilter = existingId ? `&id=eq.${encodeURIComponent(existingId)}` : '';
+  if (existingId) {
+    const existing = await supabase(`/rest/v1/${table}?${tenantQuery()}${idFilter}&select=id`);
+    if (existing[0]) return;
+  }
+  const rows = await supabase(`/rest/v1/${table}?${tenantQuery()}&active=eq.true&select=id`);
+  if (rows.length >= limit) {
+    throw Object.assign(new Error(`This subscription allows ${limit} active ${resource}. Change the plan or limit before adding another.`), { statusCode: 403 });
+  }
+}
+
+async function clientSubscriptionState(actor) {
+  const entitlement = await effectiveSubscription(tenantId());
+  return {
+    tenantId: tenantId(),
+    canView: Boolean(actor && isFullAccess(actor)),
+    canEdit: isPlatformAdmin(actor),
+    platformAdmin: isPlatformAdmin(actor),
+    migrationReady: entitlement.migrationReady,
+    subscription: {
+      planKey: entitlement.planKey,
+      planName: entitlement.plan.name,
+      status: entitlement.status,
+      provider: entitlement.provider,
+      currentPeriodEnd: entitlement.currentPeriodEnd,
+      trialEndsAt: entitlement.trialEndsAt,
+      features: entitlement.features,
+      limits: entitlement.limits
+    },
+    featureCatalog: FEATURE_CATALOG,
+    addonCatalog: ADDON_CATALOG,
+    locationAddons: entitlement.locationAddons
+  };
+}
+
+function requiredFeatureForPath(apiPath = '') {
+  if (apiPath === '/day' || apiPath.startsWith('/task/') || apiPath === '/photo' || apiPath.startsWith('/temperature-')) return 'daily_operations';
+  if (apiPath === '/notices' || apiPath.startsWith('/notice') || apiPath.startsWith('/calendar/') || apiPath.startsWith('/resources/') || apiPath.startsWith('/store-documents/')) return 'communications';
+  if (apiPath.startsWith('/maintenance-log/')) return 'maintenance_work_logs';
+  if (apiPath.startsWith('/maintenance/')) return 'maintenance';
+  if (apiPath.startsWith('/fpc/')) return 'fpc_repairs';
+  if (apiPath.startsWith('/receipts/')) return 'receipts';
+  if (apiPath.startsWith('/inspections/')) return 'inspections';
+  if (apiPath.startsWith('/management-reports/')) return 'advanced_reports';
+  if (apiPath.startsWith('/notification-preferences') || apiPath.startsWith('/pop-campaigns/')) return 'advanced_alerts';
+  if (apiPath.startsWith('/alerts/') || apiPath.startsWith('/store-alarms/')) return 'advanced_alerts';
+  if (apiPath.startsWith('/smallwares/')) return 'smallwares';
+  if (apiPath.startsWith('/rollout/')) return 'rollouts';
+  if (apiPath.startsWith('/location-health/thermostat')) return 'addon:thermostats';
+  if (apiPath.startsWith('/location-health/camera')) return 'addon:cameras';
+  return '';
 }
 
 function scheduleDaysForTask(task = {}, locationId = DEFAULT_LOCATION_ID) {
@@ -1043,6 +1364,7 @@ function appProfile(row) {
     email: row.email,
     name: row.name,
     role: row.role,
+    tenantId: row.tenant_id || tenantId(),
     locationId: row.location_id,
     locationIds: userLocationIds(row),
     authMode: row.authMode || 'password'
@@ -3891,7 +4213,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/version') {
       return json(200, {
         version: APP_VERSION,
-        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.25.3'
+        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.29.17'
       });
     }
 
@@ -3935,6 +4257,12 @@ exports.handler = async event => {
 
     const actor = AUTH_REQUIRED ? await currentProfile(event) : null;
 
+    if (method === 'GET' && apiPath === '/subscription/admin') return json(200, await subscriptionAdminState(actor, query.tenantId || ''));
+    if (method === 'POST' && apiPath === '/subscription/admin') return json(200, await saveSubscriptionAdmin(body, actor));
+
+    const requiredFeature = requiredFeatureForPath(apiPath);
+    if (requiredFeature) await assertSubscribedFeature(actor, requiredFeature, body.locationId || query.locationId || '');
+
     if (method === 'GET' && apiPath === '/state') {
       const date = query.date;
       const requestedLocationId = actor?.authMode === 'kiosk' ? actor.location_id : (query.locationId || DEFAULT_LOCATION_ID);
@@ -3946,7 +4274,7 @@ exports.handler = async event => {
         throw Object.assign(new Error('No accessible location is assigned to this account'), { statusCode: 403 });
       }
       const historyScope = actor?.authMode === 'kiosk' ? 'location' : (query.historyScope || 'location');
-      const [day, history, overdue, taskTemplates, notices, alertSettings, notificationLogs, calendarEvents, managementReports, dashboardPreferences, managerNotificationPreferences, popCampaigns, users, locations] = await Promise.all([
+      const [day, history, overdue, taskTemplates, notices, alertSettings, notificationLogs, calendarEvents, managementReports, dashboardPreferences, managerNotificationPreferences, popCampaigns, users, locations, subscription] = await Promise.all([
         readDay(locationId, date),
         readHistory(historyScope === 'all' ? null : locationId),
         readOverdue(date),
@@ -3960,7 +4288,15 @@ exports.handler = async event => {
         managerNotificationPreferencesState(actor).catch(() => ({ allowed: false, preferences: defaultManagerNotificationPreferences() })),
         popCampaignState(actor).catch(() => ({ campaigns: [], canManage: false })),
         readUsers(),
-        readLocations()
+        readLocations(),
+        clientSubscriptionState(actor).catch(() => ({
+          tenantId: tenantId(),
+          canView: false,
+          canEdit: false,
+          migrationReady: false,
+          subscription: { planKey: 'advanced', planName: 'Advanced', status: 'active', features: normalizeFeatureMap(FEATURE_CATALOG.map(feature => feature.key)), limits: DEFAULT_PLAN_DEFINITIONS.advanced.limits },
+          locationAddons: []
+        }))
       ]);
       return json(200, {
         locationId,
@@ -3977,6 +4313,7 @@ exports.handler = async event => {
         dashboardPreferences,
         managerNotificationPreferences,
         popCampaigns,
+        subscription,
         users: actor?.authMode === 'kiosk' ? users.filter(user => user.id === actor.id) : users,
         locations
       });
@@ -4044,6 +4381,7 @@ exports.handler = async event => {
     if (method === 'POST' && apiPath === '/photo') return json(200, { url: await saveAttachment({ ...body, kind: body.taskId || 'checklist-photo', name: `${body.date}-${body.taskId}` }) });
     if (method === 'POST' && apiPath === '/user') {
       assertManageAccess(actor, body);
+      await assertSubscriptionLimit('users', body.id || safeName(body.email || body.name));
       await saveUser(body);
       if (body.pin) await setUserPin(body.id || safeName(body.email || body.name), body.pin, actor);
       return json(200, { users: await readUsers() });
@@ -4060,10 +4398,12 @@ exports.handler = async event => {
     if (method === 'POST' && apiPath === '/kiosk/revoke') return json(200, { devices: await revokeKioskDevice(body.id, actor) });
     if (method === 'POST' && apiPath === '/invite') {
       assertManageAccess(actor, body);
+      await assertSubscriptionLimit('users', body.id || safeName(body.email || body.name));
       return json(200, { login: await createUserLogin({ ...body, invitedBy: body.invitedBy || actor?.name }), users: await readUsers() });
     }
     if (method === 'POST' && apiPath === '/location') {
       if (AUTH_REQUIRED && !isFullAccess(actor)) throw Object.assign(new Error('Only Director or Owner can edit store names'), { statusCode: 403 });
+      await assertSubscriptionLimit('locations', body.id || safeName(body.name));
       return json(200, { locations: await saveLocation(body) });
     }
     if (method === 'POST' && apiPath === '/task-template') {

@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="temperature.css?v=2026-08-29-negative-overrun">
   <link rel="stylesheet" href="his-theme.css?v=2026-08-29-temperature-compliance">
+  <link rel="stylesheet" href="subscription.css?v=1.21.0">
   <style>
     .receiving-issue-tools,.receiving-issue-list{width:100%;margin-top:12px}
     .receiving-issue{border-top:1px solid var(--line);padding:10px 0}
@@ -1207,6 +1208,60 @@
         <button class="section-hub-card" data-section-view="rolloutView" type="button"><span>▣</span><b>Location Rollout</b><small>Equipment, setup, verification, and handoff</small></button>
       </div>
 
+      <article class="card form-card collapsible-card subscription-admin-card" id="subscriptionAdminCard" hidden>
+        <h3>Average Guys subscription &amp; features</h3>
+        <div class="subscription-admin-intro">
+          <div>
+            <p class="hint">Internal control for each customer organization's plan, limits, and location hardware packages.</p>
+            <span class="subscription-provider-badge">Billing: Manual now · Stripe-ready</span>
+          </div>
+          <span class="status" id="subscriptionMigrationStatus">Checking setup…</span>
+        </div>
+        <label id="subscriptionTenantWrap" hidden>Organization
+          <select id="subscriptionTenant"></select>
+        </label>
+        <div class="subscription-form-grid">
+          <label>Plan
+            <select id="subscriptionPlan"></select>
+          </label>
+          <label>Status
+            <select id="subscriptionStatus">
+              <option value="trialing">Trialing</option>
+              <option value="active">Active</option>
+              <option value="past_due">Past due</option>
+              <option value="suspended">Suspended</option>
+              <option value="canceled">Canceled</option>
+            </select>
+          </label>
+          <label>Trial ends
+            <input id="subscriptionTrialEnds" type="date">
+          </label>
+          <label>Current period ends
+            <input id="subscriptionPeriodEnds" type="date">
+          </label>
+          <label>Location limit
+            <input id="subscriptionLocationLimit" type="number" min="1" step="1">
+          </label>
+          <label>User limit
+            <input id="subscriptionUserLimit" type="number" min="1" step="1">
+          </label>
+          <label>History retention (days)
+            <input id="subscriptionHistoryDays" type="number" min="30" step="1">
+          </label>
+        </div>
+        <h4>Included software features</h4>
+        <p class="hint">These are determined by the selected plan. Feature checks are also enforced by the API.</p>
+        <div id="subscriptionFeatureList" class="subscription-feature-list"></div>
+        <h4>Location add-ons</h4>
+        <p class="hint">Thermostats, sensors, and cameras can be enabled independently for each location.</p>
+        <div id="subscriptionAddonMatrix" class="subscription-addon-matrix"></div>
+        <div class="row-actions">
+          <button id="saveSubscriptionBtn" type="button">Save subscription</button>
+          <button id="reloadSubscriptionBtn" class="ghost" type="button">Reload</button>
+        </div>
+        <p class="hint" id="subscriptionAdminHelp"></p>
+      </article>
+
       <article class="card collapsible-card manage-group-card" id="manageUsersGroup">
         <h3>Users</h3>
         <div id="manageUsersGroupItems" class="manage-group-items"></div>
@@ -2020,9 +2075,9 @@
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-29-16"></script>
+  <script src="version.js?v=2026-08-29-17"></script>
   <script src="auth.js?v=2026-08-29-capacitor"></script>
-  <script src="app.js?v=2026-08-29-temperature-compliance"></script>
+  <script src="app.js?v=2026-08-29-subscriptions"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>

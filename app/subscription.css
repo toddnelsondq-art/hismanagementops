@@ -1,0 +1,28 @@
+.subscription-admin-card{border-color:#c9d9eb;background:linear-gradient(145deg,#fff 0%,#f7faff 100%)}
+.subscription-admin-intro{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:12px}
+.subscription-provider-badge{display:inline-flex;margin-top:8px;padding:5px 9px;border-radius:999px;background:#e8f1fb;color:#123a68;font-size:11px;font-weight:800}
+.subscription-warning{background:#fff1d6!important;color:#8a5600!important}
+.subscription-form-grid{display:grid;grid-template-columns:repeat(3,minmax(150px,1fr));gap:10px 14px}
+.subscription-form-grid label{margin-top:4px}
+.subscription-feature-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin:10px 0 18px}
+.subscription-feature{display:grid!important;grid-template-columns:24px 1fr;gap:9px;align-items:flex-start;margin:0!important;padding:12px;border:1px solid #dbe4ee;border-radius:12px;background:#f8fafc;font-weight:500!important}
+.subscription-feature.enabled{background:#eef7f3;border-color:#bdd9cd}
+.subscription-feature input{width:18px;height:18px;margin-top:2px;accent-color:#123a68}
+.subscription-feature span{display:grid;gap:2px}
+.subscription-feature small{color:#64748b;font-weight:500;line-height:1.35}
+.subscription-feature em{color:#466078;font-size:10px;font-style:normal;font-weight:800;text-transform:uppercase;letter-spacing:.4px}
+.subscription-addon-matrix{overflow-x:auto;margin:10px 0 18px;border:1px solid #dbe4ee;border-radius:12px;background:#fff}
+.subscription-addon-row{display:grid;grid-template-columns:minmax(160px,2fr) repeat(3,minmax(110px,1fr));align-items:center;min-width:550px;border-top:1px solid #e5eaf0}
+.subscription-addon-row:first-child{border-top:0}
+.subscription-addon-row>*{padding:11px 12px;text-align:center;margin:0!important}
+.subscription-addon-row>span,.subscription-addon-row>b:first-child{text-align:left}
+.subscription-addon-row label{display:grid!important;place-items:center;border-left:1px solid #e5eaf0}
+.subscription-addon-row input{width:20px;height:20px;accent-color:#123a68}
+.subscription-addon-head{background:#eef4fa;color:#123a68;font-size:12px}
+.sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+
+@media(max-width:760px){
+  .subscription-form-grid,.subscription-feature-list{grid-template-columns:1fr}
+  .subscription-admin-intro{display:block}
+  .subscription-admin-intro .status{display:inline-flex;margin-top:9px}
+}

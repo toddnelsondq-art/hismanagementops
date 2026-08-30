@@ -7,6 +7,7 @@ const APP_SHELL = [
   '/styles.css',
   '/temperature.css',
   '/his-theme.css',
+  '/subscription.css',
   '/auth.js',
   '/version.js',
   '/app.js',
