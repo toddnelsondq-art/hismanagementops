@@ -9,7 +9,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.21.0';
+const APP_VERSION = '1.22.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -561,6 +561,7 @@ function requiredFeatureForPath(apiPath = '') {
   if (apiPath.startsWith('/receipts/')) return 'receipts';
   if (apiPath.startsWith('/inspections/')) return 'inspections';
   if (apiPath.startsWith('/management-reports/')) return 'advanced_reports';
+  if (apiPath.startsWith('/financial-reports/')) return 'advanced_reports';
   if (apiPath.startsWith('/notification-preferences') || apiPath.startsWith('/pop-campaigns/')) return 'advanced_alerts';
   if (apiPath.startsWith('/alerts/') || apiPath.startsWith('/store-alarms/')) return 'advanced_alerts';
   if (apiPath.startsWith('/smallwares/')) return 'smallwares';
@@ -1036,6 +1037,284 @@ function dateInRange(value, start, end) {
   return date >= start && date <= end;
 }
 
+function financialPercentChange(current, prior) {
+  const currentValue = Number(current || 0);
+  const priorValue = Number(prior || 0);
+  return priorValue > 0 ? Math.round(((currentValue - priorValue) / priorValue) * 1000) / 10 : null;
+}
+
+function financialEmptySummary(range, locationId, start, end, extra = {}) {
+  return {
+    allowed: true,
+    migrationReady: true,
+    range,
+    locationId,
+    start,
+    end,
+    reportCount: 0,
+    locationCount: 0,
+    totals: {
+      netSales: 0,
+      comparisonNetSales: 0,
+      netSalesLy: 0,
+      salesVsLyPercent: null,
+      laborCost: 0,
+      laborHours: 0,
+      laborPercent: null,
+      transactions: 0,
+      comparisonTransactions: 0,
+      transactionsLy: 0,
+      transactionChangePercent: null,
+      averageTicket: null,
+      digitalSales: 0,
+      cashOverShort: 0
+    },
+    byLocation: [],
+    standouts: [],
+    comparisonCoverage: { matchedReports: 0, totalReports: 0 },
+    ...extra
+  };
+}
+
+function financialAggregate(rows = [], locationNames = new Map()) {
+  const totals = rows.reduce((summary, row) => {
+    const netSales = Number(row.net_sales || 0);
+    const netSalesLy = Number(row.net_sales_ly || 0);
+    const transactions = Number(row.transaction_count || 0);
+    const transactionsLy = Number(row.transaction_count_ly || 0);
+    summary.netSales += netSales;
+    summary.laborCost += Number(row.labor_cost || 0);
+    summary.laborHours += Number(row.labor_hours || 0);
+    summary.transactions += transactions;
+    summary.digitalSales += Number(row.digital_sales || 0);
+    summary.cashOverShort += Number(row.cash_over_short || 0);
+    if (netSalesLy > 0) {
+      summary.comparisonNetSales += netSales;
+      summary.netSalesLy += netSalesLy;
+      summary.matchedReports += 1;
+    }
+    if (transactionsLy > 0) {
+      summary.comparisonTransactions += transactions;
+      summary.transactionsLy += transactionsLy;
+    }
+    return summary;
+  }, {
+    netSales: 0,
+    comparisonNetSales: 0,
+    netSalesLy: 0,
+    laborCost: 0,
+    laborHours: 0,
+    transactions: 0,
+    comparisonTransactions: 0,
+    transactionsLy: 0,
+    digitalSales: 0,
+    cashOverShort: 0,
+    matchedReports: 0
+  });
+  Object.keys(totals).forEach(key => {
+    if (typeof totals[key] === 'number' && key !== 'matchedReports') totals[key] = Math.round(totals[key] * 100) / 100;
+  });
+  return {
+    ...totals,
+    salesVsLyPercent: financialPercentChange(totals.comparisonNetSales, totals.netSalesLy),
+    laborPercent: totals.netSales > 0 ? Math.round((totals.laborCost / totals.netSales) * 10000) / 10000 : null,
+    transactionChangePercent: financialPercentChange(totals.comparisonTransactions, totals.transactionsLy),
+    averageTicket: totals.transactions > 0 ? Math.round((totals.netSales / totals.transactions) * 100) / 100 : null,
+    locationName: rows.length === 1 ? locationNames.get(rows[0].location_id) || rows[0].source_store_name || rows[0].location_id : ''
+  };
+}
+
+async function financialSummary(actor, range = 'day', locationId = 'all') {
+  const { start, end } = dateRange(range);
+  if (AUTH_REQUIRED) {
+    const entitlement = await effectiveSubscription(tenantId());
+    if (!entitlement.features.advanced_reports) return { ...financialEmptySummary(range, locationId, start, end), allowed: false };
+  }
+  if (AUTH_REQUIRED && roleRank(actor?.role) < roleRank('Manager')) {
+    return { ...financialEmptySummary(range, locationId, start, end), allowed: false };
+  }
+  const allLocations = await readLocations();
+  const actorLocationIds = AUTH_REQUIRED && !isFullAccess(actor) ? userLocationIds(actor) : allLocations.map(location => location.id);
+  const selectedLocationIds = locationId && locationId !== 'all'
+    ? actorLocationIds.filter(id => id === locationId)
+    : actorLocationIds;
+  if (!selectedLocationIds.length) return financialEmptySummary(range, locationId, start, end);
+  const queryStartDate = new Date(`${start}T12:00:00Z`);
+  if (range === 'day') queryStartDate.setUTCDate(queryStartDate.getUTCDate() - 45);
+  const queryStart = queryStartDate.toISOString().slice(0, 10);
+  let rows;
+  try {
+    rows = await supabase(`/rest/v1/financial_daily_metrics?${tenantQuery()}&business_date=gte.${encodeURIComponent(queryStart)}&business_date=lte.${encodeURIComponent(end)}&select=*`);
+  } catch (error) {
+    if ([400, 404].includes(error.statusCode)) {
+      return financialEmptySummary(range, locationId, start, end, {
+        migrationReady: false,
+        message: 'Run supabase/add_financial_reports.sql in Supabase before importing reports.'
+      });
+    }
+    throw error;
+  }
+  let selected = rows.filter(row => selectedLocationIds.includes(row.location_id));
+  let effectiveStart = start;
+  let effectiveEnd = end;
+  if (range === 'day' && !selected.some(row => row.business_date === end) && selected.length) {
+    const latestDate = selected.reduce((latest, row) => String(row.business_date) > latest ? String(row.business_date) : latest, '');
+    selected = selected.filter(row => row.business_date === latestDate);
+    effectiveStart = latestDate;
+    effectiveEnd = latestDate;
+  } else if (range === 'day') {
+    selected = selected.filter(row => row.business_date === end);
+  }
+  const locationNames = new Map(allLocations.map(location => [location.id, location.name]));
+  const totals = financialAggregate(selected, locationNames);
+  const grouped = selected.reduce((groups, row) => {
+    groups[row.location_id] ??= [];
+    groups[row.location_id].push(row);
+    return groups;
+  }, {});
+  const byLocation = Object.entries(grouped).map(([scopedLocationId, locationRows]) => ({
+    locationId: scopedLocationId,
+    locationName: locationNames.get(scopedLocationId) || locationRows[0]?.source_store_name || scopedLocationId,
+    reportCount: locationRows.length,
+    ...financialAggregate(locationRows, locationNames)
+  })).sort((a, b) => a.locationName.localeCompare(b.locationName));
+  const standouts = byLocation.flatMap(location => {
+    const items = [];
+    if (location.salesVsLyPercent !== null && location.salesVsLyPercent <= -5) items.push({ type: 'sales', severity: 'attention', locationId: location.locationId, locationName: location.locationName, message: `Sales are ${Math.abs(location.salesVsLyPercent).toFixed(1)}% below last year` });
+    if (location.laborPercent !== null && location.laborPercent >= 0.25) items.push({ type: 'labor', severity: 'attention', locationId: location.locationId, locationName: location.locationName, message: `Labor is ${(location.laborPercent * 100).toFixed(1)}%` });
+    if (location.transactionChangePercent !== null && location.transactionChangePercent <= -10) items.push({ type: 'transactions', severity: 'review', locationId: location.locationId, locationName: location.locationName, message: `Transactions are ${Math.abs(location.transactionChangePercent).toFixed(1)}% below last year` });
+    if (Math.abs(location.cashOverShort || 0) >= 20) items.push({ type: 'cash', severity: 'review', locationId: location.locationId, locationName: location.locationName, message: `Cash over/short is ${Number(location.cashOverShort).toLocaleString('en-US', { style: 'currency', currency: 'USD' })}` });
+    return items;
+  });
+  return {
+    allowed: true,
+    migrationReady: true,
+    range,
+    locationId,
+    start: effectiveStart,
+    end: effectiveEnd,
+    reportCount: selected.length,
+    locationCount: byLocation.length,
+    totals,
+    byLocation,
+    standouts,
+    comparisonCoverage: { matchedReports: totals.matchedReports, totalReports: selected.length }
+  };
+}
+
+function cleanFinancialNumber(value, { integer = false, percent = false, required = false } = {}) {
+  if ((value === null || value === undefined || value === '') && !required) return null;
+  let number = Number(value);
+  if (!Number.isFinite(number)) throw Object.assign(new Error('The financial workbook contains an invalid number'), { statusCode: 400 });
+  if (percent && number > 1 && number <= 100) number /= 100;
+  return integer ? Math.round(number) : Math.round(number * 100000) / 100000;
+}
+
+async function recentFinancialImports(actor) {
+  if (AUTH_REQUIRED && !isFullAccess(actor)) return [];
+  try {
+    const rows = await supabase(`/rest/v1/financial_report_imports?${tenantQuery()}&select=*&order=created_at.desc&limit=20`);
+    return rows.map(row => ({
+      id: row.id,
+      reportDate: row.report_date,
+      comparisonDate: row.comparison_date,
+      sourceFilename: row.source_filename,
+      locationCount: row.location_count,
+      importedBy: row.imported_by,
+      createdAt: row.created_at
+    }));
+  } catch (error) {
+    if ([400, 404].includes(error.statusCode)) return [];
+    throw error;
+  }
+}
+
+async function financialReportState(actor, query = {}) {
+  const summary = await financialSummary(actor, query.range || 'day', query.locationId || 'all');
+  return { ...summary, canImport: !AUTH_REQUIRED || isFullAccess(actor), imports: await recentFinancialImports(actor) };
+}
+
+async function importFinancialReports(payload = {}, actor) {
+  if (AUTH_REQUIRED && !isFullAccess(actor)) throw Object.assign(new Error('Only Directors and Owners can import company financial reports'), { statusCode: 403 });
+  const sourceRows = Array.isArray(payload.rows) ? payload.rows : [];
+  if (!sourceRows.length || sourceRows.length > 100) throw Object.assign(new Error('The import must contain between 1 and 100 store reports'), { statusCode: 400 });
+  const allLocations = await readLocations();
+  const locationIds = new Set(allLocations.map(location => location.id));
+  const seen = new Set();
+  const importId = crypto.randomUUID();
+  const importedAt = new Date().toISOString();
+  const sourceFilename = String(payload.sourceFilename || 'Financial recap.xlsx').slice(0, 200);
+  const sourceHash = String(payload.sourceHash || '').slice(0, 128);
+  const reportRows = sourceRows.map((row, index) => {
+    const rowNumber = index + 1;
+    const locationId = String(row.locationId || '');
+    const businessDate = String(row.businessDate || '');
+    if (!locationIds.has(locationId)) throw Object.assign(new Error(`Import row ${rowNumber}: Choose a valid DQ OPS location`), { statusCode: 400 });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(businessDate)) throw Object.assign(new Error(`Import row ${rowNumber}: A valid report date is required`), { statusCode: 400 });
+    const key = `${locationId}|${businessDate}`;
+    if (seen.has(key)) throw Object.assign(new Error(`Import row ${rowNumber}: That location and date appear more than once`), { statusCode: 400 });
+    seen.add(key);
+    const netSales = cleanFinancialNumber(row.netSales, { required: true });
+    return withTenant({
+      location_id: locationId,
+      business_date: businessDate,
+      comparison_date: /^\d{4}-\d{2}-\d{2}$/.test(String(row.comparisonDate || '')) ? row.comparisonDate : null,
+      source_store_code: String(row.sourceStoreCode || '').slice(0, 40),
+      source_store_name: String(row.sourceStoreName || row.sourceStoreLabel || '').slice(0, 160),
+      gross_sales: cleanFinancialNumber(row.grossSales),
+      total_discounts: cleanFinancialNumber(row.totalDiscounts),
+      net_sales: netSales,
+      net_sales_ly: cleanFinancialNumber(row.netSalesLy),
+      transaction_count: cleanFinancialNumber(row.transactionCount, { integer: true }),
+      transaction_count_ly: cleanFinancialNumber(row.transactionCountLy, { integer: true }),
+      average_ticket: cleanFinancialNumber(row.averageTicket),
+      labor_hours: cleanFinancialNumber(row.laborHours),
+      labor_cost: cleanFinancialNumber(row.laborCost),
+      labor_percent: cleanFinancialNumber(row.laborPercent, { percent: true }),
+      sales_per_labor_hour: cleanFinancialNumber(row.salesPerLaborHour),
+      average_hourly_wage: cleanFinancialNumber(row.averageHourlyWage),
+      digital_sales: cleanFinancialNumber(row.digitalSales),
+      cash_over_short: cleanFinancialNumber(row.cashOverShort),
+      cancel_count: cleanFinancialNumber(row.cancelCount, { integer: true }),
+      void_count: cleanFinancialNumber(row.voidCount, { integer: true }),
+      source_filename: sourceFilename,
+      source_hash: sourceHash,
+      import_id: importId,
+      imported_by: actor?.name || actor?.email || 'Director',
+      imported_at: importedAt,
+      raw_metrics: { sourceSection: row.sectionNumber || rowNumber }
+    });
+  });
+  const reportDates = [...new Set(reportRows.map(row => row.business_date))];
+  if (reportDates.length !== 1) throw Object.assign(new Error('Each workbook import must contain one current report date'), { statusCode: 400 });
+  try {
+    await supabase('/rest/v1/financial_report_imports', {
+      method: 'POST',
+      body: JSON.stringify(withTenant({
+        id: importId,
+        report_date: reportDates[0],
+        comparison_date: reportRows.find(row => row.comparison_date)?.comparison_date || null,
+        source_filename: sourceFilename,
+        source_hash: sourceHash,
+        location_count: reportRows.length,
+        imported_by: actor?.name || actor?.email || 'Director',
+        imported_by_id: actor?.id || ''
+      }))
+    });
+    await supabase('/rest/v1/financial_daily_metrics?on_conflict=tenant_id,location_id,business_date', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates' },
+      body: JSON.stringify(reportRows)
+    });
+  } catch (error) {
+    if ([400, 404].includes(error.statusCode)) {
+      throw Object.assign(new Error('Financial reporting is not set up in Supabase yet. Run supabase/add_financial_reports.sql and try again.'), { statusCode: 409 });
+    }
+    throw error;
+  }
+  return { imported: reportRows.length, reportDate: reportDates[0], state: await financialReportState(actor, { range: 'day', locationId: 'all' }) };
+}
+
 async function dashboardSummary(actor, range = 'day', locationId = 'all') {
   const { start, end, dates } = dateRange(range);
   const allLocations = await readLocations();
@@ -1056,6 +1335,7 @@ async function dashboardSummary(actor, range = 'day', locationId = 'all') {
       tempLogs: { completed: 0, remaining: 0, total: 0, percent: 0 },
       maintenance: { completed: 0, open: 0, total: 0, percent: 0 },
       fpc: { completed: 0, open: 0, total: 0, percent: 0 },
+      financials: await financialSummary(actor, range, locationId),
       progress: { mode: 'locations', rows: [] }
     };
   }
@@ -1144,6 +1424,7 @@ async function dashboardSummary(actor, range = 'day', locationId = 'all') {
   const completedPm = scopedPm.filter(pm => String(pm.Status || '').toLowerCase() === 'completed');
   const openPm = scopedPm.filter(pm => String(pm.Status || 'Due').toLowerCase() !== 'completed');
   const fpc = fpcSummary(fpcRecords, selectedLocations);
+  const financials = await financialSummary(actor, range, locationId);
 
   return {
     range,
@@ -1160,6 +1441,7 @@ async function dashboardSummary(actor, range = 'day', locationId = 'all') {
       percent: dashboardPercent(completedOrders.length + completedPm.length, completedOrders.length + completedPm.length + openOrders.length + openPm.length)
     },
     fpc,
+    financials,
     progress: {
       mode: selectedBreakdown ? 'single-location' : 'locations',
       rows: progressRows
@@ -4213,7 +4495,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/version') {
       return json(200, {
         version: APP_VERSION,
-        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.29.17'
+        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.30.01'
       });
     }
 
@@ -4324,6 +4606,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/locations') return json(200, { locations: await readLocations() });
     if (method === 'GET' && apiPath === '/overdue') return json(200, { overdue: await readOverdue(query.date) });
     if (method === 'GET' && apiPath === '/dashboard') return json(200, await dashboardSummary(actor, query.range || 'day', query.locationId || 'all'));
+    if (method === 'GET' && apiPath === '/financial-reports/state') return json(200, await financialReportState(actor, query));
     if (method === 'GET' && apiPath === '/maintenance/state') return json(200, await maintenanceStateForActor(actor, query.locationId || 'all'));
     if (method === 'GET' && apiPath === '/maintenance-log/state') return json(200, await maintenanceWorkLogState(actor));
     if (method === 'GET' && apiPath === '/rollout/state') return json(200, await rolloutState(actor));
@@ -4487,6 +4770,7 @@ exports.handler = async event => {
     if (method === 'POST' && apiPath === '/management-reports/update') return json(200, await updateManagementReport(body, actor));
     if (method === 'POST' && apiPath === '/dashboard/preferences') return json(200, await saveDashboardPreferences(body, actor));
     if (method === 'POST' && apiPath === '/dashboard/preferences/reset') return json(200, await resetDashboardPreferences(actor));
+    if (method === 'POST' && apiPath === '/financial-reports/import') return json(200, await importFinancialReports(body, actor));
     if (method === 'POST' && apiPath === '/notification-preferences') return json(200, await saveManagerNotificationPreferences(body, actor));
     if (method === 'POST' && apiPath === '/pop-campaigns/campaign') return json(200, await savePopCampaign(body, actor));
     if (method === 'POST' && apiPath === '/pop-campaigns/complete') return json(200, await completePopCampaign(body, actor));

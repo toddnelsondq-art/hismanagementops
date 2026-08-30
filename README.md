@@ -118,6 +118,8 @@ Users can sign out from the button in the app header, then sign back in with ema
 
 For an existing Supabase project, run [`supabase/add_kiosk_pin_login.sql`](supabase/add_kiosk_pin_login.sql) in the Supabase SQL Editor before deploying this version.
 
+For financial Day/Week/Month dashboard reporting, also run [`supabase/add_financial_reports.sql`](supabase/add_financial_reports.sql). Directors and Owners can then upload the Excel version of the Day-to-Day Financial Recap LY report from Manage. Managers and Area Managers only see financial results for their assigned locations.
+
 1. Sign in with a Manager, Area Manager, Director, or Owner account.
 2. Open Manage and set a four-digit PIN while adding or editing an Employee.
 3. In **Store tablets & employee PINs**, choose the store, name the tablet, and generate a setup code.

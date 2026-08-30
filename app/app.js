@@ -212,6 +212,7 @@ let tempEntryMode = 'listed';
 let dashboardRange = localStorage.getItem('dailyops-dashboard-range') || 'day';
 let dashboardLocationId = localStorage.getItem('dailyops-dashboard-location') || 'all';
 const dashboardWidgetCatalog = [
+  { id: 'financials', label: 'Sales & labor at a glance' },
   { id: 'alerts', label: 'Upcoming visits and events' },
   { id: 'upcoming', label: 'Upcoming maintenance and FPC tasks' },
   { id: 'marketing', label: 'POP & readerboard updates', required: true },
@@ -230,6 +231,7 @@ let dashboardPreferencesCustomizable = false;
 let editingDashboardPreferences = null;
 let dashboardPreferencesApplied = false;
 let dashboardMetrics = {
+  financials: { allowed: false, migrationReady: true, reportCount: 0, totals: {}, byLocation: [], standouts: [] },
   taskLists: { completed: 0, remaining: 0, total: 0, percent: 0 },
   weeklyCleaning: { completed: 0, remaining: 0, total: 0, percent: 0 },
   tempLogs: { completed: 0, remaining: 0, total: 0, percent: 0 },
@@ -251,6 +253,9 @@ let managerNotificationPreferences = {
     performanceReport: { cadence: 'none', sendTime: '08:00', channels: ['email'], includeTasks: true, includeTemps: true, includePm: true }
   }
 };
+let financialReportState = { allowed: false, migrationReady: true, canImport: false, reportCount: 0, totals: {}, byLocation: [], standouts: [], imports: [] };
+let pendingFinancialReports = [];
+let pendingFinancialSource = { filename: '', hash: '' };
 let popCampaigns = { campaigns: [], canManage: false };
 let subscriptionAdmin = {
   tenantId: 'his-management',
@@ -423,6 +428,17 @@ function setupCustomizableDashboard() {
   area.className = 'dashboard-widget-area';
   controls.insertAdjacentElement('afterend', area);
 
+  const financialCard = document.createElement('article');
+  financialCard.className = 'card dashboard-widget financial-dashboard-card';
+  financialCard.id = 'dashboardFinancialCard';
+  financialCard.innerHTML = `
+    <div class="maintenance-row compact">
+      <div><p class="eyebrow">DAY / WEEK / MONTH AT A GLANCE</p><h3>Sales &amp; labor</h3></div>
+      <span class="status" id="dashboardFinancialCoverage">No reports</span>
+    </div>
+    <div id="dashboardFinancialMetrics" class="financial-metric-grid"></div>
+    <div id="dashboardFinancialStandouts" class="financial-standouts"></div>
+    <details id="dashboardFinancialLocations" class="financial-location-details"><summary>Location detail</summary><div></div></details>`;
   const incidentCard = document.createElement('article');
   incidentCard.className = 'card dashboard-card dashboard-widget dashboard-clickable';
   incidentCard.id = 'dashboardIncidentCard';
@@ -440,13 +456,13 @@ function setupCustomizableDashboard() {
   marketingCard.dataset.openManageCard = 'popCampaignAdminCard';
   marketingCard.innerHTML = '<div class="maintenance-row compact"><div><p class="eyebrow">NOW + NEXT 30 DAYS</p><h3>POP &amp; readerboard updates</h3></div><span class="status" id="dashboardMarketingCount">0 updates</span></div><div id="dashboardMarketingList"></div>';
 
-  const widgets = { alerts, upcoming, marketing: marketingCard, incidents: incidentCard, taskLists: metricCards[0], weeklyCleaning: metricCards[1], tempLogs: metricCards[2], maintenance: metricCards[3], fpc: metricCards[4], inspections: inspectionCard, progress };
+  const widgets = { financials: financialCard, alerts, upcoming, marketing: marketingCard, incidents: incidentCard, taskLists: metricCards[0], weeklyCleaning: metricCards[1], tempLogs: metricCards[2], maintenance: metricCards[3], fpc: metricCards[4], inspections: inspectionCard, progress };
   dashboardWidgetCatalog.forEach(widget => {
     const element = widgets[widget.id];
     if (!element) return;
     element.dataset.dashboardWidget = widget.id;
     element.classList.add('dashboard-widget');
-    if (['alerts', 'upcoming', 'marketing', 'progress'].includes(widget.id)) element.classList.add('widget-wide');
+    if (['financials', 'alerts', 'upcoming', 'marketing', 'progress'].includes(widget.id)) element.classList.add('widget-wide');
     area.appendChild(element);
   });
   metricGrid?.remove();
@@ -849,6 +865,7 @@ async function loadState() {
   await loadSmallwaresState();
   await loadManagementReportsState();
   await loadDashboardState();
+  await loadFinancialReportState();
   await loadKioskDevices();
   await loadStoreAlarmState();
   await loadTemperatureStandards();
@@ -1448,6 +1465,18 @@ function temperatureListNames() {
   return isTemperatureListFormat() ? Object.keys(temperatureItems) : ['Grill', 'Chill'];
 }
 
+async function loadFinancialReportState() {
+  if (!apiOnline || !isFullAccess() || !subscriptionFeatureEnabled('advanced_reports')) {
+    financialReportState = { allowed: false, migrationReady: true, canImport: false, reportCount: 0, totals: {}, byLocation: [], standouts: [], imports: [] };
+    return;
+  }
+  try {
+    financialReportState = await api(`/api/financial-reports/state?range=${encodeURIComponent(dashboardRange)}&locationId=all`);
+  } catch (error) {
+    financialReportState = { allowed: true, migrationReady: false, canImport: true, reportCount: 0, totals: {}, byLocation: [], standouts: [], imports: [], message: error.message };
+  }
+}
+
 function formatClockTime(value = '') {
   const text = String(value || '').trim();
   if (!text || /\b(?:AM|PM)\b/i.test(text)) return text;
@@ -1816,6 +1845,66 @@ function renderDashboardWidgetSummaries() {
   }
 }
 
+function financialCurrency(value) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return '—';
+  const number = Number(value);
+  return number.toLocaleString(undefined, { style: 'currency', currency: 'USD', minimumFractionDigits: Math.abs(number) < 100 ? 2 : 0, maximumFractionDigits: Math.abs(number) < 100 ? 2 : 0 });
+}
+
+function financialPercent(value, { fraction = false, signed = false } = {}) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return '—';
+  const number = Number(value) * (fraction ? 100 : 1);
+  return `${signed && number > 0 ? '+' : ''}${number.toFixed(1)}%`;
+}
+
+function renderDashboardFinancials() {
+  const container = $('#dashboardFinancialMetrics');
+  if (!container) return;
+  const financials = dashboardMetrics.financials || { allowed: false, migrationReady: true, reportCount: 0, totals: {}, byLocation: [], standouts: [] };
+  const coverage = $('#dashboardFinancialCoverage');
+  const standouts = $('#dashboardFinancialStandouts');
+  const details = $('#dashboardFinancialLocations');
+  if (!financials.allowed) {
+    coverage.textContent = 'Manager access';
+    container.innerHTML = '<p class="hint">Financial performance is available to Managers and above.</p>';
+    standouts.innerHTML = '';
+    details.hidden = true;
+    return;
+  }
+  if (!financials.migrationReady) {
+    coverage.textContent = 'Setup required';
+    container.innerHTML = `<p class="hint">${escapeHtml(financials.message || 'Financial reporting needs to be set up in Supabase.')}</p>`;
+    standouts.innerHTML = '';
+    details.hidden = true;
+    return;
+  }
+  if (!financials.reportCount) {
+    coverage.textContent = 'No reports';
+    container.innerHTML = '<p class="hint">No financial recap has been imported for this time period and location selection.</p>';
+    standouts.innerHTML = '';
+    details.hidden = true;
+    return;
+  }
+  const totals = financials.totals || {};
+  coverage.textContent = `${financials.reportCount} store-day${financials.reportCount === 1 ? '' : 's'}`;
+  const salesTone = totals.salesVsLyPercent === null ? '' : totals.salesVsLyPercent < 0 ? 'metric-attention' : 'metric-positive';
+  const laborTone = totals.laborPercent !== null && totals.laborPercent >= 0.25 ? 'metric-attention' : '';
+  container.innerHTML = `
+    <div class="financial-metric"><span>Net sales</span><b>${financialCurrency(totals.netSales)}</b><small>${financials.start === financials.end ? escapeHtml(financials.start) : `${escapeHtml(financials.start)} through ${escapeHtml(financials.end)}`}</small></div>
+    <div class="financial-metric ${salesTone}"><span>Sales vs last year</span><b>${financialPercent(totals.salesVsLyPercent, { signed: true })}</b><small>${financialCurrency(totals.comparisonNetSales)} vs ${financialCurrency(totals.netSalesLy)}</small></div>
+    <div class="financial-metric ${laborTone}"><span>Labor</span><b>${financialPercent(totals.laborPercent, { fraction: true })}</b><small>${financialCurrency(totals.laborCost)} · ${Number(totals.laborHours || 0).toFixed(1)} hours</small></div>
+    <div class="financial-metric"><span>Transactions</span><b>${Number(totals.transactions || 0).toLocaleString()}</b><small>${financialPercent(totals.transactionChangePercent, { signed: true })} vs last year</small></div>
+    <div class="financial-metric"><span>Average ticket</span><b>${financialCurrency(totals.averageTicket)}</b><small>${financialCurrency(totals.digitalSales)} digital sales</small></div>`;
+  const comparison = financials.comparisonCoverage || {};
+  const comparisonNote = comparison.matchedReports < comparison.totalReports
+    ? `<p class="hint">Last-year comparison excludes ${comparison.totalReports - comparison.matchedReports} store-day${comparison.totalReports - comparison.matchedReports === 1 ? '' : 's'} without last-year sales.</p>`
+    : '';
+  standouts.innerHTML = `${comparisonNote}${(financials.standouts || []).length ? `<h4>Items to review</h4><div class="financial-standout-list">${financials.standouts.slice(0, 8).map(item => `<div class="financial-standout ${item.severity === 'attention' ? 'attention' : ''}"><b>${escapeHtml(item.locationName)}</b><span>${escapeHtml(item.message)}</span></div>`).join('')}</div>` : '<p class="hint">No sales, labor, transaction, or cash items crossed the current review thresholds.</p>'}`;
+  const byLocation = financials.byLocation || [];
+  details.hidden = byLocation.length < 2;
+  details.querySelector('div').innerHTML = byLocation.length ? `<div class="financial-location-table"><div class="financial-location-row heading"><b>Location</b><span>Sales</span><span>vs LY</span><span>Labor</span><span>Transactions</span></div>${byLocation.map(location => `<div class="financial-location-row"><b>${escapeHtml(location.locationName)}</b><span>${financialCurrency(location.netSales)}</span><span>${financialPercent(location.salesVsLyPercent, { signed: true })}</span><span>${financialPercent(location.laborPercent, { fraction: true })}</span><span>${Number(location.transactions || 0).toLocaleString()}</span></div>`).join('')}</div>` : '';
+}
+
 function applyDashboardPreferences(activeUser = currentUser()) {
   dashboardPreferences = normalizeClientDashboardPreferences(dashboardPreferences);
   const area = $('#dashboardWidgetArea');
@@ -1826,7 +1915,7 @@ function applyDashboardPreferences(activeUser = currentUser()) {
   });
   area.querySelectorAll('[data-dashboard-widget]').forEach(widget => {
     const id = widget.dataset.dashboardWidget;
-    const permitted = (id !== 'incidents' || canUseManagementReports(activeUser)) && (id !== 'inspections' || canAddStoreDocuments(activeUser)) && (!['taskLists', 'weeklyCleaning', 'tempLogs', 'progress'].includes(id) || canUseDailyOps(activeUser));
+    const permitted = (id !== 'financials' || (roleRank(activeUser.role) >= roleRank('Manager') && subscriptionFeatureEnabled('advanced_reports'))) && (id !== 'incidents' || canUseManagementReports(activeUser)) && (id !== 'inspections' || canAddStoreDocuments(activeUser)) && (!['taskLists', 'weeklyCleaning', 'tempLogs', 'progress'].includes(id) || canUseDailyOps(activeUser));
     const required = dashboardWidgetCatalog.find(item => item.id === id)?.required;
     widget.style.display = (required || dashboardPreferences.visible.includes(id)) && permitted ? '' : 'none';
   });
@@ -1940,6 +2029,7 @@ function renderDashboard(visibleLocations, activeUser) {
   $('#tempLogsChartHint').textContent = `${periodLabel} required temperature logs.`;
   $('#maintenanceChartHint').textContent = `${dashboardRange === 'day' ? 'Current day' : dashboardRange === 'week' ? 'Current week' : 'Current month'} completed vs open work orders.`;
   $('#fpcChartHint').textContent = 'Current FPC repair item completion for the selected location view.';
+  renderDashboardFinancials();
   renderDashboardProgress();
   renderUpcomingMaintenanceTasks(visibleLocations, activeUser);
   renderPopCampaigns();
@@ -3085,6 +3175,7 @@ function applyRoleAccess(user) {
   document.querySelectorAll('#manageSectionHub [data-section-view="receiptsView"], #manageSectionHub [data-section-view="inspectionsView"]').forEach(button => button.style.display = canAddStoreDocuments(user) ? '' : 'none');
   if ($('#alertRulesCard')) $('#alertRulesCard').style.display = subscriptionFeatureEnabled('advanced_alerts') ? '' : 'none';
   if ($('#storeAlarmAdminCard')) $('#storeAlarmAdminCard').style.display = subscriptionFeatureEnabled('advanced_alerts') ? '' : 'none';
+  if ($('#financialImportCard')) $('#financialImportCard').hidden = !(isFullAccess(user) && subscriptionFeatureEnabled('advanced_reports'));
   $('#changePasswordBtn').style.display = window.dailyOpsAuth?.enabled && window.dailyOpsAuth?.authMode !== 'kiosk' ? '' : 'none';
   $('#signOutBtn').style.display = window.dailyOpsAuth?.enabled ? '' : 'none';
   $('#sideUserName').textContent = user.name;
@@ -3740,7 +3831,8 @@ function renderSubscriptionAdmin() {
 async function loadSubscriptionAdmin(tenantId = subscriptionAdmin.tenantId) {
   try {
     subscriptionAdmin = await api(`/api/subscription/admin?tenantId=${encodeURIComponent(tenantId || '')}`);
-    renderSubscriptionAdmin();
+  renderSubscriptionAdmin();
+  renderFinancialReportImport();
   } catch (error) {
     toast(`Subscription settings did not load: ${error.message}`);
   }
@@ -5976,6 +6068,121 @@ async function saveExistingUser(id) {
   }
 }
 
+function financialImportHasValidMappings() {
+  if (!pendingFinancialReports.length) return false;
+  const ids = pendingFinancialReports.map(report => report.locationId).filter(Boolean);
+  return pendingFinancialReports.every(report => report.locationId && !(report.errors || []).length) && new Set(ids).size === ids.length;
+}
+
+function renderFinancialReportImport() {
+  const preview = $('#financialImportPreview');
+  if (!preview) return;
+  const status = $('#financialImportStatus');
+  const importButton = $('#importFinancialReportBtn');
+  const clearButton = $('#clearFinancialReportBtn');
+  const canImport = isFullAccess() && subscriptionFeatureEnabled('advanced_reports');
+  if (!canImport) return;
+
+  if (!financialReportState.migrationReady) {
+    status.textContent = financialReportState.message || 'Run supabase/add_financial_reports.sql before importing reports.';
+    status.classList.add('financial-setup-warning');
+  } else {
+    status.classList.remove('financial-setup-warning');
+  }
+
+  if (!pendingFinancialReports.length) {
+    preview.innerHTML = '<p class="hint">Choose an Excel workbook to review its store reports.</p>';
+    importButton.disabled = true;
+    clearButton.disabled = true;
+  } else {
+    const mappedIds = pendingFinancialReports.map(report => report.locationId).filter(Boolean);
+    const duplicates = new Set(mappedIds.filter((id, index) => mappedIds.indexOf(id) !== index));
+    preview.innerHTML = `<div class="financial-preview-summary"><b>${pendingFinancialReports.length} store report${pendingFinancialReports.length === 1 ? '' : 's'} found</b><span>${escapeHtml(pendingFinancialReports[0]?.businessDate || '')}</span></div><div class="financial-preview-table"><div class="financial-preview-row heading"><span>Report store</span><span>DQ OPS location</span><span>Net sales</span><span>vs LY</span><span>Labor</span><span>Transactions</span></div>${pendingFinancialReports.map((report, index) => {
+      const salesChange = report.netSalesLy > 0 ? ((report.netSales - report.netSalesLy) / report.netSalesLy) * 100 : null;
+      const rowErrors = [...(report.errors || [])];
+      if (report.locationId && duplicates.has(report.locationId)) rowErrors.push('This DQ OPS location is selected more than once');
+      return `<div class="financial-preview-row ${rowErrors.length ? 'has-error' : ''}"><span><b>${escapeHtml(report.sourceStoreLabel)}</b><small>${escapeHtml(report.businessDate)}${report.comparisonDate ? ` · LY ${escapeHtml(report.comparisonDate)}` : ''}</small></span><span><select data-financial-location-index="${index}"><option value="">Choose location…</option>${locations.map(location => `<option value="${escapeHtml(location.id)}" ${report.locationId === location.id ? 'selected' : ''}>${escapeHtml(location.name)}</option>`).join('')}</select>${rowErrors.length ? `<small class="import-row-error">${escapeHtml(rowErrors.join(' · '))}</small>` : ''}</span><span>${financialCurrency(report.netSales)}</span><span>${financialPercent(salesChange, { signed: true })}</span><span>${financialPercent(report.laborPercent, { fraction: true })}</span><span>${Number(report.transactionCount || 0).toLocaleString()}</span></div>`;
+    }).join('')}</div>`;
+    preview.querySelectorAll('[data-financial-location-index]').forEach(select => {
+      select.onchange = () => {
+        pendingFinancialReports[Number(select.dataset.financialLocationIndex)].locationId = select.value;
+        renderFinancialReportImport();
+      };
+    });
+    importButton.disabled = !financialImportHasValidMappings() || !financialReportState.migrationReady;
+    clearButton.disabled = false;
+    if (financialReportState.migrationReady) status.textContent = financialImportHasValidMappings() ? 'Review complete. The report is ready to import.' : 'Choose a unique DQ OPS location for every report row and correct any workbook errors.';
+  }
+
+  const imports = financialReportState.imports || [];
+  $('#financialImportHistory').innerHTML = imports.length ? imports.map(record => `<article class="financial-import-history-row"><div><b>${escapeHtml(record.reportDate || '')}</b><span>${escapeHtml(record.sourceFilename || 'Financial recap')}</span></div><div><span>${record.locationCount || 0} locations</span><small>${escapeHtml(record.importedBy || '')}${record.createdAt ? ` · ${new Date(record.createdAt).toLocaleString()}` : ''}</small></div></article>`).join('') : '<p class="hint">No financial imports have been recorded yet.</p>';
+}
+
+async function financialFileHash(buffer) {
+  if (!window.crypto?.subtle) return '';
+  const digest = await window.crypto.subtle.digest('SHA-256', buffer);
+  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function previewFinancialReport(file) {
+  if (!file) return clearFinancialReportPreview();
+  const status = $('#financialImportStatus');
+  status.textContent = 'Reading financial workbook…';
+  try {
+    if (!window.XLSX) throw new Error('The Excel reader did not load. Refresh HIS OPS and try again.');
+    if (!window.DqOpsFinancialReports) throw new Error('The financial report parser did not load. Refresh HIS OPS and try again.');
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+    if (!worksheet) throw new Error('The workbook does not contain a worksheet');
+    const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, raw: true });
+    const parsed = window.DqOpsFinancialReports.parseWorkbookRows(rows);
+    pendingFinancialReports = window.DqOpsFinancialReports.autoMapLocations(parsed.reports, locations);
+    pendingFinancialSource = { filename: file.name, hash: await financialFileHash(buffer) };
+    status.textContent = parsed.errors.length ? `${parsed.errors.length} workbook issue${parsed.errors.length === 1 ? '' : 's'} must be corrected before importing.` : 'Workbook read successfully. Review the location matches below.';
+    renderFinancialReportImport();
+  } catch (error) {
+    pendingFinancialReports = [];
+    pendingFinancialSource = { filename: '', hash: '' };
+    $('#financialReportFile').value = '';
+    status.textContent = error.message;
+    renderFinancialReportImport();
+    toast(`Financial report did not load: ${error.message}`);
+  }
+}
+
+function clearFinancialReportPreview() {
+  pendingFinancialReports = [];
+  pendingFinancialSource = { filename: '', hash: '' };
+  if ($('#financialReportFile')) $('#financialReportFile').value = '';
+  if ($('#financialImportStatus')) $('#financialImportStatus').textContent = financialReportState.migrationReady ? '' : (financialReportState.message || 'Supabase setup is required.');
+  renderFinancialReportImport();
+}
+
+async function importFinancialReport() {
+  if (!financialImportHasValidMappings()) return toast('Match every report store to one unique DQ OPS location');
+  const button = $('#importFinancialReportBtn');
+  button.disabled = true;
+  button.textContent = 'Importing…';
+  try {
+    const result = await api('/api/financial-reports/import', {
+      method: 'POST',
+      body: JSON.stringify({ sourceFilename: pendingFinancialSource.filename, sourceHash: pendingFinancialSource.hash, rows: pendingFinancialReports })
+    });
+    financialReportState = result.state || financialReportState;
+    clearFinancialReportPreview();
+    await loadDashboardState();
+    render();
+    toast(`Imported ${result.imported} location reports for ${result.reportDate}`);
+  } catch (error) {
+    toast(`Financial report did not import: ${error.message}`);
+    $('#financialImportStatus').textContent = error.message;
+  } finally {
+    button.textContent = 'Import reviewed report';
+    button.disabled = !financialImportHasValidMappings() || !financialReportState.migrationReady;
+  }
+}
+
 function normalizeHeader(value = '') {
   return String(value).toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
@@ -6600,6 +6807,9 @@ $('#rolloutLocation').onchange = event => { rolloutLocationId = event.target.val
 $('#customizeDashboardBtn').onclick = openDashboardCustomization;
 $('#saveDashboardBtn').onclick = saveDashboardCustomization;
 $('#resetDashboardBtn').onclick = resetDashboardCustomization;
+$('#financialReportFile').onchange = event => previewFinancialReport(event.target.files?.[0]);
+$('#importFinancialReportBtn').onclick = importFinancialReport;
+$('#clearFinancialReportBtn').onclick = clearFinancialReportPreview;
 $('#saveManagerNotificationPreferencesBtn').onclick = saveManagerNotificationPreferences;
 $('#saveSubscriptionBtn').onclick = saveSubscriptionAdmin;
 $('#reloadSubscriptionBtn').onclick = () => loadSubscriptionAdmin();

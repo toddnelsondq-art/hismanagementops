@@ -608,6 +608,41 @@ nav button[data-view="manageView"]{order:12}
 .dashboard-widget-area .hub-grid{margin:0}
 .dashboard-widget-area .dashboard-progress-card{margin-top:0}
 .dashboard-summary-number{font-size:2.4rem;font-weight:900;line-height:1;margin:18px 0 4px;color:var(--navy)}
+.financial-dashboard-card{overflow:hidden}
+.financial-metric-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-top:16px}
+.financial-metric{display:flex;flex-direction:column;gap:5px;min-width:0;padding:15px;border:1px solid var(--line);border-radius:16px;background:#f8fbff}
+.financial-metric span{font-size:.78rem;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.financial-metric b{font-size:1.55rem;line-height:1.05;color:var(--navy)}
+.financial-metric small{color:var(--muted);line-height:1.35}
+.financial-metric.metric-positive{background:#eefaf3;border-color:#acd8bc}
+.financial-metric.metric-positive b{color:#12613a}
+.financial-metric.metric-attention{background:#fff4f1;border-color:#e7b0a3}
+.financial-metric.metric-attention b{color:#a43724}
+.financial-standouts{margin-top:16px}
+.financial-standouts h4{margin:0 0 8px}
+.financial-standout-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.financial-standout{display:flex;justify-content:space-between;gap:16px;padding:10px 12px;border-radius:12px;background:#f5f7fb;color:var(--navy)}
+.financial-standout.attention{background:#fff0ec;color:#8e2e1c}
+.financial-location-details{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+.financial-location-details summary{cursor:pointer;font-weight:900;color:var(--navy)}
+.financial-location-details>div{overflow-x:auto}
+.financial-location-table{margin-top:12px;min-width:650px}
+.financial-location-row{display:grid;grid-template-columns:minmax(170px,1.5fr) repeat(4,minmax(90px,1fr));gap:10px;align-items:center;padding:9px 6px;border-bottom:1px solid var(--line)}
+.financial-location-row.heading{font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.financial-import-preview{margin:12px 0;overflow-x:auto}
+.financial-preview-summary{display:flex;justify-content:space-between;gap:16px;margin-bottom:10px}
+.financial-preview-table{min-width:900px;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.financial-preview-row{display:grid;grid-template-columns:minmax(180px,1.4fr) minmax(210px,1.5fr) repeat(4,minmax(90px,.75fr));gap:10px;align-items:center;padding:11px 12px;border-bottom:1px solid var(--line);background:#fff}
+.financial-preview-row:last-child{border-bottom:0}
+.financial-preview-row.heading{font-size:.76rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;background:#eef3f9;color:var(--muted)}
+.financial-preview-row.has-error{background:#fff4f1}
+.financial-preview-row span{min-width:0}
+.financial-preview-row span:first-child,.financial-preview-row span:nth-child(2){display:flex;flex-direction:column;gap:3px}
+.financial-preview-row select{width:100%}
+.import-row-error,.financial-setup-warning{color:#a43724!important;font-weight:800}
+.financial-import-history-row{display:flex;justify-content:space-between;gap:20px;padding:11px 0;border-bottom:1px solid var(--line)}
+.financial-import-history-row>div{display:flex;flex-direction:column;gap:3px}
+.financial-import-history-row>div:last-child{text-align:right}
 .dashboard-customize-dialog{width:min(680px,calc(100vw - 28px));max-height:88vh}
 .dashboard-customize-dialog form{overflow:auto;max-height:82vh}
 .dashboard-default-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}
@@ -633,6 +668,8 @@ nav button[data-view="manageView"]{order:12}
   .management-review-controls{grid-template-columns:1fr}
   .dashboard-widget-area{grid-template-columns:1fr}
   .dashboard-widget-area .widget-wide{grid-column:auto}
+  .financial-metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .financial-standout-list{grid-template-columns:1fr}
   .dashboard-default-grid{grid-template-columns:1fr}
   .dashboard-widget-setting{align-items:flex-start;flex-direction:column}
   .dialog-actions{flex-direction:column-reverse}
@@ -644,6 +681,11 @@ nav button[data-view="manageView"]{order:12}
   .help-contents-grid{
     grid-template-columns:1fr;
   }
+  .financial-metric{padding:12px}
+  .financial-metric b{font-size:1.25rem}
+  .financial-metric:last-child{grid-column:1/-1}
+  .financial-import-history-row{flex-direction:column;gap:6px}
+  .financial-import-history-row>div:last-child{text-align:left}
 }
 
 .chart-legend{

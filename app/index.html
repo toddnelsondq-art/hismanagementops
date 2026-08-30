@@ -13,7 +13,7 @@
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="temperature.css?v=2026-08-29-negative-overrun">
   <link rel="stylesheet" href="his-theme.css?v=2026-08-29-temperature-compliance">
-  <link rel="stylesheet" href="subscription.css?v=1.21.0">
+  <link rel="stylesheet" href="subscription.css?v=1.22.0">
   <style>
     .receiving-issue-tools,.receiving-issue-list{width:100%;margin-top:12px}
     .receiving-issue{border-top:1px solid var(--line);padding:10px 0}
@@ -1023,6 +1023,7 @@
         <div class="help-contents-grid">
           <a href="#help-navigation">Getting around</a>
           <a href="#help-dashboard">Dashboard</a>
+          <a href="#help-financial-reports">Financial reports</a>
           <a href="#help-task-lists">Task Lists</a>
           <a href="#help-temp-logs">Temp Logs</a>
           <a href="#help-maintenance">Maintenance</a>
@@ -1056,7 +1057,14 @@
 
         <article class="card help-section" id="help-dashboard">
           <h3>Dashboard</h3>
-          <p>Shows a quick summary of daily operations, maintenance, FPC work, Incident Reports, inspections, upcoming visits, and location performance. Use the time-period and location selectors to narrow the information. Area Managers and above can select Customize dashboard to show or hide widgets, change their order, and save a default time period and location. Reset to default restores the standard layout.</p>
+          <p>Shows a quick summary of daily operations, financial performance, maintenance, FPC work, Incident Reports, inspections, upcoming visits, and location performance. Use the time-period and location selectors to narrow the information. Area Managers and above can select Customize dashboard to show or hide widgets, change their order, and save a default time period and location. Reset to default restores the standard layout.</p>
+          <a href="#helpContents">Back to contents</a>
+        </article>
+
+        <article class="card help-section" id="help-financial-reports">
+          <h3>Financial reports</h3>
+          <p>Managers and above can review net sales versus last year, labor percentage, transactions, average ticket, and items needing attention for their assigned locations. Use the Dashboard time-period selector for the current day, week, or month. Directors and Owners can upload the Day-to-Day Financial Recap LY Excel workbook from Manage. Review every store-to-location match before importing.</p>
+          <p class="hint">Uploading the same location and date again replaces that day’s imported figures while keeping an import audit record.</p>
           <a href="#helpContents">Back to contents</a>
         </article>
 
@@ -1270,6 +1278,22 @@
       <article class="card collapsible-card manage-group-card" id="manageSetupGroup">
         <h3>Setup</h3>
         <div id="manageSetupGroupItems" class="manage-group-items"></div>
+      </article>
+
+      <article class="card form-card collapsible-card" id="financialImportCard" hidden>
+        <h3>Financial report import</h3>
+        <p class="hint">Directors and Owners can upload the Excel version of the Day-to-Day Financial Recap LY report. Review every location match before saving. Existing figures for the same location and date will be updated.</p>
+        <label>Daily financial recap workbook
+          <input id="financialReportFile" type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+        </label>
+        <div id="financialImportPreview" class="financial-import-preview"><p class="hint">Choose an Excel workbook to review its store reports.</p></div>
+        <div class="row-actions">
+          <button id="importFinancialReportBtn" type="button" disabled>Import reviewed report</button>
+          <button id="clearFinancialReportBtn" class="ghost" type="button" disabled>Clear preview</button>
+        </div>
+        <p id="financialImportStatus" class="hint"></p>
+        <h4>Recent imports</h4>
+        <div id="financialImportHistory"><p class="hint">No financial imports loaded.</p></div>
       </article>
 
       <article class="card form-card collapsible-card" id="managerNotificationPreferencesCard">
@@ -2075,9 +2099,10 @@
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-29-17"></script>
+  <script src="version.js?v=2026-08-30-01"></script>
   <script src="auth.js?v=2026-08-29-capacitor"></script>
-  <script src="app.js?v=2026-08-29-subscriptions"></script>
+  <script src="financial-reports.js?v=2026-08-30-01"></script>
+  <script src="app.js?v=2026-08-30-financial-reports"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>
