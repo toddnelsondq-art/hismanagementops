@@ -1721,6 +1721,7 @@ function render() {
   renderInspections();
   renderSmallwares();
   renderManagementReports();
+  renderFinancialReportImport();
 }
 
 function temperatureStandardKey(list, area, item) { return `${list}|${area}|${item}`; }
@@ -5092,6 +5093,12 @@ document.addEventListener('click', async event => {
     const card = collapseHeader.closest('.collapsible-card');
     card.classList.toggle('collapsed');
     collapseHeader.querySelector('.collapse-indicator').textContent = card.classList.contains('collapsed') ? '+' : '−';
+    if (card.id === 'financialImportCard' && !card.classList.contains('collapsed')) {
+      const status = $('#financialImportStatus');
+      if (status) status.textContent = 'Refreshing report history…';
+      await loadFinancialReportState();
+      renderFinancialReportImport();
+    }
     return;
   }
 
