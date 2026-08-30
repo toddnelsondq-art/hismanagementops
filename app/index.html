@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="assets/pwa-icon-180.png">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="temperature.css?v=2026-08-29-negative-overrun">
-  <link rel="stylesheet" href="his-theme.css?v=2026-08-29-temperature-compliance">
+  <link rel="stylesheet" href="his-theme.css?v=2026-08-30-financial-sections">
   <link rel="stylesheet" href="subscription.css?v=1.22.0">
   <style>
     .receiving-issue-tools,.receiving-issue-list{width:100%;margin-top:12px}
@@ -1292,17 +1292,25 @@
           <button id="clearFinancialReportBtn" class="ghost" type="button" disabled>Clear preview</button>
         </div>
         <p id="financialImportStatus" class="hint"></p>
-        <h4>Store number mappings</h4>
-        <p class="hint">Save the store number printed in the report to its permanent DQ OPS location. Email imports use these mappings instead of guessing from similar city names.</p>
-        <div class="financial-mapping-form">
-          <label>Report store number<input id="financialMappingCode" inputmode="numeric" maxlength="6" placeholder="13260"></label>
-          <label>DQ OPS location<select id="financialMappingLocation"></select></label>
-          <button id="saveFinancialMappingBtn" type="button">Save mapping</button>
-        </div>
-        <div id="financialStoreMappings"><p class="hint">No store mappings loaded.</p></div>
-        <h4>Correct imported sales</h4>
-        <p class="hint">If a day was posted to the wrong location, choose the correct destination. The original entry is moved rather than duplicated.</p>
-        <div id="financialReportCorrections"><p class="hint">No imported daily reports loaded.</p></div>
+        <details class="financial-admin-details">
+          <summary>Store number mappings</summary>
+          <div class="financial-admin-details-body">
+            <p class="hint">Save the store number printed in the report to its permanent DQ OPS location. Email imports use these mappings instead of guessing from similar city names.</p>
+            <div class="financial-mapping-form">
+              <label>Report store number<input id="financialMappingCode" inputmode="numeric" maxlength="6" placeholder="13260"></label>
+              <label>DQ OPS location<select id="financialMappingLocation"></select></label>
+              <button id="saveFinancialMappingBtn" type="button">Save mapping</button>
+            </div>
+            <div id="financialStoreMappings"><p class="hint">No store mappings loaded.</p></div>
+          </div>
+        </details>
+        <details class="financial-admin-details">
+          <summary>Correct imported sales</summary>
+          <div class="financial-admin-details-body">
+            <p class="hint">If a day was posted to the wrong location, choose the correct destination. The original entry is moved rather than duplicated.</p>
+            <div id="financialReportCorrections"><p class="hint">No imported daily reports loaded.</p></div>
+          </div>
+        </details>
         <h4>Recent imports</h4>
         <div id="financialImportHistory"><p class="hint">No financial imports loaded.</p></div>
         <h4>Automatic email imports</h4>
@@ -2113,7 +2121,7 @@
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-30-04"></script>
+  <script src="version.js?v=2026-08-30-05"></script>
   <script src="auth.js?v=2026-08-29-capacitor"></script>
   <script src="financial-reports.js?v=2026-08-30-email-import"></script>
   <script src="app.js?v=2026-08-30-financial-corrections"></script>
