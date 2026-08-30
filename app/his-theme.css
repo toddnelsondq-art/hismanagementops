@@ -643,6 +643,13 @@ nav button[data-view="manageView"]{order:12}
 .financial-import-history-row{display:flex;justify-content:space-between;gap:20px;padding:11px 0;border-bottom:1px solid var(--line)}
 .financial-import-history-row>div{display:flex;flex-direction:column;gap:3px}
 .financial-import-history-row>div:last-child{text-align:right}
+.financial-mapping-form{display:grid;grid-template-columns:minmax(150px,.55fr) minmax(240px,1fr) auto;gap:12px;align-items:end;margin:12px 0}
+.financial-mapping-form label{margin:0}
+.financial-admin-row,.financial-correction-row{display:flex;justify-content:space-between;gap:18px;align-items:center;padding:11px 0;border-bottom:1px solid var(--line)}
+.financial-admin-row>div,.financial-correction-row>div{display:flex;gap:8px;align-items:center}
+.financial-admin-row>div:first-child,.financial-correction-row>div:first-child{align-items:flex-start;flex-direction:column;gap:2px;min-width:0}
+.financial-admin-row small,.financial-correction-row small{color:var(--muted)}
+.financial-correction-row select{min-width:220px}
 .dashboard-customize-dialog{width:min(680px,calc(100vw - 28px));max-height:88vh}
 .dashboard-customize-dialog form{overflow:auto;max-height:82vh}
 .dashboard-default-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}
@@ -686,6 +693,10 @@ nav button[data-view="manageView"]{order:12}
   .financial-metric:last-child{grid-column:1/-1}
   .financial-import-history-row{flex-direction:column;gap:6px}
   .financial-import-history-row>div:last-child{text-align:left}
+  .financial-mapping-form{grid-template-columns:1fr}
+  .financial-admin-row,.financial-correction-row{align-items:stretch;flex-direction:column;gap:8px}
+  .financial-admin-row>div:last-child,.financial-correction-row>div:last-child{justify-content:space-between}
+  .financial-correction-row select{min-width:0;width:100%}
 }
 
 .chart-legend{

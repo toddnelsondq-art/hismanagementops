@@ -253,7 +253,7 @@ let managerNotificationPreferences = {
     performanceReport: { cadence: 'none', sendTime: '08:00', channels: ['email'], includeTasks: true, includeTemps: true, includePm: true }
   }
 };
-let financialReportState = { allowed: false, migrationReady: true, canImport: false, reportCount: 0, totals: {}, byLocation: [], standouts: [], imports: [] };
+let financialReportState = { allowed: false, migrationReady: true, canImport: false, reportCount: 0, totals: {}, byLocation: [], standouts: [], imports: [], mappings: {}, reports: [], emailImports: [], emailAutomation: { configured: false, inboundAddress: '' } };
 let pendingFinancialReports = [];
 let pendingFinancialSource = { filename: '', hash: '' };
 let popCampaigns = { campaigns: [], canManage: false };
@@ -1467,13 +1467,13 @@ function temperatureListNames() {
 
 async function loadFinancialReportState() {
   if (!apiOnline || !isFullAccess() || !subscriptionFeatureEnabled('advanced_reports')) {
-    financialReportState = { allowed: false, migrationReady: true, canImport: false, reportCount: 0, totals: {}, byLocation: [], standouts: [], imports: [] };
+    financialReportState = { allowed: false, migrationReady: true, canImport: false, reportCount: 0, totals: {}, byLocation: [], standouts: [], imports: [], mappings: {}, reports: [], emailImports: [], emailAutomation: { configured: false, inboundAddress: '' } };
     return;
   }
   try {
     financialReportState = await api(`/api/financial-reports/state?range=${encodeURIComponent(dashboardRange)}&locationId=all`);
   } catch (error) {
-    financialReportState = { allowed: true, migrationReady: false, canImport: true, reportCount: 0, totals: {}, byLocation: [], standouts: [], imports: [], message: error.message };
+    financialReportState = { allowed: true, migrationReady: false, canImport: true, reportCount: 0, totals: {}, byLocation: [], standouts: [], imports: [], mappings: {}, reports: [], emailImports: [], emailAutomation: { configured: false, inboundAddress: '' }, message: error.message };
   }
 }
 
@@ -6116,6 +6116,40 @@ function renderFinancialReportImport() {
 
   const imports = financialReportState.imports || [];
   $('#financialImportHistory').innerHTML = imports.length ? imports.map(record => `<article class="financial-import-history-row"><div><b>${escapeHtml(record.reportDate || '')}</b><span>${escapeHtml(record.sourceFilename || 'Financial recap')}</span></div><div><span>${record.locationCount || 0} locations</span><small>${escapeHtml(record.importedBy || '')}${record.createdAt ? ` · ${new Date(record.createdAt).toLocaleString()}` : ''}</small></div></article>`).join('') : '<p class="hint">No financial imports have been recorded yet.</p>';
+
+  const mappingLocation = $('#financialMappingLocation');
+  if (mappingLocation) mappingLocation.innerHTML = `<option value="">Choose location…</option>${locations.map(location => `<option value="${escapeHtml(location.id)}">${escapeHtml(location.name)}</option>`).join('')}`;
+  const mappings = Object.entries(financialReportState.mappings || {}).sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }));
+  $('#financialStoreMappings').innerHTML = mappings.length ? mappings.map(([code, value]) => {
+    const normalized = typeof value === 'string' ? { locationId: value, sourceStoreName: '' } : value || {};
+    const locationName = locations.find(location => location.id === normalized.locationId)?.name || normalized.locationId || 'Not assigned';
+    return `<article class="financial-admin-row"><div><b>Store ${escapeHtml(code)}</b><small>${escapeHtml(normalized.sourceStoreName || '')}</small></div><div><span>${escapeHtml(locationName)}</span><button class="ghost compact" type="button" data-edit-financial-mapping="${escapeHtml(code)}" data-mapping-location="${escapeHtml(normalized.locationId || '')}">Change</button></div></article>`;
+  }).join('') : '<p class="hint">No store-number mappings have been learned yet. Add the first one above or import a reviewed workbook.</p>';
+  document.querySelectorAll('[data-edit-financial-mapping]').forEach(button => {
+    button.onclick = () => {
+      $('#financialMappingCode').value = button.dataset.editFinancialMapping || '';
+      $('#financialMappingLocation').value = button.dataset.mappingLocation || '';
+      $('#financialMappingCode').focus();
+    };
+  });
+
+  const correctionRows = (financialReportState.reports || []).slice(0, 75);
+  $('#financialReportCorrections').innerHTML = correctionRows.length ? correctionRows.map((report, index) => `<article class="financial-correction-row"><div><b>${escapeHtml(report.businessDate || '')} · ${escapeHtml(report.locationName || '')}</b><small>Report store ${escapeHtml(report.sourceStoreCode || report.sourceStoreName || 'unknown')} · ${financialCurrency(report.netSales)}</small></div><div><select data-financial-correction-location="${index}"><option value="">Move to…</option>${locations.filter(location => location.id !== report.locationId).map(location => `<option value="${escapeHtml(location.id)}">${escapeHtml(location.name)}</option>`).join('')}</select><button class="ghost compact" type="button" data-move-financial-report="${index}">Move</button></div></article>`).join('') : '<p class="hint">No imported daily reports are available to correct.</p>';
+  document.querySelectorAll('[data-move-financial-report]').forEach(button => {
+    button.onclick = () => {
+      const index = Number(button.dataset.moveFinancialReport);
+      const destination = document.querySelector(`[data-financial-correction-location="${index}"]`)?.value || '';
+      moveFinancialReport(correctionRows[index], destination);
+    };
+  });
+
+  const automation = financialReportState.emailAutomation || {};
+  $('#financialEmailAutomationStatus').textContent = automation.configured
+    ? `Email intake is configured${automation.inboundAddress ? ` for ${automation.inboundAddress}` : ''}. Excel and HTML attachments will be processed automatically.`
+    : 'Email intake code is ready. Add the Mailgun signing key, approved sender, and inbound route in Netlify and Mailgun to activate it.';
+  const emailImports = financialReportState.emailImports || [];
+  $('#financialEmailImportHistory').innerHTML = emailImports.length ? emailImports.map(entry => `<article class="financial-admin-row"><div><b>${escapeHtml(entry.sourceFilename || entry.subject || 'Email report')}</b><small>${escapeHtml(entry.reportDate || '')}${entry.createdAt ? ` · ${new Date(entry.createdAt).toLocaleString()}` : ''}</small><small>${escapeHtml(entry.message || '')}</small></div><div><span class="status-pill ${entry.status === 'imported' ? 'done' : entry.status === 'needs_review' ? 'open' : 'critical'}">${escapeHtml(String(entry.status || 'received').replace('_', ' '))}</span>${entry.status === 'needs_review' ? `<button class="ghost compact" type="button" data-retry-financial-email="${escapeHtml(entry.id)}">Retry</button>` : ''}</div></article>`).join('') : '<p class="hint">No emailed reports have been received.</p>';
+  document.querySelectorAll('[data-retry-financial-email]').forEach(button => { button.onclick = () => retryFinancialEmailImport(button.dataset.retryFinancialEmail); });
 }
 
 async function financialFileHash(buffer) {
@@ -6129,15 +6163,20 @@ async function previewFinancialReport(file) {
   const status = $('#financialImportStatus');
   status.textContent = 'Reading financial workbook…';
   try {
-    if (!window.XLSX) throw new Error('The Excel reader did not load. Refresh HIS OPS and try again.');
     if (!window.DqOpsFinancialReports) throw new Error('The financial report parser did not load. Refresh HIS OPS and try again.');
     const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
-    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-    if (!worksheet) throw new Error('The workbook does not contain a worksheet');
-    const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, raw: true });
-    const parsed = window.DqOpsFinancialReports.parseWorkbookRows(rows);
-    pendingFinancialReports = window.DqOpsFinancialReports.autoMapLocations(parsed.reports, locations);
+    let parsed;
+    if (/\.html?$/i.test(file.name) || /text\/html/i.test(file.type)) {
+      parsed = window.DqOpsFinancialReports.parseFinancialHtml(new TextDecoder().decode(buffer));
+    } else {
+      if (!window.XLSX) throw new Error('The Excel reader did not load. Refresh HIS OPS and try again.');
+      const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      if (!worksheet) throw new Error('The workbook does not contain a worksheet');
+      const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, raw: true });
+      parsed = window.DqOpsFinancialReports.parseWorkbookRows(rows);
+    }
+    pendingFinancialReports = window.DqOpsFinancialReports.autoMapLocations(parsed.reports, locations, financialReportState.mappings || {});
     pendingFinancialSource = { filename: file.name, hash: await financialFileHash(buffer) };
     status.textContent = parsed.errors.length ? `${parsed.errors.length} workbook issue${parsed.errors.length === 1 ? '' : 's'} must be corrected before importing.` : 'Workbook read successfully. Review the location matches below.';
     renderFinancialReportImport();
@@ -6148,6 +6187,58 @@ async function previewFinancialReport(file) {
     status.textContent = error.message;
     renderFinancialReportImport();
     toast(`Financial report did not load: ${error.message}`);
+  }
+}
+
+async function saveFinancialStoreMapping() {
+  const sourceStoreCode = $('#financialMappingCode').value.trim();
+  const locationId = $('#financialMappingLocation').value;
+  if (!/^\d{4,6}$/.test(sourceStoreCode)) return toast('Enter the 4- to 6-digit store number printed on the report');
+  if (!locationId) return toast('Choose the DQ OPS location for that store number');
+  const button = $('#saveFinancialMappingBtn');
+  button.disabled = true;
+  try {
+    const result = await api('/api/financial-reports/mapping', { method: 'POST', body: JSON.stringify({ sourceStoreCode, locationId }) });
+    financialReportState = result.state || { ...financialReportState, mappings: result.mappings || financialReportState.mappings };
+    $('#financialMappingCode').value = '';
+    $('#financialMappingLocation').value = '';
+    renderFinancialReportImport();
+    toast(`Store ${sourceStoreCode} mapping saved`);
+  } catch (error) {
+    toast(`Store mapping did not save: ${error.message}`);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function moveFinancialReport(report, toLocationId, replaceTarget = false) {
+  if (!report || !toLocationId) return toast('Choose the correct destination location');
+  try {
+    const result = await api('/api/financial-reports/reassign', {
+      method: 'POST',
+      body: JSON.stringify({ fromLocationId: report.locationId, toLocationId, businessDate: report.businessDate, replaceTarget })
+    });
+    financialReportState = result.state || financialReportState;
+    await loadDashboardState();
+    render();
+    toast(`Sales for ${report.businessDate} moved to the correct location`);
+  } catch (error) {
+    if (!replaceTarget && /destination already has sales/i.test(error.message) && window.confirm(`${error.message}\n\nReplace the destination report with this one?`)) {
+      return moveFinancialReport(report, toLocationId, true);
+    }
+    toast(`Sales were not moved: ${error.message}`);
+  }
+}
+
+async function retryFinancialEmailImport(id) {
+  try {
+    const result = await api('/api/financial-reports/email-retry', { method: 'POST', body: JSON.stringify({ id }) });
+    financialReportState = result.state || financialReportState;
+    await loadDashboardState();
+    render();
+    toast(`${result.imported} emailed location reports imported`);
+  } catch (error) {
+    toast(`Email import still needs attention: ${error.message}`);
   }
 }
 
@@ -6810,6 +6901,7 @@ $('#resetDashboardBtn').onclick = resetDashboardCustomization;
 $('#financialReportFile').onchange = event => previewFinancialReport(event.target.files?.[0]);
 $('#importFinancialReportBtn').onclick = importFinancialReport;
 $('#clearFinancialReportBtn').onclick = clearFinancialReportPreview;
+$('#saveFinancialMappingBtn').onclick = saveFinancialStoreMapping;
 $('#saveManagerNotificationPreferencesBtn').onclick = saveManagerNotificationPreferences;
 $('#saveSubscriptionBtn').onclick = saveSubscriptionAdmin;
 $('#reloadSubscriptionBtn').onclick = () => loadSubscriptionAdmin();

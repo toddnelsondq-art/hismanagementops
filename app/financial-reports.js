@@ -23,9 +23,14 @@
     const text = String(value || '').trim();
     if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
     const match = text.match(/\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b/);
-    if (!match) return '';
-    const year = match[3].length === 2 ? Number(`20${match[3]}`) : Number(match[3]);
-    return `${year}-${String(Number(match[1])).padStart(2, '0')}-${String(Number(match[2])).padStart(2, '0')}`;
+    if (match) {
+      const year = match[3].length === 2 ? Number(`20${match[3]}`) : Number(match[3]);
+      return `${year}-${String(Number(match[1])).padStart(2, '0')}-${String(Number(match[2])).padStart(2, '0')}`;
+    }
+    const writtenDate = text.match(/\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s+([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})\b/i);
+    if (!writtenDate) return '';
+    const month = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'].indexOf(writtenDate[1].toLowerCase()) + 1;
+    return month ? `${writtenDate[3]}-${String(month).padStart(2, '0')}-${String(Number(writtenDate[2])).padStart(2, '0')}` : '';
   }
 
   function cellText(value) {
@@ -70,7 +75,7 @@
 
   function storeIdentity(value) {
     const raw = cellText(value);
-    const match = raw.match(/^(\d{4,6})[-_\s]*(.*)$/);
+    const match = raw.match(/^(?:store\s*)?(\d{4,6})[-_\s]*(.*)$/i);
     const code = match?.[1] || '';
     const remainder = (match?.[2] || raw).replace(/^[-_\s]+/, '').trim();
     const displayName = remainder.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -159,6 +164,106 @@
     };
   }
 
+  function decodeHtml(value = '') {
+    const named = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+    return String(value)
+      .replace(/<br\s*\/?\s*>/gi, ' ')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (match, entity) => {
+        if (entity[0] === '#') {
+          const hex = entity[1]?.toLowerCase() === 'x';
+          const code = Number.parseInt(entity.slice(hex ? 2 : 1), hex ? 16 : 10);
+          return Number.isFinite(code) ? String.fromCodePoint(code) : match;
+        }
+        return named[entity.toLowerCase()] ?? match;
+      })
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function positionedHtmlCells(html) {
+    const cells = [];
+    const expression = /<div\s+style=["'][^"']*left\s*:\s*(\d+)px\s*;\s*top\s*:\s*(\d+)px\s*;[^"']*["'][^>]*>([\s\S]*?)<\/div>/gi;
+    let match;
+    while ((match = expression.exec(String(html || '')))) {
+      const text = decodeHtml(match[3]);
+      if (text && text !== '…') cells.push({ left: Number(match[1]), top: Number(match[2]), text });
+    }
+    return cells;
+  }
+
+  function htmlLabel(cells, label, { minTop = 0, maxTop = Number.MAX_SAFE_INTEGER } = {}) {
+    const expected = String(label).toLowerCase();
+    return cells.find(cell => cell.top >= minTop && cell.top <= maxTop && cell.text.toLowerCase() === expected);
+  }
+
+  function htmlCellsOnRow(cells, labelCell, { minimumLeft = labelCell?.left || 0, tolerance = 2 } = {}) {
+    if (!labelCell) return [];
+    return cells
+      .filter(cell => Math.abs(cell.top - labelCell.top) <= tolerance && cell.left > minimumLeft)
+      .sort((a, b) => a.left - b.left);
+  }
+
+  function htmlTextAfter(cells, label, options = {}) {
+    const labelCell = htmlLabel(cells, label, options);
+    return htmlCellsOnRow(cells, labelCell, { minimumLeft: labelCell?.left || 0, tolerance: options.tolerance ?? 2 })[0]?.text || '';
+  }
+
+  function htmlNumberAfter(cells, label, options = {}) {
+    const labelCell = htmlLabel(cells, label, options);
+    const candidates = htmlCellsOnRow(cells, labelCell, { minimumLeft: options.minimumLeft ?? labelCell?.left ?? 0, tolerance: options.tolerance ?? 2 });
+    for (const cell of candidates) {
+      const number = finiteNumber(cell.text);
+      if (number !== null) return number;
+    }
+    return null;
+  }
+
+  function parseFinancialHtml(html) {
+    const cells = positionedHtmlCells(html);
+    if (!cells.length) throw new Error('This HTML file does not contain a readable Crystal financial report');
+    const storeLabel = htmlTextAfter(cells, 'Location', { minTop: 0, maxTop: 120 });
+    const store = storeIdentity(storeLabel);
+    const businessDate = excelDate(htmlTextAfter(cells, 'For Period of', { minTop: 0, maxTop: 120 }));
+    const salesLabel = htmlLabel(cells, 'Total Sales', { minTop: 100, maxTop: 340 });
+    const salesValues = htmlCellsOnRow(cells, salesLabel, { minimumLeft: 90, tolerance: 2 }).map(cell => finiteNumber(cell.text)).filter(value => value !== null);
+    const destinationLabel = htmlLabel(cells, 'Total', { minTop: 300, maxTop: 445 });
+    const destinationValues = htmlCellsOnRow(cells, destinationLabel, { minimumLeft: 90, tolerance: 2 }).map(cell => finiteNumber(cell.text)).filter(value => value !== null);
+    const netSales = salesValues[2] ?? null;
+    const laborPercent = percentNumber(htmlNumberAfter(cells, 'Total Labor % of Net Sales', { minTop: 430, maxTop: 610 }));
+    const errors = [];
+    if (!store.raw) errors.push('Store name was not found');
+    if (!businessDate) errors.push('Current report date was not found');
+    if (netSales === null) errors.push('Total Sales net total was not found');
+    if (laborPercent === null) errors.push('Labor percentage was not found');
+    const report = {
+      sectionNumber: 1,
+      sourceStoreCode: store.code,
+      sourceStoreName: store.name,
+      sourceStoreLabel: store.raw,
+      businessDate,
+      comparisonDate: '',
+      grossSales: salesValues[0] ?? null,
+      totalDiscounts: salesValues[1] ?? null,
+      netSales,
+      netSalesLy: salesValues[4] ?? salesValues[3] ?? null,
+      transactionCount: destinationValues[0] ?? null,
+      transactionCountLy: destinationValues[4] ?? destinationValues[3] ?? null,
+      averageTicket: destinationValues[2] ?? null,
+      laborHours: htmlNumberAfter(cells, 'Total Labor Hours', { minTop: 430, maxTop: 610 }),
+      laborCost: htmlNumberAfter(cells, 'Staff Labor Gross', { minTop: 430, maxTop: 610 }),
+      laborPercent,
+      salesPerLaborHour: htmlNumberAfter(cells, 'Sales Per Labor Hour', { minTop: 430, maxTop: 610 }),
+      averageHourlyWage: htmlNumberAfter(cells, 'Average Hourly Wage', { minTop: 430, maxTop: 620 }),
+      digitalSales: null,
+      cashOverShort: htmlNumberAfter(cells, 'Cash Over/Short', { minTop: 430, maxTop: 650 }),
+      cancelCount: null,
+      voidCount: null,
+      errors
+    };
+    return { reports: [report], errors: errors.map(message => `${store.raw || 'HTML report'}: ${message}`) };
+  }
+
   function normalizeLocationName(value) {
     return cellText(value)
       .toLowerCase()
@@ -172,6 +277,9 @@
   }
 
   function locationMatchScore(report, location) {
+    const sourceCode = String(report.sourceStoreCode || '').trim();
+    const targetCodes = String(location.name || '').match(/\b\d{4,6}\b/g) || [];
+    if (sourceCode && targetCodes.includes(sourceCode)) return 2;
     const source = normalizeLocationName(report.sourceStoreName || report.sourceStoreLabel);
     const target = normalizeLocationName(location.name);
     if (!source || !target) return 0;
@@ -191,14 +299,22 @@
     return matches[0]?.score >= 0.55 ? matches[0].location : null;
   }
 
-  function autoMapLocations(reports, locations) {
+  function mappedLocationId(report, mappings = {}) {
+    const sourceCode = String(report.sourceStoreCode || '').trim();
+    const mapping = sourceCode ? mappings[sourceCode] : null;
+    return String(typeof mapping === 'string' ? mapping : mapping?.locationId || '');
+  }
+
+  function autoMapLocations(reports, locations, mappings = {}) {
     const used = new Set();
     return (reports || []).map(report => {
-      const location = suggestLocation(report, locations, used);
+      const savedId = mappedLocationId(report, mappings);
+      const savedLocation = savedId && !used.has(savedId) ? (locations || []).find(location => location.id === savedId) : null;
+      const location = savedLocation || suggestLocation(report, locations, used);
       if (location) used.add(location.id);
       return { ...report, locationId: location?.id || '' };
     });
   }
 
-  return { finiteNumber, excelDate, parseWorkbookRows, normalizeLocationName, autoMapLocations };
+  return { finiteNumber, excelDate, parseWorkbookRows, parseFinancialHtml, normalizeLocationName, autoMapLocations };
 });

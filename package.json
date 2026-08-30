@@ -1,6 +1,6 @@
 {
   "name": "his-ops",
-  "version": "1.22.2",
+  "version": "1.23.0",
   "private": true,
   "description": "HIS OPS web and native application",
   "scripts": {
@@ -11,7 +11,9 @@
   },
   "dependencies": {
     "@capacitor/android": "8.5.0",
-    "@capacitor/core": "8.5.0"
+    "@capacitor/core": "8.5.0",
+    "busboy": "^1.6.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@capacitor/cli": "8.5.0"

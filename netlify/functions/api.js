@@ -1,6 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const Busboy = require('busboy');
+const XLSX = require('xlsx');
+const financialParser = require('../../app/financial-reports.js');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -9,7 +12,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.22.2';
+const APP_VERSION = '1.23.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -1247,9 +1250,130 @@ async function recentFinancialImports(actor) {
   }
 }
 
+function normalizeFinancialStoreMapping(value) {
+  if (typeof value === 'string') return { locationId: value, sourceStoreName: '' };
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return { locationId: '', sourceStoreName: '' };
+  return { locationId: String(value.locationId || ''), sourceStoreName: String(value.sourceStoreName || '').slice(0, 160) };
+}
+
+async function readFinancialStoreMappings(allLocations = null) {
+  const locations = allLocations || await readLocations();
+  const locationIds = new Set(locations.map(location => location.id));
+  const mappings = {};
+  try {
+    const rows = await supabase(`/rest/v1/financial_daily_metrics?${tenantQuery()}&source_store_code=not.is.null&select=source_store_code,source_store_name,location_id,business_date&order=business_date.desc&limit=500`);
+    for (const row of rows) {
+      const code = String(row.source_store_code || '').trim();
+      if (code && !mappings[code] && locationIds.has(row.location_id)) {
+        mappings[code] = { locationId: row.location_id, sourceStoreName: String(row.source_store_name || '') };
+      }
+    }
+  } catch (error) {
+    if (![400, 404].includes(error.statusCode)) throw error;
+  }
+  // A store number written into a DQ OPS location name is stronger than an old guessed import.
+  for (const location of locations) {
+    for (const code of String(location.name || '').match(/\b\d{4,6}\b/g) || []) {
+      mappings[code] = { locationId: location.id, sourceStoreName: location.name };
+    }
+  }
+  const stored = await readMaintenanceKey('financialStoreMappings', {}).catch(() => ({}));
+  if (stored && typeof stored === 'object' && !Array.isArray(stored)) {
+    for (const [code, value] of Object.entries(stored)) {
+      const normalized = normalizeFinancialStoreMapping(value);
+      if (/^[a-z0-9-]{1,40}$/i.test(code) && locationIds.has(normalized.locationId)) mappings[code] = normalized;
+    }
+  }
+  return mappings;
+}
+
+async function rememberFinancialStoreMappings(rows = [], actor = null) {
+  const locations = await readLocations();
+  const locationIds = new Set(locations.map(location => location.id));
+  const stored = await readMaintenanceKey('financialStoreMappings', {}).catch(() => ({}));
+  const mappings = stored && typeof stored === 'object' && !Array.isArray(stored) ? { ...stored } : {};
+  let changed = false;
+  for (const row of rows) {
+    const code = String(row.sourceStoreCode || row.source_store_code || '').trim();
+    const locationId = String(row.locationId || row.location_id || '');
+    if (!/^[a-z0-9-]{1,40}$/i.test(code) || !locationIds.has(locationId)) continue;
+    mappings[code] = {
+      locationId,
+      sourceStoreName: String(row.sourceStoreName || row.source_store_name || row.sourceStoreLabel || '').slice(0, 160),
+      updatedAt: new Date().toISOString(),
+      updatedBy: actor?.name || actor?.email || 'Automatic import'
+    };
+    changed = true;
+  }
+  if (changed) await writeMaintenanceKey('financialStoreMappings', mappings);
+  return mappings;
+}
+
+async function saveFinancialStoreMapping(payload = {}, actor) {
+  if (AUTH_REQUIRED && !isFullAccess(actor)) throw Object.assign(new Error('Only Directors and Owners can change financial store mappings'), { statusCode: 403 });
+  const sourceStoreCode = String(payload.sourceStoreCode || '').trim();
+  const locationId = String(payload.locationId || '');
+  if (!/^\d{4,6}$/.test(sourceStoreCode)) throw Object.assign(new Error('Enter the 4- to 6-digit store number from the report'), { statusCode: 400 });
+  const locations = await readLocations();
+  if (!locations.some(location => location.id === locationId)) throw Object.assign(new Error('Choose a valid DQ OPS location'), { statusCode: 400 });
+  await rememberFinancialStoreMappings([{ sourceStoreCode, sourceStoreName: payload.sourceStoreName || '', locationId }], actor);
+  return { mappings: await readFinancialStoreMappings(locations), state: await financialReportState(actor, { range: 'day', locationId: 'all' }) };
+}
+
+async function recentFinancialReportRows(actor) {
+  if (AUTH_REQUIRED && !isFullAccess(actor)) return [];
+  try {
+    const rows = await supabase(`/rest/v1/financial_daily_metrics?${tenantQuery()}&select=location_id,business_date,source_store_code,source_store_name,net_sales,labor_percent,source_filename,imported_at&order=business_date.desc,location_id.asc&limit=250`);
+    const names = new Map((await readLocations()).map(location => [location.id, location.name]));
+    return rows.map(row => ({
+      locationId: row.location_id,
+      locationName: names.get(row.location_id) || row.location_id,
+      businessDate: row.business_date,
+      sourceStoreCode: row.source_store_code || '',
+      sourceStoreName: row.source_store_name || '',
+      netSales: row.net_sales,
+      laborPercent: row.labor_percent,
+      sourceFilename: row.source_filename || '',
+      importedAt: row.imported_at || ''
+    }));
+  } catch (error) {
+    if ([400, 404].includes(error.statusCode)) return [];
+    throw error;
+  }
+}
+
+async function readFinancialEmailImports() {
+  const value = await readMaintenanceKey('financialEmailImports', []).catch(() => []);
+  return Array.isArray(value) ? value.slice(0, 50) : [];
+}
+
+async function writeFinancialEmailImport(entry) {
+  const entries = await readFinancialEmailImports();
+  entries.unshift({ id: crypto.randomUUID(), createdAt: new Date().toISOString(), ...entry });
+  await writeMaintenanceKey('financialEmailImports', entries.slice(0, 50));
+}
+
 async function financialReportState(actor, query = {}) {
   const summary = await financialSummary(actor, query.range || 'day', query.locationId || 'all');
-  return { ...summary, canImport: !AUTH_REQUIRED || isFullAccess(actor), imports: await recentFinancialImports(actor) };
+  const canImport = !AUTH_REQUIRED || isFullAccess(actor);
+  const [imports, mappings, reports, emailImports] = await Promise.all([
+    recentFinancialImports(actor),
+    canImport ? readFinancialStoreMappings() : Promise.resolve({}),
+    canImport ? recentFinancialReportRows(actor) : Promise.resolve([]),
+    canImport ? readFinancialEmailImports() : Promise.resolve([])
+  ]);
+  return {
+    ...summary,
+    canImport,
+    imports,
+    mappings,
+    reports,
+    emailImports: emailImports.map(entry => ({ ...entry, rows: undefined })),
+    emailAutomation: canImport ? {
+      configured: Boolean(process.env.MAILGUN_WEBHOOK_SIGNING_KEY && process.env.FINANCIAL_REPORT_ALLOWED_SENDERS && process.env.FINANCIAL_REPORT_INBOUND_ADDRESS),
+      inboundAddress: process.env.FINANCIAL_REPORT_INBOUND_ADDRESS || ''
+    } : { configured: false, inboundAddress: '' }
+  };
 }
 
 async function importFinancialReports(payload = {}, actor) {
@@ -1340,6 +1464,7 @@ async function importFinancialReports(payload = {}, actor) {
       headers: { Prefer: 'resolution=merge-duplicates' },
       body: JSON.stringify(reportRows)
     });
+    await rememberFinancialStoreMappings(sourceRows, actor);
   } catch (error) {
     if ([400, 404].includes(error.statusCode)) {
       throw Object.assign(new Error('Financial reporting is not set up in Supabase yet. Run supabase/add_financial_reports.sql and try again.'), { statusCode: 409 });
@@ -1347,6 +1472,159 @@ async function importFinancialReports(payload = {}, actor) {
     throw error;
   }
   return { imported: reportRows.length, reportDate: reportDates[0], replacedExisting, state: await financialReportState(actor, { range: 'day', locationId: 'all' }) };
+}
+
+async function reassignFinancialReport(payload = {}, actor) {
+  if (AUTH_REQUIRED && !isFullAccess(actor)) throw Object.assign(new Error('Only Directors and Owners can correct financial reports'), { statusCode: 403 });
+  const fromLocationId = String(payload.fromLocationId || '');
+  const toLocationId = String(payload.toLocationId || '');
+  const businessDate = String(payload.businessDate || '');
+  if (!fromLocationId || !toLocationId || fromLocationId === toLocationId) throw Object.assign(new Error('Choose a different destination location'), { statusCode: 400 });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(businessDate)) throw Object.assign(new Error('Choose a valid report date'), { statusCode: 400 });
+  const locations = await readLocations();
+  if (!locations.some(location => location.id === toLocationId)) throw Object.assign(new Error('Choose a valid destination location'), { statusCode: 400 });
+  const sourceRows = await supabase(`/rest/v1/financial_daily_metrics?${tenantQuery()}&location_id=eq.${encodeURIComponent(fromLocationId)}&business_date=eq.${encodeURIComponent(businessDate)}&select=*&limit=1`);
+  const source = sourceRows[0];
+  if (!source) throw Object.assign(new Error('That source report no longer exists'), { statusCode: 404 });
+  const targetRows = await supabase(`/rest/v1/financial_daily_metrics?${tenantQuery()}&location_id=eq.${encodeURIComponent(toLocationId)}&business_date=eq.${encodeURIComponent(businessDate)}&select=location_id&limit=1`);
+  if (targetRows.length && payload.replaceTarget !== true) {
+    throw Object.assign(new Error('The destination already has sales for that date. Confirm that you want to replace it.'), { statusCode: 409, code: 'FINANCIAL_TARGET_EXISTS' });
+  }
+  const corrected = {
+    ...source,
+    tenant_id: tenantId(),
+    location_id: toLocationId,
+    imported_by: actor?.name || actor?.email || 'Director',
+    imported_at: new Date().toISOString()
+  };
+  await supabase('/rest/v1/financial_daily_metrics?on_conflict=tenant_id,location_id,business_date', {
+    method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates' },
+    body: JSON.stringify(corrected)
+  });
+  await supabase(`/rest/v1/financial_daily_metrics?${tenantQuery()}&location_id=eq.${encodeURIComponent(fromLocationId)}&business_date=eq.${encodeURIComponent(businessDate)}`, { method: 'DELETE' });
+  await rememberFinancialStoreMappings([corrected], actor);
+  return { moved: true, businessDate, state: await financialReportState(actor, { range: 'day', locationId: 'all' }) };
+}
+
+function parseMultipartForm(event) {
+  return new Promise((resolve, reject) => {
+    const contentType = event.headers?.['content-type'] || event.headers?.['Content-Type'] || '';
+    if (!/^multipart\/form-data/i.test(contentType)) return reject(Object.assign(new Error('Expected a multipart email request'), { statusCode: 400 }));
+    const fields = {};
+    const files = [];
+    let parser;
+    try {
+      parser = Busboy({ headers: { 'content-type': contentType }, limits: { files: 12, fileSize: 4 * 1024 * 1024, fields: 80 } });
+    } catch (error) {
+      return reject(Object.assign(error, { statusCode: 400 }));
+    }
+    parser.on('field', (name, value) => { fields[name] = value; });
+    parser.on('file', (name, stream, info) => {
+      const chunks = [];
+      stream.on('data', chunk => chunks.push(chunk));
+      stream.on('limit', () => reject(Object.assign(new Error(`${info.filename || 'Attachment'} exceeds the 4 MB email import limit`), { statusCode: 413 })));
+      stream.on('end', () => files.push({ fieldName: name, filename: info.filename || name, mimeType: info.mimeType || '', buffer: Buffer.concat(chunks) }));
+    });
+    parser.on('error', reject);
+    parser.on('finish', () => resolve({ fields, files }));
+    parser.end(Buffer.from(event.body || '', event.isBase64Encoded ? 'base64' : 'utf8'));
+  });
+}
+
+function mailgunSenderAddress(value = '') {
+  const angle = String(value).match(/<([^>]+)>/);
+  return String(angle?.[1] || value).trim().toLowerCase();
+}
+
+function verifyMailgunRequest(fields = {}) {
+  const signingKey = process.env.MAILGUN_WEBHOOK_SIGNING_KEY || '';
+  if (!signingKey) throw Object.assign(new Error('Financial email intake is not configured'), { statusCode: 503 });
+  const timestamp = String(fields.timestamp || '');
+  const token = String(fields.token || '');
+  const suppliedHex = String(fields.signature || '').toLowerCase();
+  if (!timestamp || !token || !/^[a-f0-9]{64}$/.test(suppliedHex)) throw Object.assign(new Error('Mailgun signature is missing'), { statusCode: 406 });
+  const expected = crypto.createHmac('sha256', signingKey).update(`${timestamp}${token}`).digest();
+  const supplied = Buffer.from(suppliedHex, 'hex');
+  const timestampAge = Math.abs(Date.now() / 1000 - Number(timestamp));
+  if (supplied.length !== expected.length || !crypto.timingSafeEqual(supplied, expected) || !Number.isFinite(timestampAge) || timestampAge > 24 * 60 * 60) {
+    throw Object.assign(new Error('Mailgun signature could not be verified'), { statusCode: 406 });
+  }
+  const sender = mailgunSenderAddress(fields.sender || fields.from || '');
+  const allowed = String(process.env.FINANCIAL_REPORT_ALLOWED_SENDERS || '').split(',').map(mailgunSenderAddress).filter(Boolean);
+  if (!allowed.length) throw Object.assign(new Error('No financial report senders are configured'), { statusCode: 503 });
+  if (!allowed.includes(sender)) throw Object.assign(new Error('This sender is not approved for financial report imports'), { statusCode: 406 });
+  return sender;
+}
+
+function parseFinancialAttachment(file) {
+  const extension = path.extname(file.filename || '').toLowerCase();
+  if (['.html', '.htm'].includes(extension) || /text\/html/i.test(file.mimeType)) {
+    return financialParser.parseFinancialHtml(file.buffer.toString('utf8'));
+  }
+  if (['.xlsx', '.xls'].includes(extension) || /spreadsheet|excel/i.test(file.mimeType)) {
+    const workbook = XLSX.read(file.buffer, { type: 'buffer', cellDates: true });
+    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+    if (!worksheet) throw new Error('The workbook does not contain a worksheet');
+    return financialParser.parseWorkbookRows(XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, raw: true }));
+  }
+  return null;
+}
+
+function financialRowsReady(rows = []) {
+  const locationIds = rows.map(row => row.locationId).filter(Boolean);
+  return rows.length > 0 && rows.every(row => row.locationId && !(row.errors || []).length) && new Set(locationIds).size === locationIds.length;
+}
+
+async function receiveFinancialReportEmail(event) {
+  requireSupabase();
+  const entitlement = await effectiveSubscription(tenantId());
+  if (!entitlement.features.advanced_reports) throw Object.assign(new Error('Financial reports are not enabled for this subscription'), { statusCode: 406 });
+  const { fields, files } = await parseMultipartForm(event);
+  const sender = verifyMailgunRequest(fields);
+  const subject = String(fields.subject || 'Daily financial report').slice(0, 200);
+  const locations = await readLocations();
+  const mappings = await readFinancialStoreMappings(locations);
+  const automatedActor = { id: 'financial-email', name: 'Automatic financial report email', email: sender, role: 'Owner' };
+  let importedFiles = 0;
+  let reviewFiles = 0;
+  for (const file of files) {
+    let parsed;
+    try {
+      parsed = parseFinancialAttachment(file);
+      if (!parsed) continue;
+      const rows = financialParser.autoMapLocations(parsed.reports, locations, mappings);
+      const sourceHash = crypto.createHash('sha256').update(file.buffer).digest('hex');
+      if (!financialRowsReady(rows)) {
+        reviewFiles += 1;
+        await writeFinancialEmailImport({ status: 'needs_review', sender, subject, sourceFilename: file.filename, sourceHash, reportDate: rows[0]?.businessDate || '', reportCount: rows.length, message: parsed.errors?.join(' · ') || 'One or more report stores need a saved DQ OPS location mapping.', rows });
+        continue;
+      }
+      const result = await importFinancialReports({ sourceFilename: file.filename, sourceHash, rows }, automatedActor);
+      importedFiles += 1;
+      await writeFinancialEmailImport({ status: 'imported', sender, subject, sourceFilename: file.filename, sourceHash, reportDate: result.reportDate, reportCount: result.imported, message: `${result.imported} location reports imported automatically.` });
+    } catch (error) {
+      reviewFiles += 1;
+      await writeFinancialEmailImport({ status: 'failed', sender, subject, sourceFilename: file.filename, reportDate: '', reportCount: 0, message: error.message });
+    }
+  }
+  if (!importedFiles && !reviewFiles) await writeFinancialEmailImport({ status: 'failed', sender, subject, sourceFilename: '', reportDate: '', reportCount: 0, message: 'No supported .xlsx, .xls, .html, or .htm attachment was found.' });
+  return json(200, { accepted: true, importedFiles, reviewFiles });
+}
+
+async function retryFinancialEmailImport(payload = {}, actor) {
+  if (AUTH_REQUIRED && !isFullAccess(actor)) throw Object.assign(new Error('Only Directors and Owners can retry financial imports'), { statusCode: 403 });
+  const entries = await readFinancialEmailImports();
+  const index = entries.findIndex(entry => entry.id === String(payload.id || ''));
+  if (index < 0 || !Array.isArray(entries[index].rows) || !entries[index].rows.length) throw Object.assign(new Error('That pending email import is no longer available'), { statusCode: 404 });
+  const locations = await readLocations();
+  const mappings = await readFinancialStoreMappings(locations);
+  const rows = financialParser.autoMapLocations(entries[index].rows, locations, mappings);
+  if (!financialRowsReady(rows)) throw Object.assign(new Error('Save a location mapping for every report store before retrying'), { statusCode: 400 });
+  const result = await importFinancialReports({ sourceFilename: entries[index].sourceFilename, sourceHash: entries[index].sourceHash, rows }, actor);
+  entries[index] = { ...entries[index], status: 'imported', rows: undefined, reportDate: result.reportDate, reportCount: result.imported, message: `${result.imported} location reports imported after review.`, completedAt: new Date().toISOString() };
+  await writeMaintenanceKey('financialEmailImports', entries.slice(0, 50));
+  return { imported: result.imported, reportDate: result.reportDate, state: await financialReportState(actor, { range: 'day', locationId: 'all' }) };
 }
 
 async function dashboardSummary(actor, range = 'day', locationId = 'all') {
@@ -4517,21 +4795,30 @@ async function saveAttachment(payload) {
   return `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${filename}`;
 }
 
-if (process.env.NODE_ENV === 'test') exports.__test = { financialDateRange, uniqueFinancialImportRows, normalizeDashboardPreferences };
+if (process.env.NODE_ENV === 'test') exports.__test = {
+  financialDateRange,
+  uniqueFinancialImportRows,
+  normalizeDashboardPreferences,
+  parseMultipartForm,
+  parseFinancialAttachment,
+  financialRowsReady,
+  verifyMailgunRequest
+};
 
 exports.handler = async event => {
   try {
     const apiPath = event.path.replace(/^\/api/, '').replace(/^\/\.netlify\/functions\/api/, '') || '/';
     const method = event.httpMethod;
     const query = event.queryStringParameters || {};
-    const body = event.body ? JSON.parse(event.body) : {};
 
     if (method === 'OPTIONS') return json(200, {});
+    if (method === 'POST' && apiPath === '/financial-reports/email-ingest') return await receiveFinancialReportEmail(event);
+    const body = event.body ? JSON.parse(event.body) : {};
 
     if (method === 'GET' && apiPath === '/version') {
       return json(200, {
         version: APP_VERSION,
-        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.30.03'
+        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.30.04'
       });
     }
 
@@ -4807,6 +5094,9 @@ exports.handler = async event => {
     if (method === 'POST' && apiPath === '/dashboard/preferences') return json(200, await saveDashboardPreferences(body, actor));
     if (method === 'POST' && apiPath === '/dashboard/preferences/reset') return json(200, await resetDashboardPreferences(actor));
     if (method === 'POST' && apiPath === '/financial-reports/import') return json(200, await importFinancialReports(body, actor));
+    if (method === 'POST' && apiPath === '/financial-reports/reassign') return json(200, await reassignFinancialReport(body, actor));
+    if (method === 'POST' && apiPath === '/financial-reports/mapping') return json(200, await saveFinancialStoreMapping(body, actor));
+    if (method === 'POST' && apiPath === '/financial-reports/email-retry') return json(200, await retryFinancialEmailImport(body, actor));
     if (method === 'POST' && apiPath === '/notification-preferences') return json(200, await saveManagerNotificationPreferences(body, actor));
     if (method === 'POST' && apiPath === '/pop-campaigns/campaign') return json(200, await savePopCampaign(body, actor));
     if (method === 'POST' && apiPath === '/pop-campaigns/complete') return json(200, await completePopCampaign(body, actor));

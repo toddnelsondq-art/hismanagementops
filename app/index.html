@@ -1063,8 +1063,8 @@
 
         <article class="card help-section" id="help-financial-reports">
           <h3>Financial reports</h3>
-          <p>Managers and above can review net sales versus last year, labor percentage, transactions, average ticket, and items needing attention for their assigned locations. Use the Dashboard time-period selector for the current day, week, or month. Directors and Owners can upload the Day-to-Day Financial Recap LY Excel workbook from Manage. Review every store-to-location match before importing.</p>
-          <p class="hint">Uploading the same location and date again replaces that day’s imported figures while keeping an import audit record.</p>
+          <p>Managers and above can review net sales versus last year, labor percentage, transactions, average ticket, and items needing attention for their assigned locations. Use the Dashboard time-period selector for the current day, week, or month. Directors and Owners can upload the Excel or HTML Day-to-Day Financial Recap LY report from Manage. Review every store-to-location match before importing.</p>
+          <p class="hint">Store-number mappings prevent similar location names from being confused. The same Manage section can move an imported day to the correct location and show the status of automatic email imports. Uploading the same location and date again updates that day’s figures.</p>
           <a href="#helpContents">Back to contents</a>
         </article>
 
@@ -1282,9 +1282,9 @@
 
       <article class="card form-card collapsible-card" id="financialImportCard" hidden>
         <h3>Financial report import</h3>
-        <p class="hint">Directors and Owners can upload the Excel version of the Day-to-Day Financial Recap LY report. Review every location match before saving. Existing figures for the same location and date will be updated.</p>
+        <p class="hint">Directors and Owners can upload the Excel or HTML version of the Day-to-Day Financial Recap LY report. Review every location match before saving. Existing figures for the same location and date will be updated.</p>
         <label>Daily financial recap workbook
-          <input id="financialReportFile" type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+          <input id="financialReportFile" type="file" accept=".xlsx,.xls,.html,.htm,text/html,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
         </label>
         <div id="financialImportPreview" class="financial-import-preview"><p class="hint">Choose an Excel workbook to review its store reports.</p></div>
         <div class="row-actions">
@@ -1292,8 +1292,22 @@
           <button id="clearFinancialReportBtn" class="ghost" type="button" disabled>Clear preview</button>
         </div>
         <p id="financialImportStatus" class="hint"></p>
+        <h4>Store number mappings</h4>
+        <p class="hint">Save the store number printed in the report to its permanent DQ OPS location. Email imports use these mappings instead of guessing from similar city names.</p>
+        <div class="financial-mapping-form">
+          <label>Report store number<input id="financialMappingCode" inputmode="numeric" maxlength="6" placeholder="13260"></label>
+          <label>DQ OPS location<select id="financialMappingLocation"></select></label>
+          <button id="saveFinancialMappingBtn" type="button">Save mapping</button>
+        </div>
+        <div id="financialStoreMappings"><p class="hint">No store mappings loaded.</p></div>
+        <h4>Correct imported sales</h4>
+        <p class="hint">If a day was posted to the wrong location, choose the correct destination. The original entry is moved rather than duplicated.</p>
+        <div id="financialReportCorrections"><p class="hint">No imported daily reports loaded.</p></div>
         <h4>Recent imports</h4>
         <div id="financialImportHistory"><p class="hint">No financial imports loaded.</p></div>
+        <h4>Automatic email imports</h4>
+        <p id="financialEmailAutomationStatus" class="hint"></p>
+        <div id="financialEmailImportHistory"><p class="hint">No emailed reports have been received.</p></div>
       </article>
 
       <article class="card form-card collapsible-card" id="managerNotificationPreferencesCard">
@@ -2098,11 +2112,11 @@
   </section>
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-30-03"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="version.js?v=2026-08-30-04"></script>
   <script src="auth.js?v=2026-08-29-capacitor"></script>
-  <script src="financial-reports.js?v=2026-08-30-01"></script>
-  <script src="app.js?v=2026-08-30-financial-preferences"></script>
+  <script src="financial-reports.js?v=2026-08-30-email-import"></script>
+  <script src="app.js?v=2026-08-30-financial-corrections"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>
