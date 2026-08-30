@@ -9,7 +9,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.19.0';
+const APP_VERSION = '1.19.1';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -2237,7 +2237,10 @@ async function notifyOutOfRangeTemperature(locationId, readings = []) {
   for (const user of users.filter(managerNotificationAllowed).filter(item => isFullAccess(item) || userLocationIds(item).includes(locationId))) {
     const preferences = normalizeManagerNotificationPreferences(stored[user.id] || {});
     if (!preferences.outOfRangeTemps.enabled) continue;
-    const text = readings.map(reading => `${location?.name || locationId}: ${reading.item || 'Temperature'} was ${reading.value}°F. Action: ${reading.correctiveAction || 'Corrective action recorded'}.`).join('\n');
+    const text = readings.map(reading => {
+      const unit = reading.unit === '%' || (String(reading.list || '').toLowerCase() === 'chill' && String(reading.item || '').toLowerCase() === 'overrun') ? '%' : '°F';
+      return `${location?.name || locationId}: ${reading.item || 'Temperature'} was ${reading.value}${unit}. Action: ${reading.correctiveAction || 'Corrective action recorded'}.`;
+    }).join('\n');
     sent.push(...await sendPreferredNotification({ recipient: user, channels: preferences.outOfRangeTemps.channels, type: 'Out-of-range temperature', title: 'HIS OPS out-of-range temperature', text, locationId, locationName: location?.name || locationId }));
   }
   return sent;

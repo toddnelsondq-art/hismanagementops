@@ -1469,6 +1469,19 @@ function readingList(reading) {
   return 'Grill';
 }
 
+function isOverrunReading(list, item) {
+  return String(list || '').trim().toLowerCase() === 'chill' && String(item || '').trim().toLowerCase() === 'overrun';
+}
+
+function temperatureReadingUnit(reading = {}) {
+  if (reading.unit === '%') return '%';
+  return isOverrunReading(readingList(reading), reading.item) ? '%' : '°F';
+}
+
+function formattedTemperatureReading(reading = {}) {
+  return `${escapeHtml(reading.value)}${temperatureReadingUnit(reading)}`;
+}
+
 function taskSectionProgress(section) {
   const tasks = (day.tasks || []).filter(task => task.section === section && taskCategory(task) === selectedTaskCategory && taskMatchesCurrentTime(task));
   const done = tasks.filter(task => task.done).length;
@@ -1597,7 +1610,7 @@ function render() {
             <span>${escapeHtml(item)}</span>
             <b>${Math.min(readings.length, 1)}/1</b>
             <div class="reading-chips">
-              ${readings.map(reading => `<span class="reading-chip ${reading.correctiveAction ? 'reading-out-of-range' : ''}">${escapeHtml(reading.value)}°F · ${escapeHtml(formatClockTime(reading.time))}${reading.userName ? ` · ${escapeHtml(reading.userName)}` : ''}${reading.correctiveAction ? ` · ${escapeHtml(reading.correctiveAction)}` : ''}</span>`).join('')}
+              ${readings.map(reading => `<span class="reading-chip ${reading.correctiveAction ? 'reading-out-of-range' : ''}">${formattedTemperatureReading(reading)} · ${escapeHtml(formatClockTime(reading.time))}${reading.userName ? ` · ${escapeHtml(reading.userName)}` : ''}${reading.correctiveAction ? ` · ${escapeHtml(reading.correctiveAction)}` : ''}</span>`).join('')}
               ${readings.length < 1 ? `<span class="reading-due">due for ${escapeHtml(selectedTempSession)}</span>` : ''}
             </div>
           </button>
@@ -1690,7 +1703,8 @@ function renderTemperatureStandards() {
 
 function temperatureItemEditorHtml(list, area, item) {
   const standard = temperatureStandard(list, area, item);
-  return `<div class="temperature-item-editor" data-temperature-item><label>Item name<input data-temp-item-name value="${escapeHtml(item)}" placeholder="Product or equipment"></label><label>Minimum °F<input data-standard-min type="number" step="0.1" value="${standard.min ?? ''}"></label><label>Maximum °F<input data-standard-max type="number" step="0.1" value="${standard.max ?? ''}"></label><label>Too-cold actions<textarea data-standard-below placeholder="One per line">${escapeHtml((standard.belowActions || []).join('\n'))}</textarea></label><label>Too-warm actions<textarea data-standard-above placeholder="One per line">${escapeHtml((standard.aboveActions || []).join('\n'))}</textarea></label><div class="temperature-item-actions"><button class="ghost" data-temp-item-move="up" type="button" aria-label="Move up">↑</button><button class="ghost" data-temp-item-move="down" type="button" aria-label="Move down">↓</button><button class="danger" data-temp-item-remove type="button">Remove</button></div></div>`;
+  const unit = isOverrunReading(list, item) ? '%' : '°F';
+  return `<div class="temperature-item-editor" data-temperature-item><label>Item name<input data-temp-item-name value="${escapeHtml(item)}" placeholder="Product or equipment"></label><label>Minimum ${unit}<input data-standard-min type="number" step="0.1" value="${standard.min ?? ''}"></label><label>Maximum ${unit}<input data-standard-max type="number" step="0.1" value="${standard.max ?? ''}"></label><label>Too-low actions<textarea data-standard-below placeholder="One per line">${escapeHtml((standard.belowActions || []).join('\n'))}</textarea></label><label>Too-high actions<textarea data-standard-above placeholder="One per line">${escapeHtml((standard.aboveActions || []).join('\n'))}</textarea></label><div class="temperature-item-actions"><button class="ghost" data-temp-item-move="up" type="button" aria-label="Move up">↑</button><button class="ghost" data-temp-item-move="down" type="button" aria-label="Move down">↓</button><button class="danger" data-temp-item-remove type="button">Remove</button></div></div>`;
 }
 
 function temperatureLogEditorHtml(list = '', required = true, items = []) {
@@ -3480,7 +3494,7 @@ function reportMarkup(report) {
             <div class="report-temp-item">
               <b>${escapeHtml(item)}</b>
               <div class="reading-chips">
-                ${readings.map(reading => `<span class="reading-chip">${escapeHtml(reading.value)}°F · ${escapeHtml(formatClockTime(reading.time))}${reading.userName ? ` · ${escapeHtml(reading.userName)}` : ''}</span>`).join('')}
+                ${readings.map(reading => `<span class="reading-chip">${formattedTemperatureReading(reading)} · ${escapeHtml(formatClockTime(reading.time))}${reading.userName ? ` · ${escapeHtml(reading.userName)}` : ''}</span>`).join('')}
               </div>
             </div>
           `).join('')}
@@ -4960,6 +4974,7 @@ function openTempDialog(area = $('#tempArea').value, item = null, list = selecte
   fillTempItems();
   const option = [...$('#tempItem').options].find(entry => entry.value === item && entry.dataset.area === area);
   if (option) option.selected = true;
+  configureTemperatureEntry(selectedTempList, $('#tempItem').value);
   $('#tempDialogTitle').textContent = item || `${selectedTempSession} temperature`;
   $('#tempItemLabel').hidden = true;
   $('#additionalTempItemLabel').hidden = true;
@@ -4973,12 +4988,37 @@ function openAdditionalTempDialog() {
   tempEntryMode = 'additional';
   $('#tempValue').value = '';
   $('#additionalTempItem').value = '';
+  configureTemperatureEntry('Additional', '');
   $('#tempDialogTitle').textContent = `Additional ${selectedTempSession.toLowerCase()} temperature`;
   $('#tempItemLabel').hidden = true;
   $('#additionalTempItemLabel').hidden = false;
   $('#tempDialog').showModal();
   $('#additionalTempItem').focus();
 }
+
+function configureTemperatureEntry(list, item) {
+  const overrun = isOverrunReading(list, item);
+  const input = $('#tempValue');
+  input.dataset.negative = 'false';
+  input.min = overrun ? '0' : '';
+  input.placeholder = overrun ? '40.0' : '165.0';
+  $('#tempValueLabel').textContent = overrun ? 'Overrun (%)' : 'Temperature (°F)';
+  $('#toggleNegativeTempBtn').hidden = overrun;
+  $('#toggleNegativeTempBtn').classList.remove('is-negative');
+  $('#toggleNegativeTempBtn').textContent = '− Negative';
+}
+
+$('#toggleNegativeTempBtn').onclick = () => {
+  const input = $('#tempValue');
+  const numericValue = Number(input.value);
+  const currentlyNegative = input.value ? numericValue < 0 : input.dataset.negative === 'true';
+  const makeNegative = !currentlyNegative;
+  input.dataset.negative = String(makeNegative);
+  if (input.value && Number.isFinite(numericValue)) input.value = String(makeNegative ? -Math.abs(numericValue) : Math.abs(numericValue));
+  $('#toggleNegativeTempBtn').classList.toggle('is-negative', makeNegative);
+  $('#toggleNegativeTempBtn').textContent = makeNegative ? '✓ Negative' : '− Negative';
+  input.focus();
+};
 
 $('#addTempBtn').onclick = openAdditionalTempDialog;
 $('#reportReceivingIssueBtn').onclick = () => {
@@ -5425,18 +5465,22 @@ $('#saveTempBtn').onclick = async event => {
     $('#tempDialog').close();
     return toast('Day temperatures close at 2:00 PM');
   }
-  if (!$('#tempValue').value) {
+  const temperatureInput = $('#tempValue');
+  if (!temperatureInput.value) {
     return toast('Enter the temperature');
   }
   const additionalItem = $('#additionalTempItem').value.trim();
   if (tempEntryMode === 'additional' && !additionalItem) return toast('Enter the additional product or item');
   const selectedProduct = $('#tempItem').selectedOptions[0];
+  let enteredValue = Number(temperatureInput.value);
+  if (temperatureInput.dataset.negative === 'true') enteredValue = -Math.abs(enteredValue);
   const reading = {
     list: tempEntryMode === 'additional' ? 'Additional' : selectedTempList,
     area: tempEntryMode === 'additional' ? 'Additional / non-listed' : (selectedProduct?.dataset.area || ''),
     item: tempEntryMode === 'additional' ? additionalItem : $('#tempItem').value,
     session: selectedTempSession,
-    value: $('#tempValue').value,
+    value: String(enteredValue),
+    unit: isOverrunReading(selectedTempList, tempEntryMode === 'additional' ? additionalItem : $('#tempItem').value) ? '%' : '°F',
     time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true }),
     userId: currentUser().id,
     userName: currentUser().name
@@ -5450,7 +5494,7 @@ $('#saveTempBtn').onclick = async event => {
       pendingTemperatureReading = reading;
       const actions = (tooCold ? standard.belowActions : standard.aboveActions) || [];
       const defaults = tooCold ? ['Continued the heating process', 'Equipment malfunction — removed from service'] : ['Notified manager of equipment issue', 'Discarded product'];
-      $('#correctiveActionSummary').textContent = `${reading.item} was entered at ${reading.value}°F. The ${tooCold ? `minimum is ${standard.min}°F` : `maximum is ${standard.max}°F`}.`;
+      $('#correctiveActionSummary').textContent = `${reading.item} was entered at ${reading.value}${reading.unit}. The ${tooCold ? `minimum is ${standard.min}${reading.unit}` : `maximum is ${standard.max}${reading.unit}`}.`;
       $('#correctiveActionChoices').innerHTML = (actions.length ? actions : defaults).map(action => `<button type="button" data-corrective-action="${escapeHtml(action)}">${escapeHtml(action)}</button>`).join('');
       $('#tempDialog').close();
       $('#correctiveActionDialog').showModal();

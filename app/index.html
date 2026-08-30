@@ -11,7 +11,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="assets/pwa-icon-180.png">
   <link rel="stylesheet" href="styles.css">
-  <link rel="stylesheet" href="temperature.css">
+  <link rel="stylesheet" href="temperature.css?v=2026-08-29-negative-overrun">
   <link rel="stylesheet" href="his-theme.css?v=2026-08-29-completed-fpc">
   <style>
     .receiving-issue-tools,.receiving-issue-list{width:100%;margin-top:12px}
@@ -1606,8 +1606,11 @@
       <label id="additionalTempItemLabel" hidden>Additional product / item
         <input id="additionalTempItem" autocomplete="off" placeholder="Enter a non-listed product or item">
       </label>
-      <label>Temperature (°F)
-        <input id="tempValue" type="number" step="0.1" inputmode="decimal" placeholder="165.0">
+      <label><span id="tempValueLabel">Temperature (°F)</span>
+        <div class="temperature-value-entry">
+          <input id="tempValue" type="number" step="0.1" inputmode="decimal" placeholder="165.0">
+          <button id="toggleNegativeTempBtn" class="ghost negative-temperature-button" type="button">− Negative</button>
+        </div>
       </label>
       <p class="hint">Recorded with the selected user and current time.</p>
       <button id="saveTempBtn" value="default">OK</button>
@@ -1988,9 +1991,9 @@
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-29-14"></script>
+  <script src="version.js?v=2026-08-29-15"></script>
   <script src="auth.js?v=2026-08-29-capacitor"></script>
-  <script src="app.js?v=2026-08-29-capacitor"></script>
+  <script src="app.js?v=2026-08-29-negative-overrun"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>

@@ -6,3 +6,8 @@
 .reading-chips{grid-column:1/-1;display:flex;gap:5px;flex-wrap:wrap}
 .reading-chip{font-size:11px;background:var(--mint);color:var(--green);padding:3px 7px;border-radius:99px}
 .reading-due{font-size:11px;color:#9a6400;background:#fff3d8;padding:3px 7px;border-radius:99px}
+.temperature-value-entry{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:stretch}
+.temperature-value-entry input{min-width:0}
+.negative-temperature-button{white-space:nowrap;min-width:112px}
+.negative-temperature-button.is-negative{background:#0b376b;color:#fff;border-color:#0b376b}
+@media(max-width:420px){.temperature-value-entry{grid-template-columns:1fr}.negative-temperature-button{width:100%}}
