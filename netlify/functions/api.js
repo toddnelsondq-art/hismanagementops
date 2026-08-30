@@ -9,7 +9,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.19.1';
+const APP_VERSION = '1.20.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -506,6 +506,126 @@ function readingSession(reading) {
 function tempRequirementCount(definitions = TEMPERATURE_ITEMS) {
   return Object.values(definitions).filter(list => list.requiredDaily !== false)
     .reduce((sum, list) => sum + Object.values(list.areas || {}).reduce((itemSum, items) => itemSum + items.length, 0), 0) * 2;
+}
+
+function complianceDateRange(start, end) {
+  const valid = value => /^\d{4}-\d{2}-\d{2}$/.test(String(value || '')) && !Number.isNaN(new Date(`${value}T12:00:00Z`).getTime());
+  const rangeEnd = valid(end) ? end : localDate();
+  if (rangeEnd > localDate()) throw Object.assign(new Error('Temperature history cannot include future dates'), { statusCode: 400 });
+  const fallbackStart = new Date(`${rangeEnd}T12:00:00Z`);
+  fallbackStart.setUTCDate(fallbackStart.getUTCDate() - 59);
+  const rangeStart = valid(start) ? start : fallbackStart.toISOString().slice(0, 10);
+  if (rangeStart > rangeEnd) throw Object.assign(new Error('The start date must be before the end date'), { statusCode: 400 });
+  const dates = [];
+  const cursor = new Date(`${rangeStart}T12:00:00Z`);
+  const last = new Date(`${rangeEnd}T12:00:00Z`);
+  while (cursor <= last && dates.length <= 366) {
+    dates.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  if (cursor <= last) throw Object.assign(new Error('Temperature reports are limited to 367 days at a time'), { statusCode: 400 });
+  return { start: rangeStart, end: rangeEnd, dates };
+}
+
+function scheduledTemperatureRequirements(definitions, locationId, date) {
+  const weekday = WEEKDAYS[new Date(`${date}T12:00:00Z`).getUTCDay()];
+  const requirements = [];
+  Object.entries(definitions || {}).forEach(([listName, list]) => {
+    const scheduledDays = list?.deliveryDaysByLocation?.[locationId];
+    const scheduled = list?.requiredDaily !== false || (Array.isArray(scheduledDays) && scheduledDays.includes(weekday));
+    if (!scheduled) return;
+    Object.entries(list?.areas || {}).forEach(([area, items]) => {
+      const sessions = list?.requiredDaily === false ? ['Any'] : ['Day', 'Afternoon'];
+      items.forEach(item => sessions.forEach(session => requirements.push({
+        key: `${listName}|${area}|${item}|${session}`,
+        list: listName,
+        area,
+        item,
+        session
+      })));
+    });
+  });
+  return requirements;
+}
+
+function temperatureComplianceEntry(location, date, payload, definitions) {
+  const readings = Array.isArray(payload?.temps) ? payload.temps : [];
+  const requirements = scheduledTemperatureRequirements(definitions, location.id, date);
+  const logged = new Set(readings.flatMap(reading => [
+    `${readingList(reading)}|${reading.area}|${reading.item}|${readingSession(reading)}`,
+    `${readingList(reading)}|${reading.area}|${reading.item}|Any`
+  ]));
+  const completed = requirements.filter(requirement => logged.has(requirement.key));
+  const closure = payload?.temperatureCompliance?.locationClosed ? payload.temperatureCompliance : null;
+  let status = 'No temperatures recorded';
+  let statusCode = 'none';
+  if (closure) { status = 'Location closed'; statusCode = 'closed'; }
+  else if (!requirements.length) { status = 'Not scheduled'; statusCode = 'not-scheduled'; }
+  else if (completed.length === requirements.length) { status = 'Complete'; statusCode = 'complete'; }
+  else if (readings.length) { status = 'Partial'; statusCode = 'partial'; }
+  const listNames = [...new Set(requirements.map(requirement => requirement.list))];
+  const logs = listNames.map(list => {
+    const expected = requirements.filter(requirement => requirement.list === list);
+    return { list, expected: expected.length, completed: expected.filter(requirement => logged.has(requirement.key)).length };
+  });
+  return {
+    locationId: location.id,
+    locationName: location.name,
+    date,
+    status,
+    statusCode,
+    expected: requirements.length,
+    completed: completed.length,
+    missing: Math.max(requirements.length - completed.length, 0),
+    readings,
+    logs,
+    closedReason: closure?.reason || '',
+    closedBy: closure?.markedBy || '',
+    closedAt: closure?.markedAt || ''
+  };
+}
+
+async function temperatureComplianceHistory(actor, query = {}) {
+  const { start, end, dates } = complianceDateRange(query.start, query.end);
+  const allLocations = await readLocations();
+  const allowedIds = AUTH_REQUIRED && actor && !isFullAccess(actor) ? userLocationIds(actor) : allLocations.map(location => location.id);
+  const requestedLocationId = String(query.locationId || allowedIds[0] || '');
+  const selectedLocations = requestedLocationId === 'all'
+    ? allLocations.filter(location => allowedIds.includes(location.id))
+    : allLocations.filter(location => location.id === requestedLocationId && allowedIds.includes(location.id));
+  if (!selectedLocations.length) throw Object.assign(new Error('You do not have access to that location'), { statusCode: 403 });
+  const [rows, definitions] = await Promise.all([
+    supabase(`/rest/v1/days?${tenantQuery()}&date=gte.${encodeURIComponent(start)}&date=lte.${encodeURIComponent(end)}&select=location_id,date,payload`),
+    readTemperatureDefinitions()
+  ]);
+  const payloads = new Map(rows.map(row => [`${row.location_id}|${row.date}`, row.payload]));
+  const entries = selectedLocations.flatMap(location => dates.map(date => temperatureComplianceEntry(location, date, payloads.get(`${location.id}|${date}`), definitions)))
+    .sort((a, b) => b.date.localeCompare(a.date) || a.locationName.localeCompare(b.locationName));
+  const totals = entries.reduce((summary, entry) => {
+    summary[entry.statusCode] = (summary[entry.statusCode] || 0) + 1;
+    return summary;
+  }, {});
+  return { start, end, locationId: requestedLocationId, entries, totals, canMarkClosed: !AUTH_REQUIRED || canManage(actor) };
+}
+
+async function setTemperatureComplianceClosure(payload = {}, actor) {
+  const locationId = String(payload.locationId || '');
+  const date = String(payload.date || '');
+  const closed = payload.closed === true;
+  if (AUTH_REQUIRED && !canManage(actor)) throw Object.assign(new Error('Only managers and above can mark a location closed'), { statusCode: 403 });
+  if (!canAccessLocation(actor, locationId)) throw Object.assign(new Error('You do not have access to that location'), { statusCode: 403 });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date > localDate()) throw Object.assign(new Error('Choose today or an earlier date'), { statusCode: 400 });
+  const day = await readDay(locationId, date);
+  if (closed && (day.temps || []).length) throw Object.assign(new Error('A day with recorded temperatures cannot be marked closed'), { statusCode: 400 });
+  if (closed) {
+    const reason = String(payload.reason || '').trim();
+    if (!reason) throw Object.assign(new Error('Enter why the location was closed'), { statusCode: 400 });
+    day.temperatureCompliance = { locationClosed: true, reason, markedBy: actor?.name || 'Manager', markedById: actor?.id || '', markedAt: new Date().toISOString() };
+  } else {
+    delete day.temperatureCompliance;
+  }
+  await writeDay(locationId, date, day);
+  return temperatureComplianceHistory(actor, { ...payload, locationId: payload.reportLocationId || locationId });
 }
 
 function dailyOpsCounts(payload = null, templates = DEFAULT_TASK_TEMPLATES, locationId = DEFAULT_LOCATION_ID, date = today(), definitions = TEMPERATURE_ITEMS) {
@@ -3880,6 +4000,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/alerts/state') return json(200, await readAlertSettings());
     if (method === 'GET' && apiPath === '/temperature-standards') return json(200, { standards: await readTemperatureStandards() });
     if (method === 'GET' && apiPath === '/temperature-definitions') return json(200, { definitions: await readTemperatureDefinitions() });
+    if (method === 'GET' && apiPath === '/temperature-compliance') return json(200, await temperatureComplianceHistory(actor, query));
     if (method === 'GET' && apiPath === '/alerts/check') return json(200, await checkAlerts(query, actor));
     if (method === 'GET' && apiPath === '/fpc/state') return json(200, await fpcState(actor));
     if (method === 'GET' && apiPath === '/store-documents/state') return json(200, await storeDocumentsState());
@@ -3896,6 +4017,9 @@ exports.handler = async event => {
       const locationId = body.locationId || DEFAULT_LOCATION_ID;
       if (AUTH_REQUIRED && !canAccessLocation(actor, locationId)) throw Object.assign(new Error('You do not have access to that location'), { statusCode: 403 });
       const savedDay = await readDay(locationId, body.date);
+      if (savedDay.temperatureCompliance?.locationClosed && (body.day?.temps || []).length > (savedDay.temps || []).length) {
+        throw Object.assign(new Error('This location is marked closed for the selected day. Remove the closed status before recording temperatures.'), { statusCode: 409 });
+      }
       if (body.date === localDate() && localHour() >= 14) {
         const savedDayTemps = (savedDay.temps || []).filter(reading => readingSession(reading) === 'Day').length;
         const submittedDayTemps = (body.day?.temps || []).filter(reading => readingSession(reading) === 'Day').length;
@@ -3930,6 +4054,7 @@ exports.handler = async event => {
     if (method === 'POST' && apiPath === '/user/password') {
       return json(200, await setUserPassword(body.id || actor?.id, body.password, actor));
     }
+    if (method === 'POST' && apiPath === '/temperature-compliance/closure') return json(200, await setTemperatureComplianceClosure(body, actor));
     if (method === 'POST' && apiPath === '/user/pin') return json(200, await setUserPin(body.id, body.pin, actor));
     if (method === 'POST' && apiPath === '/kiosk/enrollment') return json(200, await createKioskEnrollment(body, actor));
     if (method === 'POST' && apiPath === '/kiosk/revoke') return json(200, { devices: await revokeKioskDevice(body.id, actor) });

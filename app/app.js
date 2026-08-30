@@ -180,6 +180,7 @@ let locations = [{ id: 'store-01', name: 'Store 1' }];
 let currentLocationId = localStorage.getItem('dailyops-current-location') || 'store-01';
 let day = { locationId: currentLocationId, tasks: baseTasks.map(task => ({ ...task, done: false })), temps: [], complete: false };
 let history = [];
+let temperatureCompliance = { entries: [], totals: {}, loaded: false, loading: false, canMarkClosed: false };
 let overdue = [];
 let temperatureItems = defaultTemperatureItems;
 let temperatureStandards = {};
@@ -287,6 +288,13 @@ if ($('#inspectionDate')) $('#inspectionDate').value = dateKey;
 if ($('#managementReportOccurredAt')) $('#managementReportOccurredAt').value = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 if ($('#popCampaignStartDate')) $('#popCampaignStartDate').value = dateKey;
 if ($('#popCampaignDueDate')) $('#popCampaignDueDate').value = dateKey;
+if ($('#temperatureHistoryEnd')) { $('#temperatureHistoryEnd').value = dateKey; $('#temperatureHistoryEnd').max = dateKey; }
+if ($('#temperatureHistoryStart')) {
+  const start = new Date(`${dateKey}T12:00:00`);
+  start.setDate(start.getDate() - 59);
+  $('#temperatureHistoryStart').value = start.toISOString().slice(0, 10);
+  $('#temperatureHistoryStart').max = dateKey;
+}
 
 function setupDailyOpsLayout() {
   const todayView = $('#todayView');
@@ -1643,6 +1651,7 @@ function render() {
   renderUsers();
   renderLocations();
   renderOverdue();
+  renderTemperatureHistoryControls(visibleLocations, aboveStore);
   renderHistory();
   renderTaskTemplates();
   renderAlertRules();
@@ -3505,6 +3514,124 @@ function reportMarkup(report) {
   `;
 }
 
+function renderTemperatureHistoryControls(visibleLocations = [], allowAll = false) {
+  const select = $('#temperatureHistoryLocation');
+  if (!select) return;
+  const previous = select.value || currentLocationId;
+  select.innerHTML = `${allowAll ? '<option value="all">All assigned locations</option>' : ''}${visibleLocations.map(location => `<option value="${escapeHtml(location.id)}">${escapeHtml(location.name)}</option>`).join('')}`;
+  const valid = [...select.options].some(option => option.value === previous);
+  select.value = valid ? previous : (allowAll ? 'all' : visibleLocations[0]?.id || currentLocationId);
+}
+
+function temperatureStatusSummaryLabel(code) {
+  return ({ complete: 'Complete', partial: 'Partial', none: 'No temperatures', closed: 'Location closed', 'not-scheduled': 'Not scheduled' })[code] || code;
+}
+
+function temperatureHistoryEntryMarkup(entry) {
+  const progress = entry.expected ? `${entry.completed} of ${entry.expected} required readings` : 'No temperature log scheduled';
+  const closure = entry.statusCode === 'closed' ? `<p><b>Closure reason:</b> ${escapeHtml(entry.closedReason || '')}${entry.closedBy ? ` · Marked by ${escapeHtml(entry.closedBy)}` : ''}</p>` : '';
+  const readings = (entry.readings || []).length ? `<div class="temperature-history-readings"><b>Recorded readings</b><div>${entry.readings.map(reading => `<span class="reading-chip">${escapeHtml(readingList(reading))} · ${escapeHtml(reading.item || '')}: ${formattedTemperatureReading(reading)}${reading.time ? ` · ${escapeHtml(formatClockTime(reading.time))}` : ''}${reading.userName ? ` · ${escapeHtml(reading.userName)}` : ''}</span>`).join('')}</div></div>` : '<p class="hint">No temperatures were recorded this day.</p>';
+  const closureButton = temperatureCompliance.canMarkClosed && ['none', 'closed', 'not-scheduled'].includes(entry.statusCode)
+    ? `<button class="ghost" type="button" data-temperature-closure-date="${escapeHtml(entry.date)}" data-temperature-closure-location="${escapeHtml(entry.locationId)}">${entry.statusCode === 'closed' ? 'Edit closed status' : 'Mark location closed'}</button>`
+    : '';
+  return `<details class="temperature-history-row">
+    <summary><div><h4>${escapeHtml(prettyDate(entry.date))} · ${escapeHtml(entry.locationName)}</h4><p>${escapeHtml(progress)}</p></div><span class="temperature-history-status ${escapeHtml(entry.statusCode)}">${escapeHtml(entry.status)}</span></summary>
+    <div class="temperature-history-detail">
+      ${closure}
+      ${(entry.logs || []).map(log => `<div class="temperature-history-log"><span>${escapeHtml(log.list)}</span><b>${log.completed}/${log.expected}</b></div>`).join('')}
+      ${readings}
+      ${closureButton ? `<div class="report-actions">${closureButton}</div>` : ''}
+    </div>
+  </details>`;
+}
+
+function renderTemperatureCompliance() {
+  if (!$('#temperatureHistoryList')) return;
+  const totals = temperatureCompliance.totals || {};
+  $('#temperatureHistorySummary').innerHTML = temperatureCompliance.loaded
+    ? ['complete', 'partial', 'none', 'closed', 'not-scheduled'].map(code => `<span class="status">${escapeHtml(temperatureStatusSummaryLabel(code))}: ${Number(totals[code] || 0)}</span>`).join('')
+    : '';
+  if (temperatureCompliance.loading) {
+    $('#temperatureHistoryList').innerHTML = '<div class="empty">Loading temperature records…</div>';
+    return;
+  }
+  if (!temperatureCompliance.loaded) return;
+  $('#temperatureHistoryList').innerHTML = temperatureCompliance.entries?.length
+    ? temperatureCompliance.entries.map(temperatureHistoryEntryMarkup).join('')
+    : '<div class="empty">No calendar days match this report.</div>';
+}
+
+async function loadTemperatureCompliance() {
+  if (!apiOnline || temperatureCompliance.loading) return;
+  const start = $('#temperatureHistoryStart').value;
+  const end = $('#temperatureHistoryEnd').value;
+  const locationId = $('#temperatureHistoryLocation').value || currentLocationId;
+  temperatureCompliance.loading = true;
+  renderTemperatureCompliance();
+  try {
+    const result = await api(`/api/temperature-compliance?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&locationId=${encodeURIComponent(locationId)}`);
+    temperatureCompliance = { ...result, loaded: true, loading: false };
+  } catch (error) {
+    temperatureCompliance = { ...temperatureCompliance, loaded: true, loading: false, entries: [], totals: {} };
+    toast(`Temperature history did not load: ${error.message}`);
+  }
+  renderTemperatureCompliance();
+}
+
+function openTemperatureClosure(entry) {
+  $('#temperatureClosureLocationId').value = entry.locationId;
+  $('#temperatureClosureDate').value = entry.date;
+  $('#temperatureClosureReason').value = entry.closedReason || '';
+  $('#temperatureClosureTitle').textContent = entry.statusCode === 'closed' ? 'Edit closed status' : 'Mark location closed';
+  $('#temperatureClosureDescription').textContent = `${entry.locationName} · ${prettyDate(entry.date)}`;
+  $('#removeTemperatureClosureBtn').hidden = entry.statusCode !== 'closed';
+  $('#saveTemperatureClosureBtn').textContent = entry.statusCode === 'closed' ? 'Save closed status' : 'Mark location closed';
+  $('#temperatureClosureDialog').showModal();
+}
+
+async function saveTemperatureClosure(closed) {
+  const locationId = $('#temperatureClosureLocationId').value;
+  const date = $('#temperatureClosureDate').value;
+  const reason = $('#temperatureClosureReason').value.trim();
+  if (closed && !reason) return toast('Enter why the location was closed');
+  try {
+    const result = await api('/api/temperature-compliance/closure', {
+      method: 'POST',
+      body: JSON.stringify({
+        locationId,
+        date,
+        closed,
+        reason,
+        start: $('#temperatureHistoryStart').value,
+        end: $('#temperatureHistoryEnd').value,
+        reportLocationId: $('#temperatureHistoryLocation').value || locationId
+      })
+    });
+    temperatureCompliance = { ...result, loaded: true, loading: false };
+    $('#temperatureClosureDialog').close();
+    renderTemperatureCompliance();
+    toast(closed ? 'Location closure recorded' : 'Closed status removed');
+  } catch (error) {
+    toast(`Temperature record did not save: ${error.message}`);
+  }
+}
+
+function temperatureComplianceDocument() {
+  const entries = temperatureCompliance.entries || [];
+  const title = `Temperature compliance · ${temperatureCompliance.start || ''} through ${temperatureCompliance.end || ''}`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>body{font:14px Arial,sans-serif;color:#102f55;margin:28px}h1{margin-bottom:4px}.hint{color:#64748b}.record{border-top:1px solid #cbd5e1;padding:12px 0;page-break-inside:avoid}.head{display:flex;justify-content:space-between;gap:16px}.status{font-weight:bold}.complete{color:#166534}.partial{color:#92400e}.none{color:#991b1b}.closed{color:#1e40af}.log{margin:4px 0}.reading{margin:5px 0 0 16px;font-size:12px}</style></head><body><h1>${escapeHtml(title)}</h1><p class="hint">This report includes every calendar day in the selected range. Missing days are shown explicitly and no readings are inferred.</p>${entries.map(entry => `<section class="record"><div class="head"><div><b>${escapeHtml(prettyDate(entry.date))} · ${escapeHtml(entry.locationName)}</b><div>${entry.expected ? `${entry.completed} of ${entry.expected} required readings` : 'No temperature log scheduled'}</div></div><span class="status ${escapeHtml(entry.statusCode)}">${escapeHtml(entry.status)}</span></div>${entry.closedReason ? `<p><b>Closure reason:</b> ${escapeHtml(entry.closedReason)}${entry.closedBy ? ` · ${escapeHtml(entry.closedBy)}` : ''}</p>` : ''}${(entry.logs || []).map(log => `<div class="log">${escapeHtml(log.list)}: ${log.completed}/${log.expected}</div>`).join('')}${(entry.readings || []).length ? entry.readings.map(reading => `<div class="reading">${escapeHtml(readingList(reading))} · ${escapeHtml(reading.item || '')}: ${formattedTemperatureReading(reading)}${reading.time ? ` · ${escapeHtml(formatClockTime(reading.time))}` : ''}${reading.userName ? ` · ${escapeHtml(reading.userName)}` : ''}</div>`).join('') : '<p><b>No temperatures were recorded this day.</b></p>'}</section>`).join('')}</body></html>`;
+}
+
+function exportTemperatureCompliance() {
+  if (!temperatureCompliance.loaded || !temperatureCompliance.entries?.length) return toast('Load the temperature report before exporting it');
+  const blob = new Blob([temperatureComplianceDocument()], { type: 'text/html' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `temperature-compliance-${temperatureCompliance.start}-${temperatureCompliance.end}.html`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
 async function refreshNoticesQuietly() {
   if (!apiOnline) return;
   try {
@@ -4662,6 +4789,7 @@ function switchView(viewId, options = {}) {
   document.querySelectorAll(`[data-view="${viewId}"]`).forEach(button => button.classList.add('active'));
   updatePageBackButtons(viewId);
   window.scrollTo({ top: 0, behavior: 'auto' });
+  if (viewId === 'historyView' && !temperatureCompliance.loaded) loadTemperatureCompliance();
 }
 
 setupPageBackButtons();
@@ -4707,6 +4835,12 @@ document.addEventListener('click', async event => {
   if (managementFilter) {
     managementReportStatusFilter = managementFilter.dataset.managementReportFilter;
     renderManagementReports();
+    return;
+  }
+  const temperatureClosure = event.target.closest('[data-temperature-closure-date]');
+  if (temperatureClosure) {
+    const entry = (temperatureCompliance.entries || []).find(item => item.date === temperatureClosure.dataset.temperatureClosureDate && item.locationId === temperatureClosure.dataset.temperatureClosureLocation);
+    if (entry) openTemperatureClosure(entry);
     return;
   }
   const revokeTablet = event.target.closest('[data-kiosk-revoke]');
@@ -6358,6 +6492,10 @@ $('#backToHistoryBtn').onclick = () => switchView('historyView');
 $('#exportAllBtn').onclick = () => downloadReports(history.map(reportKey));
 $('#exportSelectedBtn').onclick = () => downloadReports(selectedHistoryKeys());
 $('#exportReportBtn').onclick = () => selectedReportDate && downloadReports([`${selectedReportLocationId}|${selectedReportDate}`]);
+$('#loadTemperatureHistoryBtn').onclick = loadTemperatureCompliance;
+$('#exportTemperatureHistoryBtn').onclick = exportTemperatureCompliance;
+$('#saveTemperatureClosureBtn').onclick = () => saveTemperatureClosure(true);
+$('#removeTemperatureClosureBtn').onclick = () => saveTemperatureClosure(false);
 
 document.addEventListener('keydown', event => {
   const taskCard = event.target.closest?.('[data-task-card]');

@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="assets/pwa-icon-180.png">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="temperature.css?v=2026-08-29-negative-overrun">
-  <link rel="stylesheet" href="his-theme.css?v=2026-08-29-completed-fpc">
+  <link rel="stylesheet" href="his-theme.css?v=2026-08-29-temperature-compliance">
   <style>
     .receiving-issue-tools,.receiving-issue-list{width:100%;margin-top:12px}
     .receiving-issue{border-top:1px solid var(--line);padding:10px 0}
@@ -486,6 +486,24 @@
           <p class="hint">Review and export the maintenance schedule and recorded hours available to your account.</p>
         </div>
         <button class="ghost maintenance-worklog-report-link" data-section-view="maintenanceLogView" type="button">View work log</button>
+      </article>
+      <article class="card temperature-compliance-card">
+        <div class="temperature-compliance-heading">
+          <div>
+            <p class="eyebrow">HEALTH-DEPARTMENT RECORDS</p>
+            <h3>Temperature compliance history</h3>
+            <p class="hint">Every calendar day appears, including days when no temperatures were recorded.</p>
+          </div>
+          <button id="exportTemperatureHistoryBtn" class="ghost" type="button">Export temperature report</button>
+        </div>
+        <div class="temperature-compliance-filters">
+          <label>Location<select id="temperatureHistoryLocation"></select></label>
+          <label>Start date<input id="temperatureHistoryStart" type="date"></label>
+          <label>End date<input id="temperatureHistoryEnd" type="date"></label>
+          <button id="loadTemperatureHistoryBtn" type="button">Show report</button>
+        </div>
+        <div id="temperatureHistorySummary" class="temperature-history-summary"></div>
+        <div id="temperatureHistoryList"><div class="empty">Select Show report to load the temperature history.</div></div>
       </article>
       <article class="card export-card">
         <div>
@@ -1098,7 +1116,7 @@
 
         <article class="card help-section" id="help-reports">
           <h3>Reports</h3>
-          <p>Review completed checklist and temperature-log history. Filter by the locations you are allowed to view, open a completed day for details, and use the available export tools when records need to be saved or shared. Authorized Area Managers and above also see the Maintenance Work Log report here.</p>
+          <p>Review completed checklist history and the continuous Temperature Compliance report. The temperature report includes every calendar day—even days with no readings—and labels each day Complete, Partial, No temperatures recorded, Not scheduled, or Location closed. Choose a location and date range, expand a day for its readings, or export the report for a health-department review. Managers can document a legitimate store closure with a reason. Authorized Area Managers and above also see the Maintenance Work Log report here.</p>
           <a href="#helpContents">Back to contents</a>
         </article>
 
@@ -1913,6 +1931,17 @@
     </form>
   </dialog>
 
+  <dialog id="temperatureClosureDialog">
+    <form method="dialog">
+      <div class="modal-head"><div><p class="eyebrow">TEMPERATURE RECORD</p><h3 id="temperatureClosureTitle">Mark location closed</h3></div><button value="cancel" class="x" aria-label="Close">×</button></div>
+      <input id="temperatureClosureLocationId" type="hidden">
+      <input id="temperatureClosureDate" type="hidden">
+      <p id="temperatureClosureDescription" class="hint"></p>
+      <label>Reason the location was closed<textarea id="temperatureClosureReason" rows="3" placeholder="For example: Holiday closure or utility outage"></textarea></label>
+      <div class="dialog-actions"><button id="removeTemperatureClosureBtn" class="ghost" type="button" hidden>Remove closed status</button><button id="saveTemperatureClosureBtn" type="button">Mark location closed</button></div>
+    </form>
+  </dialog>
+
   <dialog id="workOrderDialog">
     <form method="dialog">
       <div class="modal-head">
@@ -1991,9 +2020,9 @@
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-29-15"></script>
+  <script src="version.js?v=2026-08-29-16"></script>
   <script src="auth.js?v=2026-08-29-capacitor"></script>
-  <script src="app.js?v=2026-08-29-negative-overrun"></script>
+  <script src="app.js?v=2026-08-29-temperature-compliance"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>

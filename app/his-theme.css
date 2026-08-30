@@ -2205,3 +2205,24 @@ header .header-actions{width:auto!important;margin-left:auto!important;overflow:
   #primarySidebar>*{min-width:0!important;width:100%!important}
   #primarySidebar .side-user{margin-top:18px!important}
 }
+
+/* Continuous health-department temperature history. */
+.temperature-compliance-card{margin-bottom:18px!important}
+.temperature-compliance-heading{display:flex;justify-content:space-between;gap:16px;align-items:start}
+.temperature-compliance-filters{display:grid;grid-template-columns:minmax(180px,1fr) minmax(150px,.7fr) minmax(150px,.7fr) auto;gap:10px;align-items:end;margin:16px 0}
+.temperature-compliance-filters label{display:grid;gap:5px;font-weight:750;font-size:13px}
+.temperature-compliance-filters select,.temperature-compliance-filters input{width:100%;margin:0!important}
+.temperature-history-summary{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0 14px}
+.temperature-history-summary .status{font-weight:800}
+.temperature-history-row{border-top:1px solid var(--line,#d9e1ea);padding:12px 0}
+.temperature-history-row>summary{display:grid;grid-template-columns:minmax(210px,1fr) auto auto;gap:12px;align-items:center;cursor:pointer;list-style:none}
+.temperature-history-row>summary::-webkit-details-marker{display:none}
+.temperature-history-row>summary::after{content:'▾';color:#64748b;font-weight:900}
+.temperature-history-row[open]>summary::after{transform:rotate(180deg)}
+.temperature-history-row h4{margin:0}.temperature-history-row p{margin:2px 0 0}
+.temperature-history-status{justify-self:end;font-size:12px;border-radius:999px;padding:6px 10px;font-weight:850;background:#e2e8f0;color:#334155}
+.temperature-history-status.complete{background:#dcfce7;color:#166534}.temperature-history-status.partial{background:#fef3c7;color:#92400e}.temperature-history-status.none{background:#fee2e2;color:#991b1b}.temperature-history-status.closed{background:#dbeafe;color:#1e40af}.temperature-history-status.not-scheduled{background:#f1f5f9;color:#475569}
+.temperature-history-detail{padding:12px 0 2px 14px;border-left:3px solid #dbe4ef;margin-top:10px}
+.temperature-history-log{display:flex;justify-content:space-between;gap:12px;padding:5px 0}
+.temperature-history-readings{margin-top:10px}.temperature-history-readings .reading-chip{display:inline-block;margin:3px}
+@media(max-width:760px){.temperature-compliance-heading{display:block}.temperature-compliance-heading button{margin-top:12px}.temperature-compliance-filters{grid-template-columns:1fr 1fr}.temperature-compliance-filters label:first-child,.temperature-compliance-filters button{grid-column:1/-1}.temperature-history-row>summary{grid-template-columns:1fr auto}.temperature-history-row>summary::after{display:none}.temperature-history-status{grid-column:2}.temperature-history-row>summary>div{grid-row:1/3}}
