@@ -222,6 +222,44 @@
     return new Promise(() => {});
   }
 
+  function isPasswordRecoveryUrl() {
+    return /(?:^|[&#?])type=recovery(?:&|$)/i.test(`${window.location.search}${window.location.hash}`);
+  }
+
+  function showPasswordRecovery() {
+    const overlay = overlayCard(`
+      <p class="auth-subtitle">Choose a new password</p>
+      <form id="passwordRecoveryForm">
+        <p id="authMessage">Enter a new password with at least eight characters.</p>
+        <label>New password<input id="recoveryPassword" type="password" minlength="8" autocomplete="new-password"></label>
+        <label>Confirm password<input id="recoveryPasswordConfirm" type="password" minlength="8" autocomplete="new-password"></label>
+        <button id="recoveryPasswordBtn" type="submit">Save new password</button>
+      </form>
+    `);
+    overlay.querySelector('#passwordRecoveryForm').onsubmit = async event => {
+      event.preventDefault();
+      const message = overlay.querySelector('#authMessage');
+      const button = overlay.querySelector('#recoveryPasswordBtn');
+      const password = overlay.querySelector('#recoveryPassword').value;
+      const confirmation = overlay.querySelector('#recoveryPasswordConfirm').value;
+      if (password.length < 8) { message.textContent = 'Use at least eight characters.'; return; }
+      if (password !== confirmation) { message.textContent = 'The passwords do not match.'; return; }
+      button.disabled = true;
+      button.textContent = 'Saving…';
+      const { error } = await state.client.auth.updateUser({ password });
+      if (error) {
+        message.textContent = error.message;
+        button.disabled = false;
+        button.textContent = 'Save new password';
+        return;
+      }
+      window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search.replace(/([?&])type=recovery(&|$)/, '$1').replace(/[?&]$/, '')}`);
+      window.location.reload();
+    };
+    overlay.querySelector('#recoveryPassword').focus();
+    return new Promise(() => {});
+  }
+
   async function start() {
     try {
       const rememberedTenant = localStorage.getItem(TENANT_KEY) || '';
@@ -256,9 +294,15 @@
       }
 
       await loadSupabaseLibrary();
+      const passwordRecoveryRequested = isPasswordRecoveryUrl();
       state.client = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
       const { data, error: sessionError } = await state.client.auth.getSession();
       if (sessionError) await clearPasswordSession();
+      if (passwordRecoveryRequested) {
+        if (data?.session) return showPasswordRecovery();
+        await clearPasswordSession();
+        return showPasswordLogin('That password reset link has expired. Ask an administrator to send another one.');
+      }
       if (data?.session) {
         try {
           state.token = data.session.access_token;

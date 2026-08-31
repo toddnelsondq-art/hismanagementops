@@ -9,11 +9,12 @@ const financialParser = require('../../app/financial-reports.js');
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const SITE_URL = process.env.URL || process.env.DEPLOY_PRIME_URL || 'http://localhost:8888';
+const APP_PUBLIC_URL = process.env.APP_PUBLIC_URL || SITE_URL;
 const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads';
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.25.2';
+const APP_VERSION = '1.26.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -526,7 +527,7 @@ async function subscriptionAdminState(actor, requestedTenantId = '') {
   ]);
   return {
     tenantId: organizationId,
-    canView: Boolean(actor && isFullAccess(actor)),
+    canView: Boolean(actor && (isFullAccess(actor) || platformAdmin)),
     canEdit: platformAdmin,
     platformAdmin,
     migrationReady: entitlement.migrationReady,
@@ -597,6 +598,124 @@ async function saveSubscriptionAdmin(body = {}, actor) {
   return subscriptionAdminState(actor, organizationId);
 }
 
+async function readPlatformFeedback() {
+  try {
+    const rows = await supabase('/rest/v1/app_feedback?select=id,tenant_id,app_user_id,user_name,user_email,category,title,message,status,admin_notes,created_at,updated_at&order=created_at.desc&limit=500');
+    return { migrationReady: true, feedback: rows || [] };
+  } catch (error) {
+    if (![400, 404].includes(error.statusCode)) throw error;
+    return { migrationReady: false, feedback: [] };
+  }
+}
+
+async function platformAdminState(actor, requestedTenantId = '') {
+  if (!isPlatformAdmin(actor)) throw Object.assign(new Error('Only an Average Guys platform administrator can open this area'), { statusCode: 403 });
+  const tenants = await supabase('/rest/v1/tenants?select=id,name,app_name,active,created_at&order=name.asc');
+  const requested = safeName(requestedTenantId || tenantId());
+  const selectedTenant = tenants.find(entry => entry.id === requested) || tenants.find(entry => entry.id === tenantId()) || tenants[0];
+  if (!selectedTenant) throw Object.assign(new Error('No organizations were found'), { statusCode: 404 });
+  const [users, feedbackState] = await Promise.all([
+    supabase(`/rest/v1/app_users?tenant_id=eq.${encodeURIComponent(selectedTenant.id)}&select=id,auth_user_id,email,phone,name,role,location_id,location_ids,active,updated_at&order=name.asc`),
+    readPlatformFeedback()
+  ]);
+  return {
+    platformAdmin: true,
+    tenantId: selectedTenant.id,
+    tenants,
+    users,
+    feedbackMigrationReady: feedbackState.migrationReady,
+    feedback: feedbackState.feedback
+  };
+}
+
+async function createPasswordRecoveryLink(email) {
+  const response = await fetch(`${SUPABASE_URL}/auth/v1/admin/generate_link`, {
+    method: 'POST',
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ type: 'recovery', email, redirect_to: `${APP_PUBLIC_URL.replace(/\/$/, '')}/` })
+  });
+  const text = await response.text();
+  const payload = text ? JSON.parse(text) : {};
+  if (!response.ok) throw Object.assign(new Error(payload?.msg || payload?.message || 'A password reset link could not be created'), { statusCode: response.status });
+  const link = payload.action_link || payload.properties?.action_link;
+  if (!link) throw Object.assign(new Error('Supabase did not return a password reset link'), { statusCode: 502 });
+  return link;
+}
+
+async function sendPlatformPasswordReset(body = {}, actor) {
+  if (!isPlatformAdmin(actor)) throw Object.assign(new Error('Only an Average Guys platform administrator can send password resets'), { statusCode: 403 });
+  const organizationId = safeName(body.tenantId || '');
+  const userId = String(body.userId || '').trim();
+  if (!organizationId || !userId) throw Object.assign(new Error('Choose an organization and user'), { statusCode: 400 });
+  const rows = await supabase(`/rest/v1/app_users?tenant_id=eq.${encodeURIComponent(organizationId)}&id=eq.${encodeURIComponent(userId)}&active=eq.true&select=id,email,name,role&limit=1`);
+  const target = rows[0];
+  if (!target?.email) throw Object.assign(new Error('That user does not have an email login'), { statusCode: 400 });
+  const actionLink = await createPasswordRecoveryLink(target.email);
+  const delivery = await sendEmailMessage({
+    to: target.email,
+    subject: 'Reset your DQ OPS password',
+    text: `Hello ${target.name || 'DQ OPS user'},\n\nAn Average Guys Business Services administrator received a request to reset your DQ OPS password. Use this secure, single-use link to choose a new password:\n\n${actionLink}\n\nIf you did not request help, you may ignore this message.\n\nAverage Guys Business Services`
+  });
+  if (!delivery.delivered) throw Object.assign(new Error(delivery.reason || 'The reset email provider did not accept the message'), { statusCode: 502 });
+  return { ok: true, userId: target.id, email: target.email, delivered: true, provider: delivery.provider || 'email' };
+}
+
+async function saveAppFeedback(body = {}, actor) {
+  if (!actor?.id) throw Object.assign(new Error('Sign in before sending feedback'), { statusCode: 401 });
+  const category = ['Idea', 'Problem', 'Question', 'Other'].includes(body.category) ? body.category : 'Idea';
+  const title = String(body.title || '').trim().slice(0, 140);
+  const message = String(body.message || '').trim().slice(0, 5000);
+  if (!title || !message) throw Object.assign(new Error('Add a short title and description'), { statusCode: 400 });
+  let rows;
+  try {
+    rows = await supabase('/rest/v1/app_feedback?select=*', {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({
+        tenant_id: tenantId(),
+        app_user_id: actor.id,
+        user_name: actor.name || '',
+        user_email: actor.email || '',
+        category,
+        title,
+        message,
+        status: 'New',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+    });
+  } catch (error) {
+    if ([400, 404].includes(error.statusCode)) throw Object.assign(new Error('Feedback storage is not set up yet. Run supabase/add_app_feedback.sql.'), { statusCode: 409 });
+    throw error;
+  }
+  const feedback = rows?.[0];
+  const feedbackEmail = String(process.env.PLATFORM_FEEDBACK_EMAIL || platformAdminEmails()[0] || '').trim();
+  if (feedbackEmail) {
+    sendEmailMessage({
+      to: feedbackEmail,
+      subject: `[DQ OPS feedback] ${category}: ${title}`,
+      text: `${actor.name || actor.email || actor.id} from ${tenantId()} submitted feedback.\n\n${message}\n\nReview it in Platform Admin.`
+    }).catch(error => console.error('Feedback email failed', error));
+  }
+  return { ok: true, feedback };
+}
+
+async function updateAppFeedback(body = {}, actor) {
+  if (!isPlatformAdmin(actor)) throw Object.assign(new Error('Only an Average Guys platform administrator can update feedback'), { statusCode: 403 });
+  const id = String(body.id || '').trim();
+  const status = ['New', 'Reviewing', 'Planned', 'Completed', 'Declined'].includes(body.status) ? body.status : 'New';
+  if (!id) throw Object.assign(new Error('Missing feedback item'), { statusCode: 400 });
+  await supabase(`/rest/v1/app_feedback?id=eq.${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status, admin_notes: String(body.adminNotes || '').trim().slice(0, 2000), updated_at: new Date().toISOString() })
+  });
+  return readPlatformFeedback();
+}
+
 async function assertSubscribedFeature(actor, featureKey, locationId = '') {
   if (!AUTH_REQUIRED || !actor) return;
   const entitlement = await effectiveSubscription(tenantId());
@@ -630,11 +749,12 @@ async function assertSubscriptionLimit(resource, existingId = '') {
 
 async function clientSubscriptionState(actor) {
   const entitlement = await effectiveSubscription(tenantId());
+  const platformAdmin = isPlatformAdmin(actor);
   return {
     tenantId: tenantId(),
-    canView: Boolean(actor && isFullAccess(actor)),
-    canEdit: isPlatformAdmin(actor),
-    platformAdmin: isPlatformAdmin(actor),
+    canView: Boolean(actor && (isFullAccess(actor) || platformAdmin)),
+    canEdit: platformAdmin,
+    platformAdmin,
     migrationReady: entitlement.migrationReady,
     subscription: {
       planKey: entitlement.planKey,
@@ -5172,6 +5292,8 @@ async function saveAttachment(payload) {
 if (process.env.NODE_ENV === 'test') exports.__test = {
   financialDateRange,
   uniqueFinancialImportRows,
+  platformAdminEmails,
+  isPlatformAdmin,
   normalizeDashboardPreferences,
   dashboardPreferencesForActor,
   parseMultipartForm,
@@ -5205,7 +5327,7 @@ async function routeRequest(event) {
     if (method === 'GET' && apiPath === '/version') {
       return json(200, {
         version: APP_VERSION,
-        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.30.13'
+        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.30.14'
       });
     }
 
@@ -5257,6 +5379,10 @@ async function routeRequest(event) {
 
     if (method === 'GET' && apiPath === '/subscription/admin') return json(200, await subscriptionAdminState(actor, query.tenantId || ''));
     if (method === 'POST' && apiPath === '/subscription/admin') return json(200, await saveSubscriptionAdmin(body, actor));
+    if (method === 'GET' && apiPath === '/platform/admin') return json(200, await platformAdminState(actor, query.tenantId || ''));
+    if (method === 'POST' && apiPath === '/platform/password-reset') return json(200, await sendPlatformPasswordReset(body, actor));
+    if (method === 'POST' && apiPath === '/feedback') return json(200, await saveAppFeedback(body, actor));
+    if (method === 'POST' && apiPath === '/platform/feedback') return json(200, await updateAppFeedback(body, actor));
 
     const requiredFeature = requiredFeatureForPath(apiPath);
     if (requiredFeature) await assertSubscribedFeature(actor, requiredFeature, body.locationId || query.locationId || '');

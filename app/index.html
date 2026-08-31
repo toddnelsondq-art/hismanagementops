@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="assets/pwa-icon-180.png">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="temperature.css?v=2026-08-29-negative-overrun">
-  <link rel="stylesheet" href="his-theme.css?v=2026-08-30-tenant-onboarding">
+  <link rel="stylesheet" href="his-theme.css?v=2026-08-30-platform-admin">
   <link rel="stylesheet" href="subscription.css?v=1.22.0">
   <style>
     .receiving-issue-tools,.receiving-issue-list{width:100%;margin-top:12px}
@@ -1044,6 +1044,7 @@
           <a href="#help-receipts">Receipts</a>
           <a href="#help-inspections">Store inspections</a>
           <a href="#help-users">Users, tablets, and alerts</a>
+          <a href="#help-feedback">Feedback and ideas</a>
           <a href="#help-about">About HIS OPS</a>
         </div>
       </article>
@@ -1157,7 +1158,7 @@
 
         <article class="card help-section" id="help-manage">
           <h3>Manage</h3>
-          <p>Contains manager-only setup tools. Use it to add a one-day task, maintain permanent checklist items and schedules, post notices, create alert rules, review notification attempts, manage tablets, and manage users. Area Managers and above can also push a store-tablet alarm when required cleaning or temperature work is incomplete. DQ OPS records who sent and acknowledged it, resolves it when the work is completed, and texts the store manager if it is not acknowledged in time.</p>
+          <p>Contains organization-specific manager tools. Use it to add a one-day task, maintain permanent checklist items and schedules, post notices, create alert rules, review notification attempts, manage tablets, and manage users within your own company. Area Managers and above can also push a store-tablet alarm when required cleaning or temperature work is incomplete.</p>
           <p class="hint">Changes to permanent checklists affect future days. Check the editing scope before saving.</p>
           <a href="#helpContents">Back to contents</a>
         </article>
@@ -1188,6 +1189,12 @@
           <a href="#helpContents">Back to contents</a>
         </article>
 
+        <article class="card help-section" id="help-feedback">
+          <h3>Feedback and ideas</h3>
+          <p>Every signed-in user can open their name at the bottom of the menu and select Send feedback. Use it to suggest an improvement, report a problem, or ask a product question. The submission includes the user and organization so Average Guys Business Services can review and follow up.</p>
+          <a href="#helpContents">Back to contents</a>
+        </article>
+
         <article class="card help-section" id="help-about">
           <h3>About HIS OPS</h3>
           <p>HIS OPS is developed and operated by <b>Average Guys Business Services</b>. It provides authorized organizations with tools for restaurant operations, food-safety records, maintenance, inspections, communications, and location oversight.</p>
@@ -1203,6 +1210,28 @@
       <article class="card location-switcher"><label>Location<select id="rolloutLocation"></select></label><p class="hint">Required and optional installation sections are tracked separately for each location.</p></article>
       <article class="card" id="rolloutPermissionsCard" hidden><h3>Authorized installers</h3><p class="hint">Directors and Owners always have access. Select any additional users who may view and update rollout checklists.</p><div id="rolloutPermissionList" class="location-checks"></div><button id="saveRolloutPermissionsBtn" type="button">Save installer access</button></article>
       <div id="rolloutSections"></div>
+    </section>
+
+    <section id="platformAdminView" class="view">
+      <div class="date">
+        <div><p>AVERAGE GUYS BUSINESS SERVICES</p><h2>Platform Administration</h2></div>
+        <span class="status">Super-user support</span>
+      </div>
+      <article class="card platform-admin-intro">
+        <h3>Organizations and customer support</h3>
+        <p>This area is separate from each organization’s Manage page. Use it to support customer accounts and control subscriptions or optional features across the platform.</p>
+        <p class="hint">Platform administrators can send secure password-recovery emails, but cannot see anyone’s password.</p>
+        <label>Organization<select id="platformAdminTenant"></select></label>
+      </article>
+      <article class="card" id="platformUserSupportCard">
+        <div class="maintenance-row compact"><div><p class="eyebrow">ACCOUNT SUPPORT</p><h3>Organization users</h3></div><button id="refreshPlatformAdminBtn" class="ghost" type="button">Refresh</button></div>
+        <div id="platformAdminUsers"><p class="hint">Choose an organization to view its users.</p></div>
+      </article>
+      <div id="platformSubscriptionHost"></div>
+      <article class="card" id="platformFeedbackInboxCard">
+        <div class="maintenance-row compact"><div><p class="eyebrow">PRODUCT FEEDBACK</p><h3>Ideas and reported problems</h3></div><span class="status" id="platformFeedbackCount">0 items</span></div>
+        <div id="platformFeedbackInbox"><p class="hint">Feedback will appear here after setup.</p></div>
+      </article>
     </section>
 
     <section id="manageView" class="view">
@@ -1687,6 +1716,7 @@
     <button data-view="receiptsView"><span class="nav-icon">🧾</span><span>Receipts</span></button>
     <button data-view="helpView"><span class="nav-icon">?</span><span>Help</span></button>
     <button data-view="manageView" id="sideManageNav"><span class="nav-icon">⚙</span><span>Manage</span></button>
+    <button data-view="platformAdminView" id="sidePlatformAdminNav" hidden><span class="nav-icon">◆</span><span>Platform Admin</span></button>
     <button data-view="calendarView"><span class="nav-icon">📅</span><span>Calendar</span></button>
     <div class="side-user">
       <details class="side-account-menu">
@@ -1694,6 +1724,7 @@
         <div class="side-account-actions">
           <label id="tenantSwitchWrap" class="side-tenant-switch" hidden><span>Organization</span><select id="tenantSwitch"></select></label>
           <a id="smsOptInLink" href="sms-consent.html" target="_blank" rel="noopener"><span class="nav-icon" aria-hidden="true">✉</span><span>SMS opt-in</span></a>
+          <button id="sendFeedbackBtn" type="button"><span class="nav-icon" aria-hidden="true">💡</span><span>Send feedback</span></button>
           <button id="changePasswordBtn" type="button"><span class="nav-icon" aria-hidden="true">⚿</span><span>Change password</span></button>
           <button id="signOutBtn" type="button"><span class="nav-icon" aria-hidden="true">↪</span><span>Sign out</span></button>
         </div>
@@ -2019,6 +2050,17 @@
     </form>
   </dialog>
 
+  <dialog id="feedbackDialog">
+    <form method="dialog">
+      <div class="modal-head"><div><p class="eyebrow">HELP IMPROVE DQ OPS</p><h3>Send feedback</h3></div><button value="cancel" class="x" aria-label="Close">×</button></div>
+      <p class="hint">Share an idea, report a problem, or ask a product question. Your name and organization are included so we can follow up.</p>
+      <label>Type<select id="feedbackCategory"><option>Idea</option><option>Problem</option><option>Question</option><option>Other</option></select></label>
+      <label>Short title<input id="feedbackTitle" maxlength="140" autocomplete="off" placeholder="What would you like us to know?"></label>
+      <label>Details<textarea id="feedbackMessage" rows="6" maxlength="5000" placeholder="Describe the idea or what happened."></textarea></label>
+      <div class="dialog-actions"><button id="cancelFeedbackBtn" value="cancel" class="ghost" type="button">Cancel</button><button id="submitFeedbackBtn" type="button">Send feedback</button></div>
+    </form>
+  </dialog>
+
   <dialog id="receivingIssueDialog">
     <form method="dialog">
       <div class="modal-head"><h3>Report a receiving issue</h3><button value="cancel" class="x">×</button></div>
@@ -2129,10 +2171,10 @@
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-30-13"></script>
-  <script src="auth.js?v=2026-08-30-auth-recovery"></script>
+  <script src="version.js?v=2026-08-30-14"></script>
+  <script src="auth.js?v=2026-08-30-password-recovery"></script>
   <script src="financial-reports.js?v=2026-08-30-email-import"></script>
-  <script src="app.js?v=2026-08-30-company-dashboard"></script>
+  <script src="app.js?v=2026-08-30-platform-feedback"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>

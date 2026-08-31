@@ -2289,3 +2289,13 @@ header .header-actions{width:auto!important;margin-left:auto!important;overflow:
 .temperature-history-log{display:flex;justify-content:space-between;gap:12px;padding:5px 0}
 .temperature-history-readings{margin-top:10px}.temperature-history-readings .reading-chip{display:inline-block;margin:3px}
 @media(max-width:760px){.temperature-compliance-heading{display:block}.temperature-compliance-heading button{margin-top:12px}.temperature-compliance-filters{grid-template-columns:1fr 1fr}.temperature-compliance-filters label:first-child,.temperature-compliance-filters button{grid-column:1/-1}.temperature-history-row>summary{grid-template-columns:1fr auto}.temperature-history-row>summary::after{display:none}.temperature-history-status{grid-column:2}.temperature-history-row>summary>div{grid-row:1/3}}
+
+/* Average Guys platform administration and customer feedback. */
+.platform-admin-intro label{max-width:520px;margin-top:14px}
+.platform-user-row{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:14px 0;border-top:1px solid var(--line,#d9e1ea)}
+.platform-user-row:first-child{border-top:0}.platform-user-row p,.platform-user-row small{margin:3px 0 0;color:var(--muted,#607087)}
+.platform-feedback-row{padding:16px 0;border-top:1px solid var(--line,#d9e1ea)}.platform-feedback-row:first-child{border-top:0}
+.platform-feedback-heading{display:flex;justify-content:space-between;gap:14px;align-items:start}.platform-feedback-heading>div{display:flex;align-items:center;gap:10px}.platform-feedback-heading small{color:var(--muted,#607087);text-align:right}
+.platform-feedback-row>p{white-space:pre-wrap}.platform-feedback-actions{display:grid;grid-template-columns:160px minmax(240px,1fr) auto;gap:10px;align-items:end}.platform-feedback-actions label{margin:0}
+#platformSubscriptionHost .subscription-admin-card{margin-top:0}
+@media(max-width:760px){.platform-user-row,.platform-feedback-heading{display:grid}.platform-user-row button{width:100%}.platform-feedback-heading small{text-align:left}.platform-feedback-actions{grid-template-columns:1fr}.platform-feedback-actions button{width:100%}}

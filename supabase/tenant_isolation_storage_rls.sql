@@ -51,7 +51,8 @@ begin
     'location_addons',
     'billing_events',
     'financial_report_imports',
-    'financial_daily_metrics'
+    'financial_daily_metrics',
+    'app_feedback'
   ]
   loop
     if to_regclass(format('public.%I', table_name)) is not null then
@@ -76,7 +77,8 @@ where n.nspname = 'public'
     'tenants', 'locations', 'app_users', 'kiosk_devices', 'kiosk_enrollments',
     'invites', 'days', 'maintenance_data', 'tenant_memberships',
     'subscription_plans', 'tenant_subscriptions', 'location_addons',
-    'billing_events', 'financial_report_imports', 'financial_daily_metrics'
+    'billing_events', 'financial_report_imports', 'financial_daily_metrics',
+    'app_feedback'
   )
 order by c.relname;
 

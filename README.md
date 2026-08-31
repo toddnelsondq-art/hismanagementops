@@ -87,8 +87,13 @@ In Netlify:
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `SUPABASE_STORAGE_BUCKET`
    - `KIOSK_TOKEN_SECRET` (a private random value of at least 32 characters)
+   - `APP_PUBLIC_URL` (the public app URL used by password-recovery links, such as `https://dqops.net`)
+   - `PLATFORM_ADMIN_EMAILS` (comma-separated Average Guys administrator email addresses)
+   - `PLATFORM_FEEDBACK_EMAIL` (where new product feedback should be sent)
 
 Netlify uses [`netlify.toml`](netlify.toml) to route `/api/*` to the hosted function.
+
+Run [`supabase/add_app_feedback.sql`](supabase/add_app_feedback.sql) once to enable the in-app feedback form and Platform Admin feedback inbox. Platform Admin is intentionally separate from each customer organization’s Manage area. It can support users and control subscriptions across organizations without exposing stored passwords.
 
 ### 3. Bootstrap the first Owner
 

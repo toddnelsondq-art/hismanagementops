@@ -273,6 +273,7 @@ let subscriptionAdmin = {
   tenants: [],
   locations: []
 };
+let platformAdminSupport = { platformAdmin: false, tenantId: '', tenants: [], users: [], feedbackMigrationReady: false, feedback: [] };
 let storeAlarms = { canSend: false, active: [], history: [] };
 let storeAlarmAudioContext = null;
 let storeAlarmToneTimer = null;
@@ -498,6 +499,14 @@ function arrangeManageSections() {
 }
 
 arrangeManageSections();
+
+function arrangePlatformAdmin() {
+  const host = $('#platformSubscriptionHost');
+  const card = $('#subscriptionAdminCard');
+  if (host && card && card.parentElement !== host) host.appendChild(card);
+}
+
+arrangePlatformAdmin();
 
 function setupCollapsibleCards() {
   document.querySelectorAll('.collapsible-card').forEach((card, index) => {
@@ -822,6 +831,9 @@ async function loadState() {
     locations = state.locations?.length ? state.locations : locations;
     if (subscriptionAdmin.canView) {
       subscriptionAdmin = await api(`/api/subscription/admin?tenantId=${encodeURIComponent(subscriptionAdmin.tenantId || '')}`).catch(() => subscriptionAdmin);
+    }
+    if (subscriptionAdmin.platformAdmin) {
+      platformAdminSupport = await api(`/api/platform/admin?tenantId=${encodeURIComponent(subscriptionAdmin.tenantId || '')}`).catch(() => platformAdminSupport);
     }
     if (window.dailyOpsAuth?.profile?.id) {
       if (!users.some(user => user.id === window.dailyOpsAuth.profile.id)) users = [window.dailyOpsAuth.profile, ...users];
@@ -1721,6 +1733,7 @@ function render() {
   renderAlertRules();
   renderManagerNotificationPreferences();
   renderSubscriptionAdmin();
+  renderPlatformAdmin();
   renderPopCampaigns();
   renderNotificationLogs();
   renderTemperatureStandards();
@@ -3211,6 +3224,7 @@ function applyRoleAccess(user) {
   const showMaintenanceLog = canUseMaintenanceWorkLog(user) && subscriptionFeatureEnabled('maintenance_work_logs');
   const showLocationHealth = canUseLocationHealth(user) && (subscriptionAddonEnabled('thermostats') || subscriptionAddonEnabled('sensors') || subscriptionAddonEnabled('cameras'));
   const showDailyOperations = canUseDailyOps(user) && subscriptionFeatureEnabled('daily_operations');
+  const showPlatformAdmin = Boolean(subscriptionAdmin.platformAdmin);
   document.querySelectorAll('[data-view="homeView"]').forEach(button => button.style.display = showHub ? '' : 'none');
   document.querySelectorAll('[data-view="noticesView"]').forEach(button => button.style.display = '');
   document.querySelectorAll('[data-view="maintenanceView"]').forEach(button => button.style.display = showMaintenance ? '' : 'none');
@@ -3226,6 +3240,7 @@ function applyRoleAccess(user) {
   document.querySelectorAll('[data-view="taskListsView"], [data-view="tempLogsView"], [data-view="todayView"]').forEach(button => button.style.display = showDailyOperations ? '' : 'none');
   document.querySelectorAll('[data-view="historyView"]').forEach(button => button.style.display = showHistory && !tech ? '' : 'none');
   document.querySelectorAll('[data-view="manageView"]').forEach(button => button.style.display = showManage && !tech ? '' : 'none');
+  document.querySelectorAll('[data-view="platformAdminView"]').forEach(button => { button.hidden = !showPlatformAdmin; button.style.display = showPlatformAdmin ? '' : 'none'; });
   document.querySelectorAll('[data-view="rolloutView"], [data-section-view="rolloutView"]').forEach(button => button.style.display = rollout.allowed && subscriptionFeatureEnabled('rollouts') ? '' : 'none');
   document.querySelectorAll('[data-view="helpView"]').forEach(button => button.style.display = showManage && !tech ? '' : 'none');
   document.querySelectorAll('[data-view="locationsView"]').forEach(button => button.style.display = showLocations ? '' : 'none');
@@ -3247,6 +3262,7 @@ function applyRoleAccess(user) {
   if (!showLocationHealth && $('#locationHealthView').classList.contains('active')) switchView(canUseDailyOps(user) ? 'todayView' : 'homeView');
   if (!showHistory && $('#historyView').classList.contains('active')) switchView('todayView');
   if (!showManage && $('#manageView').classList.contains('active')) switchView('todayView');
+  if (!showPlatformAdmin && $('#platformAdminView').classList.contains('active')) switchView('homeView');
   if (!rollout.allowed && $('#rolloutView').classList.contains('active')) switchView('todayView');
   if (!showManage && $('#helpView').classList.contains('active')) switchView('todayView');
   if (!showLocations && $('#locationsView').classList.contains('active')) switchView('todayView');
@@ -3851,7 +3867,7 @@ function renderSubscriptionFeatures(useEffectiveSubscription = true) {
 function renderSubscriptionAdmin() {
   const card = $('#subscriptionAdminCard');
   if (!card) return;
-  const allowed = Boolean(subscriptionAdmin.canView && isFullAccess());
+  const allowed = Boolean(subscriptionAdmin.canView && (isFullAccess() || subscriptionAdmin.platformAdmin));
   card.hidden = !allowed;
   card.style.display = allowed ? '' : 'none';
   if (!allowed) return;
@@ -3860,7 +3876,7 @@ function renderSubscriptionAdmin() {
   const plans = subscriptionAdmin.plans || [];
   $('#subscriptionMigrationStatus').textContent = subscriptionAdmin.migrationReady ? `${subscription.planName || subscription.planKey || 'Plan'} · ${subscription.status || 'active'}` : 'Database setup required';
   $('#subscriptionMigrationStatus').classList.toggle('subscription-warning', !subscriptionAdmin.migrationReady);
-  $('#subscriptionTenantWrap').hidden = !subscriptionAdmin.platformAdmin || (subscriptionAdmin.tenants || []).length < 2;
+  $('#subscriptionTenantWrap').hidden = Boolean(card.closest('#platformAdminView')) || !subscriptionAdmin.platformAdmin || (subscriptionAdmin.tenants || []).length < 2;
   $('#subscriptionTenant').innerHTML = (subscriptionAdmin.tenants || []).map(tenant => `<option value="${escapeHtml(tenant.id)}" ${tenant.id === subscriptionAdmin.tenantId ? 'selected' : ''}>${escapeHtml(tenant.name || tenant.app_name || tenant.id)}</option>`).join('');
   $('#subscriptionPlan').innerHTML = plans.map(plan => `<option value="${escapeHtml(plan.key)}" ${plan.key === subscription.planKey ? 'selected' : ''}>${escapeHtml(plan.name)}</option>`).join('');
   $('#subscriptionStatus').value = subscription.status || 'active';
@@ -3936,6 +3952,89 @@ async function saveSubscriptionAdmin() {
   } catch (error) {
     toast(`Subscription did not save: ${error.message}`);
   }
+}
+
+function renderPlatformAdmin() {
+  const allowed = Boolean(subscriptionAdmin.platformAdmin && platformAdminSupport.platformAdmin);
+  document.querySelectorAll('[data-view="platformAdminView"]').forEach(button => { button.hidden = !allowed; button.style.display = allowed ? '' : 'none'; });
+  if (!allowed) return;
+  const tenantNames = Object.fromEntries((platformAdminSupport.tenants || []).map(tenant => [tenant.id, tenant.name || tenant.app_name || tenant.id]));
+  $('#platformAdminTenant').innerHTML = (platformAdminSupport.tenants || []).map(tenant => `<option value="${escapeHtml(tenant.id)}" ${tenant.id === platformAdminSupport.tenantId ? 'selected' : ''}>${escapeHtml(tenant.name || tenant.app_name || tenant.id)}${tenant.active === false ? ' (inactive)' : ''}</option>`).join('');
+  $('#platformAdminUsers').innerHTML = (platformAdminSupport.users || []).length ? (platformAdminSupport.users || []).map(user => `
+    <article class="platform-user-row">
+      <div><b>${escapeHtml(user.name || user.email || user.id)}</b><p>${escapeHtml(user.role || 'Employee')} · ${escapeHtml(user.email || 'PIN-only account')}</p><small>${user.active === false ? 'Inactive' : (user.auth_user_id ? 'Hosted login connected' : 'Login not connected yet')}</small></div>
+      <button class="ghost" data-platform-password-reset="${escapeHtml(user.id)}" data-platform-tenant="${escapeHtml(platformAdminSupport.tenantId)}" type="button" ${!user.email || user.active === false ? 'disabled' : ''}>Send password reset</button>
+    </article>`).join('') : '<p class="hint">No users were found for this organization.</p>';
+
+  const feedback = platformAdminSupport.feedback || [];
+  $('#platformFeedbackCount').textContent = `${feedback.length} item${feedback.length === 1 ? '' : 's'}`;
+  $('#platformFeedbackInbox').innerHTML = !platformAdminSupport.feedbackMigrationReady
+    ? '<p class="hint">Feedback storage needs its one-time Supabase setup. Run <b>supabase/add_app_feedback.sql</b>.</p>'
+    : feedback.length ? feedback.map(item => `
+      <article class="platform-feedback-row">
+        <div class="platform-feedback-heading"><div><span class="status">${escapeHtml(item.category || 'Idea')}</span><b>${escapeHtml(item.title || 'Feedback')}</b></div><small>${escapeHtml(tenantNames[item.tenant_id] || item.tenant_id || '')} · ${escapeHtml(item.user_name || item.user_email || item.app_user_id || '')} · ${item.created_at ? new Date(item.created_at).toLocaleString() : ''}</small></div>
+        <p>${escapeHtml(item.message || '')}</p>
+        <div class="platform-feedback-actions"><label>Status<select data-platform-feedback-status="${escapeHtml(item.id)}">${['New', 'Reviewing', 'Planned', 'Completed', 'Declined'].map(status => `<option ${status === item.status ? 'selected' : ''}>${status}</option>`).join('')}</select></label><label>Internal note<input data-platform-feedback-note="${escapeHtml(item.id)}" value="${escapeHtml(item.admin_notes || '')}" placeholder="Optional Average Guys note"></label><button class="ghost" data-platform-feedback-save="${escapeHtml(item.id)}" type="button">Save</button></div>
+      </article>`).join('') : '<p class="hint">No feedback has been submitted yet.</p>';
+}
+
+async function loadPlatformAdmin(tenantId = platformAdminSupport.tenantId || subscriptionAdmin.tenantId, includeSubscription = true) {
+  try {
+    platformAdminSupport = await api(`/api/platform/admin?tenantId=${encodeURIComponent(tenantId || '')}`);
+    if (includeSubscription) subscriptionAdmin = await api(`/api/subscription/admin?tenantId=${encodeURIComponent(platformAdminSupport.tenantId)}`);
+    renderPlatformAdmin();
+    renderSubscriptionAdmin();
+  } catch (error) {
+    toast(`Platform administration did not load: ${error.message}`);
+  }
+}
+
+async function sendPlatformPasswordReset(userId, tenantId) {
+  const user = (platformAdminSupport.users || []).find(entry => entry.id === userId);
+  if (!user || !confirm(`Send a secure password-reset email to ${user.name || user.email}?`)) return;
+  try {
+    await api('/api/platform/password-reset', { method: 'POST', body: JSON.stringify({ userId, tenantId }) });
+    toast(`Password reset sent to ${user.email}`);
+  } catch (error) {
+    toast(`Password reset was not sent: ${error.message}`);
+  }
+}
+
+async function updatePlatformFeedback(id) {
+  try {
+    const result = await api('/api/platform/feedback', {
+      method: 'POST',
+      body: JSON.stringify({ id, status: document.querySelector(`[data-platform-feedback-status="${CSS.escape(id)}"]`)?.value, adminNotes: document.querySelector(`[data-platform-feedback-note="${CSS.escape(id)}"]`)?.value || '' })
+    });
+    platformAdminSupport.feedbackMigrationReady = result.migrationReady;
+    platformAdminSupport.feedback = result.feedback || [];
+    renderPlatformAdmin();
+    toast('Feedback updated');
+  } catch (error) { toast(`Feedback did not update: ${error.message}`); }
+}
+
+function openFeedbackDialog() {
+  $('#feedbackCategory').value = 'Idea';
+  $('#feedbackTitle').value = '';
+  $('#feedbackMessage').value = '';
+  $('#feedbackDialog').showModal();
+  $('#feedbackTitle').focus();
+}
+
+async function submitAppFeedback() {
+  const title = $('#feedbackTitle').value.trim();
+  const message = $('#feedbackMessage').value.trim();
+  if (!title || !message) return toast('Add a title and details before sending');
+  const button = $('#submitFeedbackBtn');
+  button.disabled = true;
+  button.textContent = 'Sending…';
+  try {
+    await api('/api/feedback', { method: 'POST', body: JSON.stringify({ category: $('#feedbackCategory').value, title, message }) });
+    $('#feedbackDialog').close();
+    toast('Thank you—your feedback was sent');
+    if (subscriptionAdmin.platformAdmin) await loadPlatformAdmin(platformAdminSupport.tenantId, false);
+  } catch (error) { toast(`Feedback was not sent: ${error.message}`); }
+  finally { button.disabled = false; button.textContent = 'Send feedback'; }
 }
 
 function renderManagerNotificationPreferences() {
@@ -5161,6 +5260,11 @@ document.addEventListener('click', async event => {
     return;
   }
 
+  const platformPasswordReset = event.target.closest('[data-platform-password-reset]');
+  if (platformPasswordReset) return sendPlatformPasswordReset(platformPasswordReset.dataset.platformPasswordReset, platformPasswordReset.dataset.platformTenant);
+  const platformFeedbackSave = event.target.closest('[data-platform-feedback-save]');
+  if (platformFeedbackSave) return updatePlatformFeedback(platformFeedbackSave.dataset.platformFeedbackSave);
+
   const sectionButton = event.target.closest('[data-section-view]');
   if (sectionButton) {
     const targetView = sectionButton.dataset.sectionView;
@@ -5168,6 +5272,7 @@ document.addEventListener('click', async event => {
     if ((targetView === 'receiptsView' || targetView === 'inspectionsView') && !canAddStoreDocuments()) return toast('Only Area Managers and above can access this section');
     if (targetView === 'locationsView' && !canViewLocations()) return toast('Only managers and above can access locations');
     if (targetView === 'helpView' && !canUseManage()) return toast('Only managers and above can access Help');
+    if (targetView === 'platformAdminView' && !subscriptionAdmin.platformAdmin) return toast('Only an Average Guys platform administrator can access this section');
     if (isMaintenanceTech() && targetView !== 'rolloutView' && !['homeView', 'maintenanceView', 'fpcView', 'maintenanceLogView', 'noticesView'].includes(targetView)) return toast('This role can only access Dashboard, Notices, Maintenance, FPC, Work Log, and authorized rollouts');
     switchView(targetView);
     const openCardId = sectionButton.dataset.openManageCard;
@@ -6866,9 +6971,11 @@ $('#finishBtn').onclick = async () => {
 };
 
 document.querySelectorAll('nav button, .ops-sidebar button[data-view]').forEach(button => {
-  button.onclick = () => {
+  button.onclick = async () => {
     if (isMaintenanceTech() && button.dataset.view !== 'rolloutView' && !['homeView', 'maintenanceView', 'fpcView', 'maintenanceLogView', 'noticesView'].includes(button.dataset.view)) return toast('This role can only access Dashboard, Notices, Maintenance, FPC, Work Log, and authorized rollouts');
+    if (button.dataset.view === 'platformAdminView' && !subscriptionAdmin.platformAdmin) return toast('Only an Average Guys platform administrator can access this section');
     switchView(button.dataset.view);
+    if (button.dataset.view === 'platformAdminView') await loadPlatformAdmin(platformAdminSupport.tenantId || subscriptionAdmin.tenantId);
     if (!wideSidebarQuery.matches) setSidebarExpanded(false);
   };
 });
@@ -6956,6 +7063,11 @@ $('#customizeDashboardBtn').onclick = () => openDashboardCustomization('personal
 $('#editCompanyDashboardBtn').onclick = () => openDashboardCustomization('company');
 $('#saveDashboardBtn').onclick = saveDashboardCustomization;
 $('#resetDashboardBtn').onclick = resetDashboardCustomization;
+$('#sendFeedbackBtn').onclick = openFeedbackDialog;
+$('#submitFeedbackBtn').onclick = submitAppFeedback;
+$('#cancelFeedbackBtn').onclick = () => $('#feedbackDialog').close();
+$('#refreshPlatformAdminBtn').onclick = () => loadPlatformAdmin(platformAdminSupport.tenantId);
+$('#platformAdminTenant').onchange = event => loadPlatformAdmin(event.target.value);
 $('#financialReportFile').onchange = event => previewFinancialReport(event.target.files?.[0]);
 $('#importFinancialReportBtn').onclick = importFinancialReport;
 $('#clearFinancialReportBtn').onclick = clearFinancialReportPreview;

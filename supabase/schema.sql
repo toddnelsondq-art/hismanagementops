@@ -154,6 +154,27 @@ create table if not exists public.tenant_memberships (
   unique (tenant_id, app_user_id)
 );
 
+create table if not exists public.app_feedback (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id text not null references public.tenants(id) on delete cascade,
+  app_user_id text not null,
+  user_name text not null default '',
+  user_email text not null default '',
+  category text not null default 'Idea' check (category in ('Idea', 'Problem', 'Question', 'Other')),
+  title text not null,
+  message text not null,
+  status text not null default 'New' check (status in ('New', 'Reviewing', 'Planned', 'Completed', 'Declined')),
+  admin_notes text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  foreign key (tenant_id, app_user_id) references public.app_users(tenant_id, id) on delete cascade
+);
+
+create index if not exists app_feedback_tenant_created_idx on public.app_feedback(tenant_id, created_at desc);
+create index if not exists app_feedback_status_created_idx on public.app_feedback(status, created_at desc);
+alter table public.app_feedback enable row level security;
+revoke all privileges on table public.app_feedback from anon, authenticated;
+
 create index if not exists tenant_memberships_auth_user_idx on public.tenant_memberships(auth_user_id, active, is_default);
 create unique index if not exists tenant_memberships_one_default_key on public.tenant_memberships(auth_user_id) where is_default = true and active = true;
 
@@ -387,7 +408,8 @@ begin
     'location_addons',
     'billing_events',
     'financial_report_imports',
-    'financial_daily_metrics'
+    'financial_daily_metrics',
+    'app_feedback'
   ]
   loop
     if to_regclass(format('public.%I', table_name)) is not null then
