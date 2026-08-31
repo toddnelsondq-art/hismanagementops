@@ -13,7 +13,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.25.0';
+const APP_VERSION = '1.25.1';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -3539,6 +3539,75 @@ async function readFpcRecords() {
   return Array.isArray(records) ? records : [];
 }
 
+function fpcInspectionFiles(record = {}) {
+  const source = Array.isArray(record.inspectionFiles)
+    ? record.inspectionFiles
+    : (record.inspectionUrl ? [{ url: record.inspectionUrl, name: record.inspectionName || 'Open inspection' }] : []);
+  const seen = new Set();
+  return source
+    .map(file => typeof file === 'string' ? { url: file, name: 'Open inspection' } : file)
+    .map(file => ({ url: String(file?.url || '').trim(), name: String(file?.name || 'Open inspection').trim().slice(0, 180) }))
+    .filter(file => file.url && !seen.has(file.url) && seen.add(file.url));
+}
+
+function consolidateFpcRecords(records = [], appLocations = []) {
+  const source = Array.isArray(records) ? records : [];
+  const locationNames = new Map(appLocations.map(location => [String(location.id), String(location.name || location.id)]));
+  const consolidated = [];
+  const grouped = new Map();
+
+  source.forEach((record, index) => {
+    if (!record || record.active === false) {
+      consolidated.push(record);
+      return;
+    }
+    const locationId = String(record.locationId || '');
+    const inspectionDate = String(record.inspectionDate || '');
+    const key = locationId && inspectionDate ? `${locationId}\u0000${inspectionDate}` : `record\u0000${record.id || index}`;
+    const liveLocationName = locationNames.get(locationId) || String(record.locationName || locationId);
+    const files = fpcInspectionFiles(record);
+    const normalized = {
+      ...record,
+      locationName: liveLocationName,
+      inspectionUrl: files[0]?.url || '',
+      inspectionName: files[0]?.name || '',
+      inspectionFiles: files,
+      items: Array.isArray(record.items) ? [...record.items] : []
+    };
+    const existing = grouped.get(key);
+    if (!existing) {
+      grouped.set(key, normalized);
+      consolidated.push(normalized);
+      return;
+    }
+
+    const mergedFiles = fpcInspectionFiles({ inspectionFiles: [...fpcInspectionFiles(existing), ...files] });
+    const itemIndex = new Map((existing.items || []).map((item, itemPosition) => [String(item.id || `existing-${itemPosition}`), itemPosition]));
+    normalized.items.forEach((item, itemPosition) => {
+      const itemKey = String(item.id || `incoming-${index}-${itemPosition}`);
+      if (!itemIndex.has(itemKey)) {
+        itemIndex.set(itemKey, existing.items.length);
+        existing.items.push(item);
+        return;
+      }
+      const existingPosition = itemIndex.get(itemKey);
+      const current = existing.items[existingPosition];
+      if (String(item.updatedAt || item.createdAt || '') > String(current.updatedAt || current.createdAt || '')) existing.items[existingPosition] = item;
+    });
+    existing.locationName = liveLocationName;
+    existing.inspectionFiles = mergedFiles;
+    existing.inspectionUrl = mergedFiles[0]?.url || '';
+    existing.inspectionName = mergedFiles[0]?.name || '';
+    if (String(normalized.createdAt || '') && (!existing.createdAt || normalized.createdAt < existing.createdAt)) {
+      existing.createdAt = normalized.createdAt;
+      existing.createdBy = normalized.createdBy || existing.createdBy;
+    }
+    existing.updatedAt = new Date().toISOString();
+  });
+
+  return { records: consolidated, changed: JSON.stringify(consolidated) !== JSON.stringify(source) };
+}
+
 function nextFpcId(records) {
   const highest = records.reduce((max, record) => {
     const match = String(record.id || '').match(/FPC-(\d+)/);
@@ -3548,7 +3617,10 @@ function nextFpcId(records) {
 }
 
 async function fpcState(actor = null) {
-  const records = await readFpcRecords();
+  const [storedRecords, appLocations] = await Promise.all([readFpcRecords(), readLocations()]);
+  const repaired = consolidateFpcRecords(storedRecords, appLocations);
+  if (repaired.changed) await writeMaintenanceKey('fpcRecords', repaired.records);
+  const records = repaired.records.filter(record => record && record.active !== false);
   if (!AUTH_REQUIRED || !actor || isFullAccess(actor)) return { records };
   const allowed = userLocationIds(actor);
   return { records: records.filter(record => allowed.includes(record.locationId)) };
@@ -3562,19 +3634,36 @@ async function saveFpcInspection(payload, actor) {
   const attachmentUrl = payload.attachment?.dataUrl
     ? await saveAttachment({ ...payload.attachment, locationId, kind: 'fpc-inspection', name: payload.attachment.name || `${locationId}-fpc` })
     : payload.inspectionUrl || '';
-  const record = {
-    id: nextFpcId(records),
-    locationId,
-    locationName: payload.locationName || '',
-    inspectionDate: payload.inspectionDate || today(),
-    inspectionUrl: attachmentUrl,
-    inspectionName: payload.attachment?.name || payload.inspectionName || 'FPC inspection',
-    createdBy: actor?.name || payload.createdBy || 'Manager',
-    createdAt: new Date().toISOString(),
-    items: [],
-    active: true
-  };
-  records.unshift(record);
+  if (!attachmentUrl) throw Object.assign(new Error('Choose an FPC inspection file or shared link'), { statusCode: 400 });
+  const inspectionDate = payload.inspectionDate || today();
+  const inspectionFile = { url: attachmentUrl, name: payload.attachment?.name || payload.inspectionName || 'FPC inspection' };
+  let record = records.find(entry => entry.active !== false && entry.locationId === locationId && entry.inspectionDate === inspectionDate);
+  if (record) {
+    const files = fpcInspectionFiles({ inspectionFiles: [...fpcInspectionFiles(record), inspectionFile] });
+    Object.assign(record, {
+      locationName: payload.locationName || record.locationName || '',
+      inspectionUrl: files[0]?.url || '',
+      inspectionName: files[0]?.name || '',
+      inspectionFiles: files,
+      updatedBy: actor?.name || payload.createdBy || 'Manager',
+      updatedAt: new Date().toISOString()
+    });
+  } else {
+    record = {
+      id: nextFpcId(records),
+      locationId,
+      locationName: payload.locationName || '',
+      inspectionDate,
+      inspectionUrl: inspectionFile.url,
+      inspectionName: inspectionFile.name,
+      inspectionFiles: [inspectionFile],
+      createdBy: actor?.name || payload.createdBy || 'Manager',
+      createdAt: new Date().toISOString(),
+      items: [],
+      active: true
+    };
+    records.unshift(record);
+  }
   await writeMaintenanceKey('fpcRecords', records);
   return fpcState(actor);
 }
@@ -5065,7 +5154,9 @@ if (process.env.NODE_ENV === 'test') exports.__test = {
   parseStorageObject,
   tenantStoragePath,
   storageObjectAllowedForTenant,
-  dehydrateStorageReferences
+  dehydrateStorageReferences,
+  fpcInspectionFiles,
+  consolidateFpcRecords
 };
 
 async function routeRequest(event) {
@@ -5081,7 +5172,7 @@ async function routeRequest(event) {
     if (method === 'GET' && apiPath === '/version') {
       return json(200, {
         version: APP_VERSION,
-        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.30.11'
+        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.30.12'
       });
     }
 

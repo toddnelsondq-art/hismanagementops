@@ -2349,6 +2349,23 @@ function fpcItemPhotos(item = {}) {
     .slice(0, 9);
 }
 
+function fpcInspectionFiles(record = {}) {
+  const source = Array.isArray(record.inspectionFiles)
+    ? record.inspectionFiles
+    : (record.inspectionUrl ? [{ url: record.inspectionUrl, name: record.inspectionName || 'Open inspection' }] : []);
+  const seen = new Set();
+  return source
+    .map(file => typeof file === 'string' ? { url: file, name: 'Open inspection' } : file)
+    .map(file => ({ url: String(file?.url || '').trim(), name: String(file?.name || 'Open inspection').trim() }))
+    .filter(file => file.url && !seen.has(file.url) && seen.add(file.url));
+}
+
+function fpcInspectionLinksHtml(record = {}) {
+  const files = fpcInspectionFiles(record);
+  if (!files.length) return '<p class="hint">No inspection file attached yet.</p>';
+  return files.map(file => `<p><a href="${escapeHtml(file.url)}" target="_blank" rel="noopener">${escapeHtml(file.name || 'Open inspection')}</a></p>`).join('');
+}
+
 function fpcPhotoGalleryHtml(item = {}) {
   const photos = fpcItemPhotos(item);
   if (!photos.length) return '';
@@ -2803,7 +2820,7 @@ function renderFpc() {
   const openItems = records.flatMap(record => record.items || []).filter(item => item.status !== 'Completed');
   $('#fpcOpenCount').textContent = `${openItems.length} open`;
   $('#fpcRecordSelect').innerHTML = records.length
-    ? records.map(record => `<option value="${record.id}">${escapeHtml(record.locationName || locationName(record.locationId))} · ${escapeHtml(record.inspectionDate || '')}</option>`).join('')
+    ? records.map(record => `<option value="${record.id}">${escapeHtml(locationName(record.locationId) || record.locationName)} · ${escapeHtml(record.inspectionDate || '')}</option>`).join('')
     : '<option value="">Create from selected location</option>';
 
   setAssignmentFields('fpc', {});
@@ -2814,9 +2831,9 @@ function renderFpc() {
     <details class="card fpc-record">
       <summary class="fpc-record-head">
         <div>
-          <h3>${escapeHtml(record.locationName || locationName(record.locationId))} · ${escapeHtml(record.inspectionDate || 'FPC')}</h3>
+          <h3>${escapeHtml(locationName(record.locationId) || record.locationName)} · ${escapeHtml(record.inspectionDate || 'FPC')}</h3>
           <p class="hint">Added by ${escapeHtml(record.createdBy || 'Manager')}${record.createdAt ? ` · ${new Date(record.createdAt).toLocaleDateString()}` : ''}</p>
-          ${record.inspectionUrl ? `<p><a href="${escapeHtml(record.inspectionUrl)}" target="_blank" rel="noopener">${escapeHtml(record.inspectionName || 'Open inspection')}</a></p>` : '<p class="hint">No inspection file attached yet.</p>'}
+          ${fpcInspectionLinksHtml(record)}
         </div>
         <span class="status">${activeItems.length} open</span>
       </summary>
