@@ -14,17 +14,16 @@ This is the target start-to-finish process for onboarding restaurant operators u
 
 ## Work required before the first outside customer
 
-Version 1.24.0 completes the first identity boundary: authenticated requests resolve their tenant from `tenant_memberships`, the browser's requested Tenant ID is accepted only when that membership allows it, and kiosk tokens remain tenant-locked. Run `supabase/add_tenant_memberships.sql` before creating a second organization.
+Version 1.25.0 completes the first identity and file-storage boundaries: authenticated requests resolve their tenant from `tenant_memberships`, the browser's requested Tenant ID is accepted only when that membership allows it, kiosk tokens remain tenant-locked, uploaded files use private tenant/location paths, and application tables no longer permit direct browser access. Run `supabase/add_tenant_memberships.sql`, deploy version 1.25.0, and then run `supabase/tenant_isolation_storage_rls.sql` before creating a second organization.
 
 The remaining safeguards are:
 
-1. Enable and test Row Level Security and appropriate grants on every exposed table. Include allow-and-deny tests for cross-tenant access.
-2. Scope every storage path and policy by tenant and keep service-role credentials server-side.
-3. Replace globally configured financial-email senders with tenant-specific inbound aliases and approved-sender lists stored in the database.
-4. Make location and user identifiers globally unique, or enforce composite tenant-aware foreign keys everywhere.
-5. Add an Average Guys platform-admin onboarding screen and an audit log for tenant, subscription, integration, and impersonation changes.
-6. Establish production backups, recovery testing, monitoring, error alerts, and a staging migration workflow.
-7. Publish customer terms, privacy policy, support policy, data retention policy, and a data-export/deletion process.
+1. Run live allow-and-deny acceptance tests for cross-tenant records and files in staging before onboarding the first outside customer.
+2. Replace globally configured financial-email senders with tenant-specific inbound aliases and approved-sender lists stored in the database.
+3. Make location and user identifiers globally unique, or enforce composite tenant-aware foreign keys everywhere.
+4. Add an Average Guys platform-admin onboarding screen and an audit log for tenant, subscription, integration, and impersonation changes.
+5. Establish production backups, recovery testing, monitoring, error alerts, and a staging migration workflow.
+6. Publish customer terms, privacy policy, support policy, data retention policy, and a data-export/deletion process.
 
 ## One-time platform setup
 

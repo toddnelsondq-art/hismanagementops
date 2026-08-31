@@ -219,33 +219,23 @@ values (
 )
 on conflict (id) do nothing;
 
--- Supabase Storage bucket used by Netlify Functions for checklist photos,
--- work order photos, and uploaded service manuals.
-insert into storage.buckets(id, name, public)
-values ('dailyops-uploads', 'dailyops-uploads', true)
-on conflict (id) do nothing;
+-- Private Supabase Storage bucket used for checklist photos, work order photos,
+-- and uploaded service manuals. Upload and download authorization is issued by
+-- the Netlify API after it verifies the user's tenant, role, and location.
+insert into storage.buckets(id, name, public, file_size_limit)
+values ('dailyops-uploads', 'dailyops-uploads', false, 52428800)
+on conflict (id) do update set public = false, file_size_limit = excluded.file_size_limit;
 
 -- Financial receipts are private and are downloaded through short-lived signed links
 -- created only after the app verifies the user's role and assigned locations.
-insert into storage.buckets(id, name, public)
-values ('dqops-receipts', 'dqops-receipts', false)
-on conflict (id) do update set public = false;
+insert into storage.buckets(id, name, public, file_size_limit)
+values ('dqops-receipts', 'dqops-receipts', false, 52428800)
+on conflict (id) do update set public = false, file_size_limit = excluded.file_size_limit;
 
--- Allow signed-in app users to upload/read files in the app storage bucket.
--- Needed for direct browser-to-Supabase document uploads.
+-- Browser clients no longer receive broad storage access. They use path-scoped
+-- signed upload tokens and short-lived signed download links from the API.
 drop policy if exists "Authenticated users can upload dailyops files" on storage.objects;
-create policy "Authenticated users can upload dailyops files"
-on storage.objects
-for insert
-to authenticated
-with check (bucket_id = 'dailyops-uploads');
-
 drop policy if exists "Authenticated users can read dailyops files" on storage.objects;
-create policy "Authenticated users can read dailyops files"
-on storage.objects
-for select
-to authenticated
-using (bucket_id = 'dailyops-uploads');
 
 -- Provider-neutral subscription and feature-entitlement foundation.
 create table if not exists public.subscription_plans (
@@ -374,3 +364,36 @@ from public.locations as location
 cross join (values ('thermostats'), ('sensors'), ('cameras')) as addon(addon_key)
 where location.tenant_id = 'his-management'
 on conflict (tenant_id, location_id, addon_key) do nothing;
+
+-- All business data is accessed through the tenant-aware Netlify API. Enforce
+-- RLS and remove direct browser grants from every application table. The API's
+-- service role retains access through BYPASSRLS.
+do $$
+declare
+  table_name text;
+begin
+  foreach table_name in array array[
+    'tenants',
+    'locations',
+    'app_users',
+    'kiosk_devices',
+    'kiosk_enrollments',
+    'invites',
+    'days',
+    'maintenance_data',
+    'tenant_memberships',
+    'subscription_plans',
+    'tenant_subscriptions',
+    'location_addons',
+    'billing_events',
+    'financial_report_imports',
+    'financial_daily_metrics'
+  ]
+  loop
+    if to_regclass(format('public.%I', table_name)) is not null then
+      execute format('alter table public.%I enable row level security', table_name);
+      execute format('revoke all privileges on table public.%I from anon, authenticated', table_name);
+    end if;
+  end loop;
+end
+$$;

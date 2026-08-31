@@ -13,7 +13,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.24.1';
+const APP_VERSION = '1.25.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -25,6 +25,8 @@ const ALERT_TIME_ZONE = process.env.ALERT_TIME_ZONE || 'America/Chicago';
 const KIOSK_TOKEN_SECRET = process.env.KIOSK_TOKEN_SECRET || SUPABASE_SERVICE_ROLE_KEY || '';
 const KIOSK_SESSION_SECONDS = 8 * 60 * 60;
 const tenantRequestContext = new AsyncLocalStorage();
+const STORAGE_REFERENCE_PREFIX = 'dqops-storage://';
+const STORAGE_SIGNED_URL_SECONDS = 6 * 60 * 60;
 
 const FEATURE_CATALOG = [
   { key: 'daily_operations', name: 'Daily operations', description: 'Task lists, weekly cleaning, temperature logs, and history.' },
@@ -252,6 +254,98 @@ function localDate(timeZone = ALERT_TIME_ZONE, date = new Date()) {
 
 function safeName(value = 'file') {
   return String(value).toLowerCase().replace(/[^a-z0-9.-]+/g, '-').replace(/^-|-$/g, '') || 'file';
+}
+
+function storageObjectReference(bucket, pathname) {
+  return `${STORAGE_REFERENCE_PREFIX}${safeName(bucket)}/${String(pathname || '').replace(/^\/+/, '')}`;
+}
+
+function parseStorageObject(value = '') {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  if (text.startsWith(STORAGE_REFERENCE_PREFIX)) {
+    const remainder = text.slice(STORAGE_REFERENCE_PREFIX.length);
+    const slash = remainder.indexOf('/');
+    if (slash <= 0 || slash === remainder.length - 1) return null;
+    return { bucket: remainder.slice(0, slash), pathname: remainder.slice(slash + 1) };
+  }
+  if (!SUPABASE_URL || !/^https?:\/\//i.test(text)) return null;
+  try {
+    const url = new URL(text);
+    if (url.origin !== new URL(SUPABASE_URL).origin) return null;
+    const match = url.pathname.match(/^\/storage\/v1\/(?:render\/image\/)?object\/(?:public|sign|authenticated)\/([^/]+)\/(.+)$/);
+    if (!match) return null;
+    return { bucket: decodeURIComponent(match[1]), pathname: decodeURIComponent(match[2]) };
+  } catch {
+    return null;
+  }
+}
+
+function tenantStoragePath(payload = {}) {
+  const locationId = safeName(payload.locationId || 'shared');
+  const kind = safeName(payload.kind || 'attachment');
+  const originalName = safeName(payload.name || 'file');
+  const mimeExtension = safeName(String(payload.mimeType || '').split('/')[1] || 'bin');
+  const fileName = originalName.includes('.') ? originalName : `${originalName}.${mimeExtension}`;
+  return `v2/${tenantId()}/${locationId}/${kind}/${Date.now()}-${crypto.randomUUID()}-${fileName}`;
+}
+
+function storageObjectAllowedForTenant(object) {
+  const pathname = String(object?.pathname || '').replace(/^\/+/, '');
+  if (!pathname) return false;
+  if (pathname.startsWith('v2/')) return pathname.startsWith(`v2/${tenantId()}/`);
+  // Objects created before tenant-safe paths belong to the original HIS tenant.
+  return tenantId() === DEFAULT_TENANT_ID;
+}
+
+function dehydrateStorageReferences(value) {
+  if (typeof value === 'string') {
+    const object = parseStorageObject(value);
+    return object ? storageObjectReference(object.bucket, object.pathname) : value;
+  }
+  if (Array.isArray(value)) return value.map(dehydrateStorageReferences);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, dehydrateStorageReferences(entry)]));
+  }
+  return value;
+}
+
+async function signedStorageObjectUrl(object) {
+  if (!object?.bucket || !object.pathname) return '';
+  if (![STORAGE_BUCKET, RECEIPTS_BUCKET].includes(object.bucket)) return '';
+  if (!storageObjectAllowedForTenant(object)) return '';
+  const response = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${object.bucket}/${object.pathname}`, {
+    method: 'POST',
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ expiresIn: STORAGE_SIGNED_URL_SECONDS })
+  });
+  if (!response.ok) return '';
+  const result = await response.json();
+  const signedPath = result.signedURL || result.signedUrl || '';
+  if (!signedPath) return '';
+  return /^https?:\/\//i.test(signedPath)
+    ? signedPath
+    : `${SUPABASE_URL}/storage/v1${signedPath.startsWith('/') ? '' : '/'}${signedPath}`;
+}
+
+async function hydrateStorageReferences(value, cache = new Map()) {
+  if (typeof value === 'string') {
+    const object = parseStorageObject(value);
+    if (!object) return value;
+    const key = `${object.bucket}/${object.pathname}`;
+    if (!cache.has(key)) cache.set(key, await signedStorageObjectUrl(object));
+    return cache.get(key) || value;
+  }
+  if (Array.isArray(value)) return Promise.all(value.map(entry => hydrateStorageReferences(entry, cache)));
+  if (value && typeof value === 'object') {
+    const entries = await Promise.all(Object.entries(value).map(async ([key, entry]) => [key, await hydrateStorageReferences(entry, cache)]));
+    return Object.fromEntries(entries);
+  }
+  return value;
 }
 
 function tenantId() {
@@ -716,12 +810,12 @@ async function readDay(locationId, date) {
   } catch {
     templates = DEFAULT_TASK_TEMPLATES;
   }
-  if (rows[0]?.payload) return reconcileDaySchedule(rows[0].payload, locationId, date, templates);
+  if (rows[0]?.payload) return hydrateStorageReferences(reconcileDaySchedule(rows[0].payload, locationId, date, templates));
   return newDay(locationId, templates, date);
 }
 
 async function writeDay(locationId, date, day) {
-  const payload = { ...day, locationId };
+  const payload = dehydrateStorageReferences({ ...day, locationId });
   await supabase('/rest/v1/days?on_conflict=tenant_id,location_id,date', {
     method: 'POST',
     headers: { Prefer: 'resolution=merge-duplicates' },
@@ -775,9 +869,10 @@ async function snoozeTask(payload = {}, actor) {
 async function readHistory(locationId = null) {
   const filter = locationId ? `location_id=eq.${encodeURIComponent(locationId)}&` : '';
   const rows = await supabase(`/rest/v1/days?${tenantQuery()}&${filter}select=location_id,date,payload&order=date.desc`);
-  return rows
+  const history = rows
     .filter(row => row.payload?.complete)
     .map(row => ({ locationId: row.location_id, date: row.date, day: row.payload }));
+  return hydrateStorageReferences(history);
 }
 
 async function readOverdue(date) {
@@ -2342,7 +2437,7 @@ async function sessionProfile(event) {
 
 async function readMaintenanceKey(key, fallback = []) {
   const rows = await supabase(`/rest/v1/maintenance_data?${tenantQuery()}&key=eq.${encodeURIComponent(key)}&select=payload`);
-  if (rows[0]) return rows[0].payload;
+  if (rows[0]) return hydrateStorageReferences(rows[0].payload);
   const seedPath = path.join(__dirname, '..', '..', 'data', 'maintenance_seed.json');
   if (fs.existsSync(seedPath)) {
     const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
@@ -2355,7 +2450,7 @@ async function writeMaintenanceKey(key, payload) {
   await supabase('/rest/v1/maintenance_data?on_conflict=tenant_id,key', {
     method: 'POST',
     headers: { Prefer: 'resolution=merge-duplicates' },
-    body: JSON.stringify(withTenant({ key, payload, updated_at: new Date().toISOString() }))
+    body: JSON.stringify(withTenant({ key, payload: dehydrateStorageReferences(payload), updated_at: new Date().toISOString() }))
   });
 }
 
@@ -2888,7 +2983,7 @@ async function saveNotice(payload, actor) {
   let notice = notices.find(entry => entry.id === id);
   if (notice && AUTH_REQUIRED && !canAreaManage(actor)) throw Object.assign(new Error('Only Area Managers and above can edit notices'), { statusCode: 403 });
   const attachmentUrl = payload.attachment?.dataUrl
-    ? await saveAttachment({ ...payload.attachment, kind: 'notice-attachment', name: payload.attachment.name || title })
+    ? await saveAttachment({ ...payload.attachment, locationId: 'shared', kind: 'notice-attachment', name: payload.attachment.name || title })
     : payload.attachmentUrl || notice?.attachmentUrl || '';
   if (!notice) {
     notice = {
@@ -3465,7 +3560,7 @@ async function saveFpcInspection(payload, actor) {
   if (AUTH_REQUIRED && !canAccessLocation(actor, locationId)) throw Object.assign(new Error('You can only update FPC records for your assigned location'), { statusCode: 403 });
   const records = await readFpcRecords();
   const attachmentUrl = payload.attachment?.dataUrl
-    ? await saveAttachment({ ...payload.attachment, kind: 'fpc-inspection', name: payload.attachment.name || `${locationId}-fpc` })
+    ? await saveAttachment({ ...payload.attachment, locationId, kind: 'fpc-inspection', name: payload.attachment.name || `${locationId}-fpc` })
     : payload.inspectionUrl || '';
   const record = {
     id: nextFpcId(records),
@@ -3494,7 +3589,9 @@ function normalizeFpcPhotos(payload = {}) {
     .map(photo => ({ url: String(photo?.url || '').trim(), name: String(photo?.name || 'FPC photo').trim().slice(0, 180) }))
     .filter(photo => photo.url && !seen.has(photo.url) && seen.add(photo.url))
     .map(photo => {
-      if (!/^https?:\/\//i.test(photo.url)) throw Object.assign(new Error('Every FPC photo link must begin with http:// or https://'), { statusCode: 400 });
+      const storageObject = parseStorageObject(photo.url);
+      if (!/^https?:\/\//i.test(photo.url) && !storageObject) throw Object.assign(new Error('Every FPC photo link must be an uploaded file or begin with http:// or https://'), { statusCode: 400 });
+      if (storageObject && !storageObjectAllowedForTenant(storageObject)) throw Object.assign(new Error('That uploaded file belongs to another organization'), { statusCode: 403 });
       return photo;
     });
 }
@@ -3674,7 +3771,7 @@ async function saveStoreDocument(payload, actor) {
   if (!payload.attachment?.dataUrl && !payload.url) throw Object.assign(new Error('Choose a document to upload'), { statusCode: 400 });
   const documents = await readStoreDocuments();
   const documentUrl = payload.attachment?.dataUrl
-    ? await saveAttachment({ ...payload.attachment, kind: 'store-document', name: payload.attachment.name || title })
+    ? await saveAttachment({ ...payload.attachment, locationId: payload.locationId || DEFAULT_LOCATION_ID, kind: 'store-document', name: payload.attachment.name || title })
     : payload.url;
   documents.unshift({
     id: `DOC-${Date.now()}`,
@@ -3858,16 +3955,7 @@ async function readReceipts() {
 }
 
 async function signedReceiptUrl(pathname) {
-  if (!pathname) return '';
-  const response = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${RECEIPTS_BUCKET}/${pathname}`, {
-    method: 'POST',
-    headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ expiresIn: 3600 })
-  });
-  if (!response.ok) return '';
-  const result = await response.json();
-  const signedPath = result.signedURL || result.signedUrl || '';
-  return signedPath ? `${SUPABASE_URL}/storage/v1${signedPath}` : '';
+  return pathname ? signedStorageObjectUrl({ bucket: RECEIPTS_BUCKET, pathname }) : '';
 }
 
 async function receiptState(actor) {
@@ -3889,9 +3977,7 @@ async function saveReceipt(payload, actor) {
   const [header, encoded] = payload.attachment.dataUrl.split(',');
   if (!encoded || payload.attachment.dataUrl.length > 5_500_000) throw Object.assign(new Error('Receipt file must be under 4 MB'), { statusCode: 413 });
   const mimeType = header.split(';')[0].replace('data:', '') || 'application/octet-stream';
-  const originalName = safeName(payload.attachment.name || '');
-  const extension = originalName.includes('.') ? originalName.split('.').pop() : (mimeType.split('/')[1] || 'bin');
-  const storagePath = `${safeName(locationId)}/${payload.date || today()}/${Date.now()}-${safeName(vendor)}.${extension}`;
+  const storagePath = tenantStoragePath({ locationId, kind: `receipt-${payload.date || today()}`, name: payload.attachment.name || vendor, mimeType });
   const response = await fetch(`${SUPABASE_URL}/storage/v1/object/${RECEIPTS_BUCKET}/${storagePath}`, {
     method: 'POST',
     headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': mimeType, 'x-upsert': 'false' },
@@ -4160,7 +4246,7 @@ async function savePopCampaign(payload, actor) {
   if (campaign && !popCampaignVisible(campaign, actor)) throw Object.assign(new Error('You cannot edit this POP update'), { statusCode: 403 });
   if (AUTH_REQUIRED && campaign && !isFullAccess(actor) && (campaign.locationIds || []).some(locationId => !permitted.includes(locationId))) throw Object.assign(new Error('Only a Director or Owner can edit a multi-area POP update'), { statusCode: 403 });
   const attachmentUrl = payload.attachment?.dataUrl
-    ? await saveAttachment({ ...payload.attachment, kind: 'pop-readerboard', name: payload.attachment.name || title })
+    ? await saveAttachment({ ...payload.attachment, locationId: (payload.locationIds || [])[0] || 'shared', kind: 'pop-readerboard', name: payload.attachment.name || title })
     : String(payload.attachmentUrl || campaign?.attachmentUrl || '').trim();
   if (!campaign) {
     campaign = { id, completions: {}, createdAt: new Date().toISOString(), createdBy: actor?.name || 'Manager', active: true };
@@ -4915,14 +5001,39 @@ async function importMaintenanceWorkbook(payload) {
   return { updated, state: await maintenanceState('all') };
 }
 
+async function createStorageUploadIntent(payload, actor) {
+  if (AUTH_REQUIRED && !canManage(actor)) throw Object.assign(new Error('Only managers and authorized team members can upload documents'), { statusCode: 403 });
+  const locationId = String(payload.locationId || userLocationIds(actor)[0] || DEFAULT_LOCATION_ID);
+  if (AUTH_REQUIRED && !canAccessLocation(actor, locationId)) throw Object.assign(new Error('You can only upload files for an assigned location'), { statusCode: 403 });
+  const size = Number(payload.size || 0);
+  if (!Number.isFinite(size) || size <= 0 || size > 50 * 1024 * 1024) throw Object.assign(new Error('Files must be between 1 byte and 50 MB'), { statusCode: 413 });
+  const mimeType = String(payload.mimeType || 'application/octet-stream').slice(0, 150);
+  const pathname = tenantStoragePath({ locationId, kind: payload.kind, name: payload.name, mimeType });
+  const response = await fetch(`${SUPABASE_URL}/storage/v1/object/upload/sign/${STORAGE_BUCKET}/${pathname}`, {
+    method: 'POST',
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: '{}'
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw Object.assign(new Error(result.message || result.error || 'Secure upload could not be prepared'), { statusCode: response.status });
+  const signedUrl = result.url ? new URL(String(result.url), `${SUPABASE_URL}/storage/v1/`) : null;
+  const token = String(result.token || signedUrl?.searchParams.get('token') || '');
+  if (!token) throw Object.assign(new Error('Secure upload token was not returned'), { statusCode: 502 });
+  return { bucket: STORAGE_BUCKET, pathname, token, reference: storageObjectReference(STORAGE_BUCKET, pathname) };
+}
+
 async function saveAttachment(payload) {
   if (payload.dataUrl && payload.dataUrl.length > 5_500_000) {
     throw Object.assign(new Error('This file is too large for the current uploader. Please use a file under 4 MB or compress the PDF.'), { statusCode: 413 });
   }
   const [header, encoded] = payload.dataUrl.split(',');
+  if (!encoded) throw Object.assign(new Error('Choose a file to upload'), { statusCode: 400 });
   const mimeType = header.split(';')[0].replace('data:', '') || 'application/octet-stream';
-  const extension = mimeType.split('/')[1] || 'bin';
-  const filename = `${safeName(payload.kind || 'file')}/${Date.now()}-${safeName(payload.name || 'attachment')}.${extension}`;
+  const filename = tenantStoragePath({ ...payload, mimeType });
   const response = await fetch(`${SUPABASE_URL}/storage/v1/object/${STORAGE_BUCKET}/${filename}`, {
     method: 'POST',
     headers: {
@@ -4934,7 +5045,7 @@ async function saveAttachment(payload) {
     body: Buffer.from(encoded, 'base64')
   });
   if (!response.ok) throw new Error(await response.text());
-  return `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${filename}`;
+  return storageObjectReference(STORAGE_BUCKET, filename);
 }
 
 if (process.env.NODE_ENV === 'test') exports.__test = {
@@ -4949,7 +5060,12 @@ if (process.env.NODE_ENV === 'test') exports.__test = {
   selectTenantMembership,
   eligibleTenantProfileCandidates,
   signKioskToken,
-  verifyKioskToken
+  verifyKioskToken,
+  storageObjectReference,
+  parseStorageObject,
+  tenantStoragePath,
+  storageObjectAllowedForTenant,
+  dehydrateStorageReferences
 };
 
 async function routeRequest(event) {
@@ -4965,7 +5081,7 @@ async function routeRequest(event) {
     if (method === 'GET' && apiPath === '/version') {
       return json(200, {
         version: APP_VERSION,
-        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.30.10'
+        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.30.11'
       });
     }
 
@@ -5020,6 +5136,8 @@ async function routeRequest(event) {
 
     const requiredFeature = requiredFeatureForPath(apiPath);
     if (requiredFeature) await assertSubscribedFeature(actor, requiredFeature, body.locationId || query.locationId || '');
+
+    if (method === 'POST' && apiPath === '/storage/upload-intent') return json(200, await createStorageUploadIntent(body, actor));
 
     if (method === 'GET' && apiPath === '/state') {
       const date = query.date;
@@ -5137,7 +5255,10 @@ async function routeRequest(event) {
       return json(200, await snoozeTask(body, actor));
     }
 
-    if (method === 'POST' && apiPath === '/photo') return json(200, { url: await saveAttachment({ ...body, kind: body.taskId || 'checklist-photo', name: `${body.date}-${body.taskId}` }) });
+    if (method === 'POST' && apiPath === '/photo') {
+      const reference = await saveAttachment({ ...body, kind: body.taskId || 'checklist-photo', name: `${body.date}-${body.taskId}` });
+      return json(200, { url: await hydrateStorageReferences(reference) });
+    }
     if (method === 'POST' && apiPath === '/user') {
       assertManageAccess(actor, body);
       await assertSubscriptionLimit('users', body.id || safeName(body.email || body.name));

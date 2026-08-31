@@ -71,7 +71,7 @@ The schema creates:
 - `maintenance_data`
 - `kiosk_devices`
 - `kiosk_enrollments`
-- public storage bucket `dailyops-uploads`
+- private storage bucket `dailyops-uploads` with server-authorized uploads and signed downloads
 
 ### 2. Deploy to Netlify
 

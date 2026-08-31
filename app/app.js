@@ -2366,11 +2366,11 @@ function parseFpcPhotoLinks(value = '') {
   return links.map((url, index) => ({ url, name: `Shared photo or folder link ${index + 1}` }));
 }
 
-async function newFpcPhotos(fileInput, linkInput, maximum = 9) {
+async function newFpcPhotos(fileInput, linkInput, maximum = 9, locationId = currentLocationId) {
   const files = [...(fileInput?.files || [])];
   const links = parseFpcPhotoLinks(linkInput?.value || '');
   if (files.length + links.length > maximum) throw new Error(`You can add ${maximum} more photo${maximum === 1 ? '' : 's'} or link${maximum === 1 ? '' : 's'} to this item`);
-  const uploaded = await Promise.all(files.map(async file => ({ url: await uploadFileDirectToSupabase(file, 'fpc-item-photo'), name: file.name })));
+  const uploaded = await Promise.all(files.map(async file => ({ url: await uploadFileDirectToSupabase(file, 'fpc-item-photo', locationId), name: file.name })));
   return [...uploaded, ...links];
 }
 
@@ -4096,21 +4096,20 @@ function fileToDataUrl(file) {
   });
 }
 
-async function uploadFileDirectToSupabase(file, folder = 'store-document') {
+async function uploadFileDirectToSupabase(file, folder = 'store-document', locationId = currentLocationId) {
   if (window.dailyOpsAuthReady) await window.dailyOpsAuthReady;
   const client = window.dailyOpsAuth?.client;
-  const bucket = window.dailyOpsAuth?.storageBucket || 'dailyops-uploads';
   if (!client) throw new Error('Direct upload is only available after signing in.');
-  const safeFileName = file.name.toLowerCase().replace(/[^a-z0-9.]+/g, '-').replace(/^-|-$/g, '') || 'document';
-  const path = `${folder}/${Date.now()}-${safeFileName}`;
-  const { error } = await client.storage.from(bucket).upload(path, file, {
+  const intent = await api('/api/storage/upload-intent', {
+    method: 'POST',
+    body: JSON.stringify({ locationId, kind: folder, name: file.name, mimeType: file.type || 'application/octet-stream', size: file.size })
+  });
+  const { error } = await client.storage.from(intent.bucket).uploadToSignedUrl(intent.pathname, intent.token, file, {
     cacheControl: '3600',
     contentType: file.type || 'application/octet-stream',
-    upsert: false
   });
   if (error) throw new Error(error.message);
-  const { data } = client.storage.from(bucket).getPublicUrl(path);
-  return data.publicUrl;
+  return intent.reference;
 }
 
 async function savePermanentTask() {
@@ -4577,7 +4576,7 @@ async function saveFpcItem() {
   const description = $('#fpcItemDescription').value.trim();
   if (!description) return toast('Enter the FPC repair item');
   try {
-    const photos = await newFpcPhotos($('#fpcItemPhoto'), $('#fpcItemPhotoLink'));
+    const photos = await newFpcPhotos($('#fpcItemPhoto'), $('#fpcItemPhotoLink'), 9, locationId);
     if (photos.length > 9) return toast('An FPC repair item can have no more than 9 photos or links');
     fpc = await api('/api/fpc/item', {
       method: 'POST',
@@ -4647,9 +4646,9 @@ async function saveFpcEdit() {
   const description = $('#editFpcDescription').value.trim();
   if (!description) return toast('Enter the FPC item description');
   try {
-    const { item } = findFpcItem(recordId, itemId);
+    const { record, item } = findFpcItem(recordId, itemId);
     const existingPhotos = fpcItemPhotos(item).filter((photo, index) => document.querySelector(`[data-fpc-photo-keep="${index}"]`)?.checked);
-    const addedPhotos = await newFpcPhotos($('#editFpcPhoto'), $('#editFpcPhotoLink'), 9 - existingPhotos.length);
+    const addedPhotos = await newFpcPhotos($('#editFpcPhoto'), $('#editFpcPhotoLink'), 9 - existingPhotos.length, record?.locationId || currentLocationId);
     const photos = [...existingPhotos, ...addedPhotos].filter((photo, index, list) => list.findIndex(entry => entry.url === photo.url) === index);
     if (photos.length > 9) return toast('An FPC repair item can have no more than 9 photos or links');
     fpc = await api('/api/fpc/item/update', {
@@ -4703,7 +4702,7 @@ async function saveStoreDocument() {
   button.disabled = true;
   button.textContent = file ? 'Uploading...' : 'Saving link...';
   try {
-    const documentUrl = file ? await uploadFileDirectToSupabase(file, 'store-document') : documentLink;
+    const documentUrl = file ? await uploadFileDirectToSupabase(file, 'store-document', locationId) : documentLink;
     storeDocuments = await api('/api/store-documents/document', {
       method: 'POST',
       body: JSON.stringify({
@@ -5599,19 +5598,10 @@ $('#maintenanceLocation').onchange = async event => {
   renderMaintenance();
 };
 
-async function uploadMaintenanceFile(inputSelector, kind) {
+async function uploadMaintenanceFile(inputSelector, kind, locationId = currentLocationId) {
   const file = $(inputSelector).files[0];
   if (!file) return '';
-  const dataUrl = await new Promise(resolve => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.readAsDataURL(file);
-  });
-  const saved = await api('/api/maintenance/attachment', {
-    method: 'POST',
-    body: JSON.stringify({ kind, name: file.name, dataUrl })
-  });
-  return saved.url;
+  return uploadFileDirectToSupabase(file, kind, locationId);
 }
 
 function selectedMaintenanceLocationForForm(equipment = {}) {
@@ -5639,8 +5629,8 @@ $('#createWorkOrderBtn').onclick = async () => {
     ...assignmentPayload('wo'),
     issueDescription,
     targetDate: $('#woTargetDate').value,
-    photoLink: await uploadMaintenanceFile('#woPhoto', 'work-order-photo'),
-    manualLink: await uploadMaintenanceFile('#woManual', 'work-order-manual')
+    photoLink: await uploadMaintenanceFile('#woPhoto', 'work-order-photo', locationId),
+    manualLink: await uploadMaintenanceFile('#woManual', 'work-order-manual', locationId)
   };
   try {
     const saved = await api('/api/maintenance/work-order', { method: 'POST', body: JSON.stringify(payload) });
@@ -5668,7 +5658,7 @@ $('#addEquipmentBtn').onclick = async () => {
     manufacturer: $('#eqManufacturer').value.trim(),
     model: $('#eqModel').value.trim(),
     serialNumber: $('#eqSerial').value.trim(),
-    manualLink: await uploadMaintenanceFile('#eqManual', 'equipment-manual')
+    manualLink: await uploadMaintenanceFile('#eqManual', 'equipment-manual', locationId)
   };
   try {
     const saved = await api('/api/maintenance/equipment', { method: 'POST', body: JSON.stringify(payload) });
@@ -5696,8 +5686,8 @@ $('#addPmBtn').onclick = async () => {
     nextDue: $('#pmNextDue').value,
     ...assignmentPayload('pm'),
     instructions: $('#pmInstructions').value.trim(),
-    photoLink: await uploadMaintenanceFile('#pmPhoto', 'pm-photo'),
-    manualLink: await uploadMaintenanceFile('#pmManual', 'pm-manual')
+    photoLink: await uploadMaintenanceFile('#pmPhoto', 'pm-photo', locationId),
+    manualLink: await uploadMaintenanceFile('#pmManual', 'pm-manual', locationId)
   };
   try {
     const saved = await api('/api/maintenance/pm', { method: 'POST', body: JSON.stringify(payload) });
@@ -5728,8 +5718,8 @@ async function saveWorkOrderChanges(forceComplete = false) {
       vendorCost: $('#editWoVendorCost').value
     })
   };
-  const photoLink = await uploadMaintenanceFile('#editWoPhoto', 'work-order-photo');
-  const manualLink = await uploadMaintenanceFile('#editWoManual', 'work-order-manual');
+  const photoLink = await uploadMaintenanceFile('#editWoPhoto', 'work-order-photo', payload.locationId);
+  const manualLink = await uploadMaintenanceFile('#editWoManual', 'work-order-manual', payload.locationId);
   if (photoLink) payload.photoLink = photoLink;
   if (manualLink) payload.manualLink = manualLink;
   try {
@@ -6669,7 +6659,7 @@ async function saveInspection() {
     const answers = await Promise.all(template.items.map(async item => {
       const raw = document.querySelector(`[data-inspection-answer="${item.id}"]`)?.value;
       const file = document.querySelector(`[data-inspection-photo="${item.id}"]`)?.files?.[0];
-      const photoUrl = file ? await uploadFileDirectToSupabase(file, `inspection-photo/${template.id}`) : '';
+      const photoUrl = file ? await uploadFileDirectToSupabase(file, `inspection-photo/${template.id}`, $('#inspectionLocation').value) : '';
       return { id: item.id, value: raw === 'na' ? null : Number(raw), comment: document.querySelector(`[data-inspection-comment="${item.id}"]`)?.value.trim() || '', photoUrl, photoName: file?.name || '' };
     }));
     inspections = await api('/api/inspections/inspection', {

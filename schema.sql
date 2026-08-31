@@ -1,5 +1,6 @@
--- HIS Management Group Operations Hub
--- Run this in Supabase SQL Editor before deploying the Netlify version.
+-- DEPRECATED legacy bootstrap schema.
+-- Use supabase/schema.sql for a new installation. Existing installations should
+-- use the versioned files in supabase/ instead of running this older snapshot.
 
 create extension if not exists pgcrypto;
 
@@ -71,8 +72,8 @@ values (
 )
 on conflict (id) do nothing;
 
--- Supabase Storage bucket used by Netlify Functions for checklist photos,
--- work order photos, and uploaded service manuals.
+-- Keep the legacy bootstrap safe if it is run accidentally. The current app
+-- authorizes uploads and creates signed downloads through the Netlify API.
 insert into storage.buckets(id, name, public)
-values ('dailyops-uploads', 'dailyops-uploads', true)
-on conflict (id) do nothing;
+values ('dailyops-uploads', 'dailyops-uploads', false)
+on conflict (id) do update set public = false;
