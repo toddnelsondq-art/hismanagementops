@@ -1,6 +1,6 @@
 {
   "name": "his-ops",
-  "version": "1.23.3",
+  "version": "1.23.4",
   "private": true,
   "description": "HIS OPS web and native application",
   "scripts": {

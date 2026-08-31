@@ -1,5 +1,7 @@
 # Multi-tenant setup notes
 
+For the complete platform and customer rollout process, see `CUSTOMER_ONBOARDING.md`.
+
 This app now has a first-pass tenant/company layer.
 
 ## Current HIS tenant

@@ -12,7 +12,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.23.3';
+const APP_VERSION = '1.23.4';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -1188,7 +1188,6 @@ async function financialSummary(actor, range = 'day', locationId = 'all') {
     if (location.salesVsLyPercent !== null && location.salesVsLyPercent <= -5) items.push({ type: 'sales', severity: 'attention', locationId: location.locationId, locationName: location.locationName, message: `Sales are ${Math.abs(location.salesVsLyPercent).toFixed(1)}% below last year` });
     if (location.laborPercent !== null && location.laborPercent >= 0.25) items.push({ type: 'labor', severity: 'attention', locationId: location.locationId, locationName: location.locationName, message: `Labor is ${(location.laborPercent * 100).toFixed(1)}%` });
     if (location.transactionChangePercent !== null && location.transactionChangePercent <= -10) items.push({ type: 'transactions', severity: 'review', locationId: location.locationId, locationName: location.locationName, message: `Transactions are ${Math.abs(location.transactionChangePercent).toFixed(1)}% below last year` });
-    if (Math.abs(location.cashOverShort || 0) >= 20) items.push({ type: 'cash', severity: 'review', locationId: location.locationId, locationName: location.locationName, message: `Cash over/short is ${Number(location.cashOverShort).toLocaleString('en-US', { style: 'currency', currency: 'USD' })}` });
     return items;
   });
   return {
