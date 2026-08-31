@@ -2,12 +2,14 @@
   const DEVICE_KEY = 'dqops-kiosk-device-token';
   const SESSION_KEY = 'dqops-kiosk-session';
   const PROFILE_KEY = 'dqops-kiosk-profile';
+  const TENANT_KEY = 'dqops-tenant-id';
   const INACTIVITY_MS = 5 * 60 * 1000;
   const state = {
     enabled: false,
     token: '',
     profile: null,
     authMode: '',
+    availableTenants: [],
     storageBucket: 'dailyops-uploads',
     tenant: { id: 'his-management', name: 'HIS Management Group Inc', logoUrl: 'assets/his-management.png', appName: 'HIS OPS', subtitle: 'Daily operations' }
   };
@@ -46,9 +48,15 @@
   }
 
   async function request(path, options = {}, token = '') {
+    const selectedTenant = state.profile?.tenantId || localStorage.getItem(TENANT_KEY) || '';
     const response = await fetch(apiUrl(path), {
       ...options,
-      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(options.headers || {}) }
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(selectedTenant ? { 'X-DQOPS-Tenant': selectedTenant } : {}),
+        ...(options.headers || {})
+      }
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || payload.message || 'Request failed');
@@ -199,7 +207,11 @@
 
   async function start() {
     try {
-      const response = await fetch(apiUrl('/api/public-config'), { cache: 'no-store' });
+      const rememberedTenant = localStorage.getItem(TENANT_KEY) || '';
+      const response = await fetch(apiUrl('/api/public-config'), {
+        cache: 'no-store',
+        headers: rememberedTenant ? { 'X-DQOPS-Tenant': rememberedTenant } : {}
+      });
       if (!response.ok) return isHostedSite() ? blockHostedApp('Hosted login is not connected yet.') : state;
       const config = await response.json();
       state.enabled = Boolean(config.authEnabled);
@@ -214,7 +226,9 @@
           const verified = await request('/api/kiosk/session-profile', { method: 'POST', body: '{}' }, kioskSession);
           state.token = kioskSession;
           state.profile = verified.profile;
+          state.tenant = { ...state.tenant, ...(verified.tenant || {}) };
           state.authMode = 'kiosk';
+          if (state.profile?.tenantId) localStorage.setItem(TENANT_KEY, state.profile.tenantId);
           localStorage.setItem('dailyops-current-user', state.profile.id);
           beginInactivityLogout();
           return state;
@@ -231,7 +245,10 @@
         state.token = data.session.access_token;
         const accepted = await request('/api/session-profile', { method: 'POST', body: '{}' }, state.token);
         state.profile = accepted.profile;
+        state.tenant = { ...state.tenant, ...(accepted.tenant || {}) };
+        state.availableTenants = accepted.availableTenants || [];
         state.authMode = 'password';
+        if (state.profile?.tenantId) localStorage.setItem(TENANT_KEY, state.profile.tenantId);
         localStorage.setItem('dailyops-current-user', state.profile.id);
         return state;
       }

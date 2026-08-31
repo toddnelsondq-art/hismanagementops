@@ -27,8 +27,8 @@ create table if not exists public.locations (
 create table if not exists public.app_users (
   tenant_id text not null default 'his-management' references public.tenants(id),
   id text primary key,
-  auth_user_id uuid unique,
-  email text unique,
+  auth_user_id uuid,
+  email text,
   phone text,
   name text not null,
   role text not null default 'Employee',
@@ -121,6 +121,9 @@ alter table public.invites add column if not exists tenant_id text not null defa
 alter table public.days add column if not exists tenant_id text not null default 'his-management';
 alter table public.maintenance_data add column if not exists tenant_id text not null default 'his-management';
 
+alter table public.app_users drop constraint if exists app_users_auth_user_id_key;
+alter table public.app_users drop constraint if exists app_users_email_key;
+
 alter table public.days drop constraint if exists days_pkey;
 alter table public.days add primary key (tenant_id, location_id, date);
 
@@ -129,11 +132,76 @@ alter table public.maintenance_data add primary key (tenant_id, key);
 
 create unique index if not exists locations_tenant_id_id_key on public.locations(tenant_id, id);
 create unique index if not exists app_users_tenant_id_id_key on public.app_users(tenant_id, id);
+create unique index if not exists app_users_tenant_auth_user_key on public.app_users(tenant_id, auth_user_id) where auth_user_id is not null;
+create unique index if not exists app_users_tenant_email_key on public.app_users(tenant_id, lower(email)) where email is not null and btrim(email) <> '';
 create unique index if not exists kiosk_devices_tenant_id_id_key on public.kiosk_devices(tenant_id, id);
 create index if not exists kiosk_devices_location_id_idx on public.kiosk_devices(tenant_id, location_id, active);
 create index if not exists kiosk_enrollments_code_hash_idx on public.kiosk_enrollments(tenant_id, code_hash);
 create unique index if not exists days_tenant_id_location_id_date_key on public.days(tenant_id, location_id, date);
 create unique index if not exists maintenance_data_tenant_id_key_key on public.maintenance_data(tenant_id, key);
+
+-- Maps one Supabase Auth identity to each organization it may access. The API
+-- resolves this membership before any tenant-scoped query is allowed to run.
+create table if not exists public.tenant_memberships (
+  tenant_id text not null references public.tenants(id) on delete cascade,
+  auth_user_id uuid not null references auth.users(id) on delete cascade,
+  app_user_id text not null references public.app_users(id) on delete cascade,
+  active boolean not null default true,
+  is_default boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (tenant_id, auth_user_id),
+  unique (tenant_id, app_user_id)
+);
+
+create index if not exists tenant_memberships_auth_user_idx on public.tenant_memberships(auth_user_id, active, is_default);
+create unique index if not exists tenant_memberships_one_default_key on public.tenant_memberships(auth_user_id) where is_default = true and active = true;
+
+insert into public.tenant_memberships(tenant_id, auth_user_id, app_user_id, active, is_default)
+select tenant_id, auth_user_id, id, active,
+  row_number() over (partition by auth_user_id order by (tenant_id = 'his-management') desc, tenant_id, id) = 1
+from public.app_users
+where auth_user_id is not null
+on conflict (tenant_id, auth_user_id) do update set
+  app_user_id = excluded.app_user_id,
+  active = excluded.active,
+  updated_at = now();
+
+create or replace function public.sync_tenant_membership_from_app_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if tg_op = 'UPDATE'
+     and old.auth_user_id is not null
+     and (old.auth_user_id is distinct from new.auth_user_id or old.tenant_id is distinct from new.tenant_id) then
+    delete from public.tenant_memberships
+    where tenant_id = old.tenant_id and auth_user_id = old.auth_user_id;
+  end if;
+  if new.auth_user_id is not null then
+    insert into public.tenant_memberships(tenant_id, auth_user_id, app_user_id, active, is_default)
+    values (
+      new.tenant_id, new.auth_user_id, new.id, new.active,
+      not exists (select 1 from public.tenant_memberships where auth_user_id = new.auth_user_id and active = true)
+    )
+    on conflict (tenant_id, auth_user_id) do update set
+      app_user_id = excluded.app_user_id,
+      active = excluded.active,
+      updated_at = now();
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists app_users_sync_tenant_membership on public.app_users;
+create trigger app_users_sync_tenant_membership
+after insert or update of tenant_id, auth_user_id, active on public.app_users
+for each row execute function public.sync_tenant_membership_from_app_user();
+
+alter table public.tenant_memberships enable row level security;
+revoke all on table public.tenant_memberships from anon, authenticated;
 
 insert into public.locations(id, name)
 select 'store-' || lpad(i::text, 2, '0'), 'Store ' || i

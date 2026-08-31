@@ -14,18 +14,17 @@ This is the target start-to-finish process for onboarding restaurant operators u
 
 ## Work required before the first outside customer
 
-The current application has a first-pass tenant layer, but `APP_TENANT_ID` still selects one fixed tenant for an entire Netlify deployment. Before external onboarding, complete these safeguards:
+Version 1.24.0 completes the first identity boundary: authenticated requests resolve their tenant from `tenant_memberships`, the browser's requested Tenant ID is accepted only when that membership allows it, and kiosk tokens remain tenant-locked. Run `supabase/add_tenant_memberships.sql` before creating a second organization.
 
-1. Resolve the tenant from the authenticated user's membership, not from a site-wide environment variable.
-2. Add a tenant-membership table that links each Supabase Auth user to one or more authorized tenants and roles.
-3. Make every API query take its tenant from the verified session. Never accept an unrestricted tenant ID from the browser.
-4. Enable and test Row Level Security and appropriate grants on every exposed table. Include allow-and-deny tests for cross-tenant access.
-5. Scope every storage path and policy by tenant and keep service-role credentials server-side.
-6. Replace globally configured financial-email senders with tenant-specific inbound aliases and approved-sender lists stored in the database.
-7. Make location and user identifiers globally unique, or enforce composite tenant-aware foreign keys everywhere.
-8. Add an Average Guys platform-admin onboarding screen and an audit log for tenant, subscription, integration, and impersonation changes.
-9. Establish production backups, recovery testing, monitoring, error alerts, and a staging migration workflow.
-10. Publish customer terms, privacy policy, support policy, data retention policy, and a data-export/deletion process.
+The remaining safeguards are:
+
+1. Enable and test Row Level Security and appropriate grants on every exposed table. Include allow-and-deny tests for cross-tenant access.
+2. Scope every storage path and policy by tenant and keep service-role credentials server-side.
+3. Replace globally configured financial-email senders with tenant-specific inbound aliases and approved-sender lists stored in the database.
+4. Make location and user identifiers globally unique, or enforce composite tenant-aware foreign keys everywhere.
+5. Add an Average Guys platform-admin onboarding screen and an audit log for tenant, subscription, integration, and impersonation changes.
+6. Establish production backups, recovery testing, monitoring, error alerts, and a staging migration workflow.
+7. Publish customer terms, privacy policy, support policy, data retention policy, and a data-export/deletion process.
 
 ## One-time platform setup
 
@@ -49,7 +48,7 @@ The current application has a first-pass tenant layer, but `APP_TENANT_ID` still
 
 ### 2. Create the tenant
 
-- Create a unique tenant slug.
+- Create a permanent, unique Tenant ID (slug) using lowercase letters, numbers, and hyphens, such as `northstar-dq`. Do not use a customer name that is likely to change, and never recycle an old Tenant ID.
 - Enter business name, app name, logo, colors, timezone, locale, support contact, and active status.
 - Create the tenant subscription and location add-ons.
 - Generate an audit entry identifying the Average Guys administrator who completed setup.

@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="assets/pwa-icon-180.png">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="temperature.css?v=2026-08-29-negative-overrun">
-  <link rel="stylesheet" href="his-theme.css?v=2026-08-30-financial-sections">
+  <link rel="stylesheet" href="his-theme.css?v=2026-08-30-tenant-onboarding">
   <link rel="stylesheet" href="subscription.css?v=1.22.0">
   <style>
     .receiving-issue-tools,.receiving-issue-list{width:100%;margin-top:12px}
@@ -1685,6 +1685,7 @@
       <details class="side-account-menu">
         <summary><span class="nav-icon" aria-hidden="true">●</span><span class="side-user-copy"><b id="sideUserName">Current user</b><span id="sideUserRole">role</span></span></summary>
         <div class="side-account-actions">
+          <label id="tenantSwitchWrap" class="side-tenant-switch" hidden><span>Organization</span><select id="tenantSwitch"></select></label>
           <a id="smsOptInLink" href="sms-consent.html" target="_blank" rel="noopener"><span class="nav-icon" aria-hidden="true">✉</span><span>SMS opt-in</span></a>
           <button id="changePasswordBtn" type="button"><span class="nav-icon" aria-hidden="true">⚿</span><span>Change password</span></button>
           <button id="signOutBtn" type="button"><span class="nav-icon" aria-hidden="true">↪</span><span>Sign out</span></button>
@@ -2121,10 +2122,10 @@
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-30-08"></script>
-  <script src="auth.js?v=2026-08-29-capacitor"></script>
+  <script src="version.js?v=2026-08-30-09"></script>
+  <script src="auth.js?v=2026-08-30-tenant-onboarding"></script>
   <script src="financial-reports.js?v=2026-08-30-email-import"></script>
-  <script src="app.js?v=2026-08-30-financial-review-items"></script>
+  <script src="app.js?v=2026-08-30-tenant-onboarding"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>

@@ -600,11 +600,13 @@ async function api(path, options = {}) {
     window.dailyOpsAuth.token = authToken;
   }
   const { headers: optionHeaders = {}, ...requestOptions } = options;
+  const tenantId = window.dailyOpsAuth?.profile?.tenantId || localStorage.getItem('dqops-tenant-id') || '';
   const response = await fetch(apiUrl(path), {
     ...requestOptions,
     headers: {
       'Content-Type': 'application/json',
       ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+      ...(tenantId ? { 'X-DQOPS-Tenant': tenantId } : {}),
       ...optionHeaders
     }
   });
@@ -646,7 +648,13 @@ async function apiBlob(path) {
     if (error) throw new Error('Your sign-in could not be refreshed. Please sign in again.');
     authToken = data.session?.access_token || '';
   }
-  const response = await fetch(apiUrl(path), { headers: authToken ? { Authorization: `Bearer ${authToken}` } : {} });
+  const tenantId = window.dailyOpsAuth?.profile?.tenantId || localStorage.getItem('dqops-tenant-id') || '';
+  const response = await fetch(apiUrl(path), {
+    headers: {
+      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+      ...(tenantId ? { 'X-DQOPS-Tenant': tenantId } : {})
+    }
+  });
   if (!response.ok) {
     const text = await response.text();
     try { throw new Error(JSON.parse(text).error || text); } catch (error) { if (error instanceof SyntaxError) throw new Error(text || 'Request failed'); throw error; }
@@ -1552,6 +1560,11 @@ function tempRequirementComplete() {
 
 function render() {
   const activeUser = currentUser();
+  const availableTenants = window.dailyOpsAuth?.availableTenants || [];
+  if ($('#tenantSwitchWrap')) {
+    $('#tenantSwitchWrap').hidden = availableTenants.length < 2;
+    $('#tenantSwitch').innerHTML = availableTenants.map(tenant => `<option value="${escapeHtml(tenant.id)}" ${tenant.id === window.dailyOpsAuth?.profile?.tenantId ? 'selected' : ''}>${escapeHtml(tenant.name || tenant.appName || tenant.id)}</option>`).join('');
+  }
   const aboveStore = usesAssignedLocations(activeUser);
   const allowedLocationIds = userLocationIds(activeUser);
   const visibleLocations = aboveStore
@@ -6913,6 +6926,10 @@ $('#saveManagerNotificationPreferencesBtn').onclick = saveManagerNotificationPre
 $('#saveSubscriptionBtn').onclick = saveSubscriptionAdmin;
 $('#reloadSubscriptionBtn').onclick = () => loadSubscriptionAdmin();
 $('#subscriptionTenant').onchange = event => loadSubscriptionAdmin(event.target.value);
+$('#tenantSwitch').onchange = event => {
+  localStorage.setItem('dqops-tenant-id', event.target.value);
+  window.location.reload();
+};
 $('#subscriptionPlan').onchange = () => {
   const plan = selectedSubscriptionPlan();
   if (plan) {

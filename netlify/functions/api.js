@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { AsyncLocalStorage } = require('async_hooks');
 const Busboy = require('busboy');
 const XLSX = require('xlsx');
 const financialParser = require('../../app/financial-reports.js');
@@ -12,7 +13,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.23.4';
+const APP_VERSION = '1.24.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -23,6 +24,7 @@ const DEFAULT_TENANT_LOGO = process.env.APP_TENANT_LOGO || 'assets/his-managemen
 const ALERT_TIME_ZONE = process.env.ALERT_TIME_ZONE || 'America/Chicago';
 const KIOSK_TOKEN_SECRET = process.env.KIOSK_TOKEN_SECRET || SUPABASE_SERVICE_ROLE_KEY || '';
 const KIOSK_SESSION_SECONDS = 8 * 60 * 60;
+const tenantRequestContext = new AsyncLocalStorage();
 
 const FEATURE_CATALOG = [
   { key: 'daily_operations', name: 'Daily operations', description: 'Task lists, weekly cleaning, temperature logs, and history.' },
@@ -156,7 +158,7 @@ function json(statusCode, body) {
       'Content-Type': 'application/json',
       'Cache-Control': 'no-store',
       'Access-Control-Allow-Origin': 'https://localhost',
-      'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+      'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-DQOPS-Tenant',
       'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS'
     },
     body: JSON.stringify(body)
@@ -203,7 +205,7 @@ function signKioskToken(payload) {
   return `${encoded}.${signature}`;
 }
 
-function verifyKioskToken(token, expectedType) {
+function verifyKioskToken(token, expectedType, expectedTenantId = tenantId()) {
   if (!token || !KIOSK_TOKEN_SECRET) return null;
   const [encoded, signature] = String(token).split('.');
   if (!encoded || !signature) return null;
@@ -213,7 +215,8 @@ function verifyKioskToken(token, expectedType) {
   if (expected.length !== supplied.length || !crypto.timingSafeEqual(expected, supplied)) return null;
   try {
     const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
-    if (payload.type !== expectedType || !payload.exp || payload.exp <= Math.floor(Date.now() / 1000) || payload.tenantId !== tenantId()) return null;
+    if ((expectedType && payload.type !== expectedType) || !payload.exp || payload.exp <= Math.floor(Date.now() / 1000)) return null;
+    if (expectedTenantId && payload.tenantId !== expectedTenantId) return null;
     return payload;
   } catch {
     return null;
@@ -221,7 +224,7 @@ function verifyKioskToken(token, expectedType) {
 }
 
 function bearerToken(event) {
-  return String(event.headers.authorization || event.headers.Authorization || '').replace(/^Bearer\s+/i, '');
+  return String(event?.headers?.authorization || event?.headers?.Authorization || '').replace(/^Bearer\s+/i, '');
 }
 
 function randomCode(length = 8) {
@@ -252,7 +255,7 @@ function safeName(value = 'file') {
 }
 
 function tenantId() {
-  return DEFAULT_TENANT_ID;
+  return tenantRequestContext.getStore()?.tenantId || DEFAULT_TENANT_ID;
 }
 
 function tenantQuery() {
@@ -1932,7 +1935,7 @@ async function createUserLogin(payload) {
 }
 
 async function currentAuthUser(event) {
-  const header = event.headers.authorization || event.headers.Authorization || '';
+  const header = event.headers?.authorization || event.headers?.Authorization || '';
   const token = header.replace(/^Bearer\s+/i, '');
   if (!token) return null;
   const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
@@ -1943,6 +1946,140 @@ async function currentAuthUser(event) {
   });
   if (!response.ok) return null;
   return response.json();
+}
+
+function eventHeader(event, name) {
+  const headers = event?.headers || {};
+  const wanted = String(name).toLowerCase();
+  const key = Object.keys(headers).find(entry => entry.toLowerCase() === wanted);
+  return key ? String(headers[key] || '').trim() : '';
+}
+
+function requestedTenantId(event) {
+  const value = eventHeader(event, 'x-dqops-tenant');
+  return value ? safeName(value).replace(/^[.-]+|[.-]+$/g, '') : '';
+}
+
+function selectTenantMembership(memberships = [], requested = '') {
+  const active = memberships.filter(membership => membership?.active !== false && membership?.tenant_id);
+  if (requested) return active.find(membership => membership.tenant_id === requested) || null;
+  return active.find(membership => membership.is_default) || active[0] || null;
+}
+
+async function readAuthTenantMemberships(authUser) {
+  if (!authUser?.id) return [];
+  try {
+    return await supabase(`/rest/v1/tenant_memberships?auth_user_id=eq.${encodeURIComponent(authUser.id)}&active=eq.true&select=tenant_id,app_user_id,is_default,active,created_at&order=is_default.desc,created_at.asc`);
+  } catch (error) {
+    // Allows the current HIS deployment to keep working until the membership migration is run.
+    if (![400, 404].includes(error.statusCode)) throw error;
+    return null;
+  }
+}
+
+async function readAuthProfileCandidates(authUser) {
+  if (!authUser?.email) return [];
+  const email = authUser.email.toLowerCase();
+  return supabase(`/rest/v1/app_users?or=(auth_user_id.eq.${encodeURIComponent(authUser.id)},email.eq.${encodeURIComponent(email)})&active=eq.true&select=tenant_id,id,auth_user_id,email`);
+}
+
+async function resolveTenantForEvent(event) {
+  const requested = requestedTenantId(event);
+  const token = bearerToken(event);
+  const kiosk = verifyKioskToken(token, 'session', '') || verifyKioskToken(token, 'device', '');
+  if (kiosk?.tenantId) return kiosk.tenantId;
+
+  const apiPath = String(event?.path || '').replace(/^\/api/, '').replace(/^\/\.netlify\/functions\/api/, '') || '/';
+  if (apiPath === '/kiosk/enroll' && event?.body) {
+    try {
+      const code = String(JSON.parse(event.body)?.code || '').trim().toUpperCase();
+      if (code) {
+        const rows = await supabase(`/rest/v1/kiosk_enrollments?code_hash=eq.${sha256(code)}&used_at=is.null&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=tenant_id&limit=2`);
+        if (rows.length === 1) return rows[0].tenant_id;
+      }
+    } catch (error) {
+      if (error.statusCode) throw error;
+    }
+  }
+
+  const authUser = token ? await currentAuthUser(event) : null;
+  if (authUser?.id) {
+    const memberships = await readAuthTenantMemberships(authUser);
+    if (memberships?.length) {
+      const selected = selectTenantMembership(memberships, requested);
+      if (!selected) throw Object.assign(new Error('You do not have access to that organization'), { statusCode: 403 });
+      return selected.tenant_id;
+    }
+
+    const candidates = await readAuthProfileCandidates(authUser);
+    // Once memberships exist, only an unclaimed email profile may bootstrap a
+    // first login. A removed/inactive membership must never fall back to the
+    // app_users row and silently restore access.
+    const eligibleCandidates = memberships === null
+      ? candidates
+      : candidates.filter(candidate => !candidate.auth_user_id);
+    const candidateTenants = [...new Set(eligibleCandidates.map(candidate => candidate.tenant_id || DEFAULT_TENANT_ID))];
+    if (requested) {
+      if (!candidateTenants.includes(requested)) throw Object.assign(new Error('You do not have access to that organization'), { statusCode: 403 });
+      return requested;
+    }
+    if (candidateTenants.length === 1) return candidateTenants[0];
+    if (candidateTenants.length > 1) {
+      throw Object.assign(new Error('This account belongs to more than one organization. Select an organization to continue.'), { statusCode: 409 });
+    }
+    if (memberships !== null) throw Object.assign(new Error('This account is not assigned to an active organization'), { statusCode: 403 });
+  }
+
+  // A remembered tenant may be used only for public branding, and only when it is active.
+  if (!token && requested && apiPath === '/public-config') {
+    try {
+      const rows = await supabase(`/rest/v1/tenants?id=eq.${encodeURIComponent(requested)}&active=eq.true&select=id&limit=1`);
+      if (rows[0]) return rows[0].id;
+    } catch (error) {
+      if (![400, 404, 500].includes(error.statusCode)) throw error;
+    }
+  }
+  return DEFAULT_TENANT_ID;
+}
+
+async function ensureTenantMembership(profile, authUser) {
+  if (!profile?.id || !authUser?.id) return false;
+  try {
+    const existingMemberships = await readAuthTenantMemberships(authUser);
+    await supabase('/rest/v1/tenant_memberships?on_conflict=tenant_id,auth_user_id', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' },
+      body: JSON.stringify({
+        tenant_id: tenantId(),
+        auth_user_id: authUser.id,
+        app_user_id: profile.id,
+        active: true,
+        is_default: !existingMemberships?.length
+      })
+    });
+    return true;
+  } catch (error) {
+    if (![400, 404].includes(error.statusCode)) throw error;
+    return false;
+  }
+}
+
+async function availableTenantsForAuthUser(event) {
+  const authUser = await currentAuthUser(event);
+  if (!authUser?.id) return [];
+  const memberships = await readAuthTenantMemberships(authUser);
+  const tenantIds = [...new Set((memberships || []).map(membership => membership.tenant_id).filter(Boolean))];
+  if (!tenantIds.length) return [{ ...(await readTenantConfig()), isDefault: true }];
+  const encodedIds = tenantIds.map(id => `\"${id.replace(/\"/g, '')}\"`).join(',');
+  const rows = await supabase(`/rest/v1/tenants?id=in.(${encodedIds})&active=eq.true&select=id,name,app_name,subtitle,logo_url`);
+  return rows.map(row => ({
+    id: row.id,
+    name: row.name,
+    appName: row.app_name,
+    subtitle: row.subtitle,
+    logoUrl: row.logo_url,
+    isDefault: Boolean((memberships || []).find(membership => membership.tenant_id === row.id)?.is_default)
+  }));
 }
 
 function userLocationIds(profile) {
@@ -2189,6 +2326,7 @@ async function sessionProfile(event) {
       profileRows = await supabase(`/rest/v1/app_users?${tenantQuery()}&email=eq.${encodeURIComponent(email)}&select=*`);
       profile = bestProfile(profileRows);
     }
+    await ensureTenantMembership(profile, authUser);
     return appProfile(profile);
   }
 
@@ -4800,10 +4938,14 @@ if (process.env.NODE_ENV === 'test') exports.__test = {
   parseMultipartForm,
   parseFinancialAttachment,
   financialRowsReady,
-  verifyMailgunRequest
+  verifyMailgunRequest,
+  requestedTenantId,
+  selectTenantMembership,
+  signKioskToken,
+  verifyKioskToken
 };
 
-exports.handler = async event => {
+async function routeRequest(event) {
   try {
     const apiPath = event.path.replace(/^\/api/, '').replace(/^\/\.netlify\/functions\/api/, '') || '/';
     const method = event.httpMethod;
@@ -4816,7 +4958,7 @@ exports.handler = async event => {
     if (method === 'GET' && apiPath === '/version') {
       return json(200, {
         version: APP_VERSION,
-        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.30.05'
+        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.30.09'
       });
     }
 
@@ -4839,7 +4981,13 @@ exports.handler = async event => {
     }
 
     if ((method === 'POST' && apiPath === '/session-profile') || (method === 'POST' && apiPath === '/accept-invite')) {
-      return json(200, { profile: await sessionProfile(event), users: await readUsers() });
+      const profile = await sessionProfile(event);
+      return json(200, {
+        profile,
+        users: await readUsers(),
+        tenant: await readTenantConfig(),
+        availableTenants: await availableTenantsForAuthUser(event)
+      });
     }
 
     if (method === 'POST' && apiPath === '/kiosk/enroll') return json(200, await enrollKiosk(body));
@@ -4848,7 +4996,7 @@ exports.handler = async event => {
     if (method === 'POST' && apiPath === '/kiosk/session-profile') {
       const profile = await currentProfile(event);
       if (profile?.authMode !== 'kiosk') throw Object.assign(new Error('Employee session is not active'), { statusCode: 401 });
-      return json(200, { profile: appProfile(profile) });
+      return json(200, { profile: appProfile(profile), tenant: await readTenantConfig() });
     }
 
     if (method === 'GET' && apiPath === '/alerts/check' && query.secret && query.secret === process.env.ALERT_CRON_SECRET) {
@@ -5143,6 +5291,15 @@ exports.handler = async event => {
     if (method === 'POST' && apiPath === '/location-health/thermostat-command') return json(200, await queueThermostatCommand(body, actor));
 
     return json(404, { error: `Unknown route: ${method} ${apiPath}` });
+  } catch (error) {
+    return json(error.statusCode || 500, { error: error.message || 'Server error' });
+  }
+};
+
+exports.handler = async event => {
+  try {
+    const resolvedTenantId = await resolveTenantForEvent(event);
+    return await tenantRequestContext.run({ tenantId: resolvedTenantId }, () => routeRequest(event));
   } catch (error) {
     return json(error.statusCode || 500, { error: error.message || 'Server error' });
   }

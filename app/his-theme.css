@@ -2227,6 +2227,9 @@ header .header-actions{width:auto!important;margin-left:auto!important;overflow:
 .side-user-copy b,.side-user-copy span{display:block!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .side-user-copy b{font-size:16px!important}.side-user-copy span{margin-top:2px!important;font-size:13px!important;color:#bfdbfe!important}
 .side-account-actions{display:grid;gap:4px;padding-top:7px}
+.side-tenant-switch{display:grid;gap:5px;padding:9px 14px;color:#bfdbfe;font-size:12px;font-weight:700}
+.side-tenant-switch[hidden]{display:none}
+.side-tenant-switch select{width:100%;min-width:0;padding:8px 9px;border:1px solid #3a4c68;border-radius:9px;background:#fff;color:#0d2343;font:inherit;font-size:13px}
 .side-account-actions a,.side-account-actions button{width:100%;display:flex!important;align-items:center!important;justify-content:flex-start!important;gap:12px!important;padding:11px 14px!important;border:0;border-radius:11px;background:transparent!important;color:#dbeafe!important;font:inherit;font-size:15px!important;text-align:left;text-decoration:none;cursor:pointer}
 .side-account-actions a:hover,.side-account-actions button:hover{background:#26364f!important;color:#fff!important}
 
