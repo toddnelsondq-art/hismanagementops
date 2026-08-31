@@ -228,7 +228,10 @@ const dashboardWidgetCatalog = [
 const defaultDashboardPreferences = () => ({ visible: dashboardWidgetCatalog.map(widget => widget.id), order: dashboardWidgetCatalog.map(widget => widget.id), defaultRange: 'day', defaultLocationId: 'all' });
 let dashboardPreferences = defaultDashboardPreferences();
 let dashboardPreferencesCustomizable = false;
+let companyDashboardPreferences = defaultDashboardPreferences();
+let companyDashboardDefaultEditable = false;
 let editingDashboardPreferences = null;
+let dashboardCustomizationScope = 'personal';
 let dashboardPreferencesApplied = false;
 let dashboardMetrics = {
   financials: { allowed: false, migrationReady: true, reportCount: 0, totals: {}, byLocation: [], standouts: [] },
@@ -487,7 +490,7 @@ function arrangeManageSections() {
   locationLink.dataset.sectionView = 'locationsView';
   locationLink.innerHTML = '<span>⌖</span><b>Locations</b><small>Addresses, phone numbers, and store setup</small>';
   setupGroup.appendChild(locationLink);
-  ['popCampaignAdminCard', 'checklistTemplateCard', 'temperatureStandardsCard', 'alertRulesCard'].forEach(id => setupGroup.appendChild($(`#${id}`)));
+  ['companyDashboardDefaultCard', 'popCampaignAdminCard', 'checklistTemplateCard', 'temperatureStandardsCard', 'alertRulesCard'].forEach(id => setupGroup.appendChild($(`#${id}`)));
 
   $('#missingChecklistAdminCard').hidden = true;
   $('#teamProgressAdminCard').hidden = true;
@@ -807,6 +810,8 @@ async function loadState() {
     if (state.dashboardPreferences?.preferences) {
       dashboardPreferences = state.dashboardPreferences.preferences;
       dashboardPreferencesCustomizable = Boolean(state.dashboardPreferences.customizable);
+      companyDashboardPreferences = normalizeClientDashboardPreferences(state.dashboardPreferences.companyDefault || defaultDashboardPreferences());
+      companyDashboardDefaultEditable = Boolean(state.dashboardPreferences.companyDefaultEditable);
       if (!dashboardPreferencesApplied) {
         dashboardRange = dashboardPreferences.defaultRange || dashboardRange;
         dashboardLocationId = dashboardPreferences.defaultLocationId || dashboardLocationId;
@@ -1939,6 +1944,15 @@ function applyDashboardPreferences(activeUser = currentUser()) {
 
 function renderDashboardCustomization() {
   editingDashboardPreferences = normalizeClientDashboardPreferences(editingDashboardPreferences || dashboardPreferences);
+  const companyMode = dashboardCustomizationScope === 'company';
+  $('#dashboardCustomizeEyebrow').textContent = companyMode ? 'COMPANY SETTINGS' : 'PERSONAL SETTINGS';
+  $('#dashboardCustomizeTitle').textContent = companyMode ? 'Company dashboard default' : 'Customize dashboard';
+  $('#dashboardCustomizeHint').textContent = companyMode
+    ? 'Choose the starting layout for everyone in this organization. Existing personal layouts are not changed.'
+    : 'Choose what appears, move widgets into your preferred order, and select the view that should open by default. These settings apply only to your account.';
+  $('#dashboardDefaultLocationLabel').hidden = companyMode;
+  $('#resetDashboardBtn').textContent = companyMode ? 'Restore built-in default' : 'Reset to company default';
+  $('#saveDashboardBtn').textContent = companyMode ? 'Save company default' : 'Save dashboard';
   const visibleLocations = locations.filter(location => isFullAccess() || userLocationIds().includes(location.id));
   $('#dashboardDefaultRange').value = editingDashboardPreferences.defaultRange;
   $('#dashboardDefaultLocation').innerHTML = [`<option value="all">${isFullAccess() ? 'All locations' : 'All assigned locations'}</option>`, ...visibleLocations.map(location => `<option value="${escapeHtml(location.id)}">${escapeHtml(location.name)}</option>`)].join('');
@@ -1950,20 +1964,28 @@ function renderDashboardCustomization() {
   }).join('');
 }
 
-function openDashboardCustomization() {
-  if (!canCustomizeDashboard() || !dashboardPreferencesCustomizable) return toast('Dashboard customization is available to Area Managers and above');
-  editingDashboardPreferences = JSON.parse(JSON.stringify(normalizeClientDashboardPreferences(dashboardPreferences)));
+function openDashboardCustomization(scope = 'personal') {
+  dashboardCustomizationScope = scope === 'company' ? 'company' : 'personal';
+  if (dashboardCustomizationScope === 'company' && !companyDashboardDefaultEditable) return toast('Only the company Owner can change the company dashboard default');
+  if (dashboardCustomizationScope === 'personal' && (!canCustomizeDashboard() || !dashboardPreferencesCustomizable)) return toast('Dashboard customization is available to Area Managers and above');
+  const source = dashboardCustomizationScope === 'company' ? companyDashboardPreferences : dashboardPreferences;
+  editingDashboardPreferences = JSON.parse(JSON.stringify(normalizeClientDashboardPreferences(source)));
+  if (dashboardCustomizationScope === 'company') editingDashboardPreferences.defaultLocationId = 'all';
   renderDashboardCustomization();
   $('#dashboardCustomizeDialog').showModal();
 }
 
 async function saveDashboardCustomization() {
   editingDashboardPreferences.defaultRange = $('#dashboardDefaultRange').value;
-  editingDashboardPreferences.defaultLocationId = $('#dashboardDefaultLocation').value;
+  editingDashboardPreferences.defaultLocationId = dashboardCustomizationScope === 'company' ? 'all' : $('#dashboardDefaultLocation').value;
   editingDashboardPreferences.visible = [...document.querySelectorAll('[data-dashboard-widget-visible]:checked')].map(input => input.dataset.dashboardWidgetVisible);
   try {
-    const result = await api('/api/dashboard/preferences', { method: 'POST', body: JSON.stringify({ preferences: editingDashboardPreferences }) });
+    const companyMode = dashboardCustomizationScope === 'company';
+    const route = companyMode ? '/api/dashboard/company-default' : '/api/dashboard/preferences';
+    const result = await api(route, { method: 'POST', body: JSON.stringify({ preferences: editingDashboardPreferences }) });
     dashboardPreferences = normalizeClientDashboardPreferences(result.preferences);
+    companyDashboardPreferences = normalizeClientDashboardPreferences(result.companyDefault || companyDashboardPreferences);
+    companyDashboardDefaultEditable = Boolean(result.companyDefaultEditable);
     dashboardRange = dashboardPreferences.defaultRange;
     dashboardLocationId = dashboardPreferences.defaultLocationId;
     localStorage.setItem('dailyops-dashboard-range', dashboardRange);
@@ -1971,16 +1993,23 @@ async function saveDashboardCustomization() {
     await loadDashboardState();
     $('#dashboardCustomizeDialog').close();
     render();
-    toast('Dashboard settings saved');
+    toast(companyMode ? 'Company dashboard default saved' : 'Dashboard settings saved');
   } catch (error) { toast(`Dashboard settings did not save: ${error.message}`); }
 }
 
 async function resetDashboardCustomization() {
-  if (!confirm('Reset your dashboard cards, order, time period, and location to the default layout?')) return;
+  const companyMode = dashboardCustomizationScope === 'company';
+  const message = companyMode
+    ? 'Restore the built-in dashboard as the company default? Personal layouts will not be changed.'
+    : 'Reset your dashboard cards, order, time period, and location to the company default?';
+  if (!confirm(message)) return;
   try {
-    const result = await api('/api/dashboard/preferences/reset', { method: 'POST', body: '{}' });
+    const route = companyMode ? '/api/dashboard/company-default/reset' : '/api/dashboard/preferences/reset';
+    const result = await api(route, { method: 'POST', body: '{}' });
     dashboardPreferences = normalizeClientDashboardPreferences(result.preferences || defaultDashboardPreferences());
-    editingDashboardPreferences = JSON.parse(JSON.stringify(dashboardPreferences));
+    companyDashboardPreferences = normalizeClientDashboardPreferences(result.companyDefault || defaultDashboardPreferences());
+    companyDashboardDefaultEditable = Boolean(result.companyDefaultEditable);
+    editingDashboardPreferences = JSON.parse(JSON.stringify(companyMode ? companyDashboardPreferences : dashboardPreferences));
     dashboardRange = dashboardPreferences.defaultRange;
     dashboardLocationId = dashboardPreferences.defaultLocationId;
     localStorage.setItem('dailyops-dashboard-range', dashboardRange);
@@ -1988,7 +2017,7 @@ async function resetDashboardCustomization() {
     await loadDashboardState();
     renderDashboardCustomization();
     render();
-    toast('Dashboard reset to default');
+    toast(companyMode ? 'Company dashboard default restored' : 'Dashboard reset to company default');
   } catch (error) { toast(`Dashboard did not reset: ${error.message}`); }
 }
 
@@ -3207,6 +3236,7 @@ function applyRoleAccess(user) {
   if ($('#alertRulesCard')) $('#alertRulesCard').style.display = subscriptionFeatureEnabled('advanced_alerts') ? '' : 'none';
   if ($('#storeAlarmAdminCard')) $('#storeAlarmAdminCard').style.display = subscriptionFeatureEnabled('advanced_alerts') ? '' : 'none';
   if ($('#financialImportCard')) $('#financialImportCard').hidden = !(isFullAccess(user) && subscriptionFeatureEnabled('advanced_reports'));
+  if ($('#companyDashboardDefaultCard')) $('#companyDashboardDefaultCard').hidden = !companyDashboardDefaultEditable;
   $('#changePasswordBtn').style.display = window.dailyOpsAuth?.enabled && window.dailyOpsAuth?.authMode !== 'kiosk' ? '' : 'none';
   $('#signOutBtn').style.display = window.dailyOpsAuth?.enabled ? '' : 'none';
   $('#sideUserName').textContent = user.name;
@@ -6922,7 +6952,8 @@ $('#saveMaintenanceHoursPermissionsBtn').onclick = saveMaintenanceHoursPermissio
 $('#exportMaintenanceWorkLogBtn').onclick = exportMaintenanceWorkLog;
 $('#saveRolloutPermissionsBtn').onclick = saveRolloutPermissions;
 $('#rolloutLocation').onchange = event => { rolloutLocationId = event.target.value; localStorage.setItem('dqops-rollout-location', rolloutLocationId); renderRollout(); };
-$('#customizeDashboardBtn').onclick = openDashboardCustomization;
+$('#customizeDashboardBtn').onclick = () => openDashboardCustomization('personal');
+$('#editCompanyDashboardBtn').onclick = () => openDashboardCustomization('company');
 $('#saveDashboardBtn').onclick = saveDashboardCustomization;
 $('#resetDashboardBtn').onclick = resetDashboardCustomization;
 $('#financialReportFile').onchange = event => previewFinancialReport(event.target.files?.[0]);

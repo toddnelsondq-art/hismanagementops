@@ -59,8 +59,25 @@
       }
     });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || payload.message || 'Request failed');
+    if (!response.ok) {
+      const error = new Error(payload.error || payload.message || 'Request failed');
+      error.status = response.status;
+      error.code = payload.code || '';
+      throw error;
+    }
     return payload;
+  }
+
+  function isExpiredPasswordSession(error) {
+    return error?.status === 401 || /not signed in|invalid.*token|expired.*token|jwt.*expired/i.test(String(error?.message || ''));
+  }
+
+  async function clearPasswordSession() {
+    state.token = '';
+    state.profile = null;
+    state.authMode = '';
+    localStorage.removeItem('dailyops-current-user');
+    await state.client?.auth?.signOut?.({ scope: 'local' }).catch(() => {});
   }
 
   async function loadSupabaseLibrary() {
@@ -240,17 +257,25 @@
 
       await loadSupabaseLibrary();
       state.client = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
-      const { data } = await state.client.auth.getSession();
-      if (data.session) {
-        state.token = data.session.access_token;
-        const accepted = await request('/api/session-profile', { method: 'POST', body: '{}' }, state.token);
-        state.profile = accepted.profile;
-        state.tenant = { ...state.tenant, ...(accepted.tenant || {}) };
-        state.availableTenants = accepted.availableTenants || [];
-        state.authMode = 'password';
-        if (state.profile?.tenantId) localStorage.setItem(TENANT_KEY, state.profile.tenantId);
-        localStorage.setItem('dailyops-current-user', state.profile.id);
-        return state;
+      const { data, error: sessionError } = await state.client.auth.getSession();
+      if (sessionError) await clearPasswordSession();
+      if (data?.session) {
+        try {
+          state.token = data.session.access_token;
+          const accepted = await request('/api/session-profile', { method: 'POST', body: '{}' }, state.token);
+          state.profile = accepted.profile;
+          state.tenant = { ...state.tenant, ...(accepted.tenant || {}) };
+          state.availableTenants = accepted.availableTenants || [];
+          state.authMode = 'password';
+          if (state.profile?.tenantId) localStorage.setItem(TENANT_KEY, state.profile.tenantId);
+          localStorage.setItem('dailyops-current-user', state.profile.id);
+          return state;
+        } catch (error) {
+          if (!isExpiredPasswordSession(error)) throw error;
+          await clearPasswordSession();
+          const deviceToken = localStorage.getItem(DEVICE_KEY);
+          return deviceToken ? showKioskLogin(deviceToken) : showPasswordLogin('Your session expired. Please sign in again.');
+        }
       }
 
       const deviceToken = localStorage.getItem(DEVICE_KEY);

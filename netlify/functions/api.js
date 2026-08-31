@@ -13,7 +13,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.25.1';
+const APP_VERSION = '1.25.2';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -4562,6 +4562,7 @@ async function updateManagementReport(payload, actor) {
 }
 
 const DASHBOARD_WIDGETS = ['financials', 'alerts', 'upcoming', 'marketing', 'incidents', 'taskLists', 'weeklyCleaning', 'tempLogs', 'maintenance', 'fpc', 'inspections', 'progress'];
+const COMPANY_DASHBOARD_DEFAULT_KEY = '__company_default__';
 
 function defaultDashboardPreferences() {
   return { visible: [...DASHBOARD_WIDGETS], order: [...DASHBOARD_WIDGETS], defaultRange: 'day', defaultLocationId: 'all' };
@@ -4582,12 +4583,23 @@ function normalizeDashboardPreferences(value = {}) {
   };
 }
 
-async function dashboardPreferencesState(actor) {
-  if (AUTH_REQUIRED && !canAreaManage(actor)) return { preferences: defaultDashboardPreferences(), customizable: false };
-  const storedValue = await readMaintenanceKey('dashboardPreferences', {});
+function dashboardPreferencesForActor(storedValue, actor) {
   const stored = storedValue && typeof storedValue === 'object' && !Array.isArray(storedValue) ? storedValue : {};
-  const preferences = normalizeDashboardPreferences(stored?.[actor?.id] || {});
-  return { preferences, customizable: true };
+  const companyDefault = normalizeDashboardPreferences(stored[COMPANY_DASHBOARD_DEFAULT_KEY] || {});
+  companyDefault.defaultLocationId = 'all';
+  const personal = stored[actor?.id || 'local-user'];
+  return {
+    preferences: normalizeDashboardPreferences(personal || companyDefault),
+    customizable: !AUTH_REQUIRED || canAreaManage(actor),
+    hasPersonalPreferences: Boolean(personal),
+    companyDefault,
+    companyDefaultEditable: !AUTH_REQUIRED || actor?.role === 'Owner'
+  };
+}
+
+async function dashboardPreferencesState(actor) {
+  const storedValue = await readMaintenanceKey('dashboardPreferences', {});
+  return dashboardPreferencesForActor(storedValue, actor);
 }
 
 async function saveDashboardPreferences(payload, actor) {
@@ -4600,7 +4612,7 @@ async function saveDashboardPreferences(payload, actor) {
   const stored = storedValue && typeof storedValue === 'object' && !Array.isArray(storedValue) ? storedValue : {};
   stored[actor?.id || 'local-user'] = preferences;
   await writeMaintenanceKey('dashboardPreferences', stored);
-  return { preferences, customizable: true };
+  return dashboardPreferencesForActor(stored, actor);
 }
 
 async function resetDashboardPreferences(actor) {
@@ -4609,7 +4621,27 @@ async function resetDashboardPreferences(actor) {
   const stored = storedValue && typeof storedValue === 'object' && !Array.isArray(storedValue) ? storedValue : {};
   delete stored[actor?.id || 'local-user'];
   await writeMaintenanceKey('dashboardPreferences', stored);
-  return { preferences: defaultDashboardPreferences(), customizable: true };
+  return dashboardPreferencesForActor(stored, actor);
+}
+
+async function saveCompanyDashboardDefault(payload, actor) {
+  if (AUTH_REQUIRED && actor?.role !== 'Owner') throw Object.assign(new Error('Only the company Owner can change the company dashboard default'), { statusCode: 403 });
+  const preferences = normalizeDashboardPreferences(payload.preferences || payload);
+  preferences.defaultLocationId = 'all';
+  const storedValue = await readMaintenanceKey('dashboardPreferences', {});
+  const stored = storedValue && typeof storedValue === 'object' && !Array.isArray(storedValue) ? storedValue : {};
+  stored[COMPANY_DASHBOARD_DEFAULT_KEY] = preferences;
+  await writeMaintenanceKey('dashboardPreferences', stored);
+  return dashboardPreferencesForActor(stored, actor);
+}
+
+async function resetCompanyDashboardDefault(actor) {
+  if (AUTH_REQUIRED && actor?.role !== 'Owner') throw Object.assign(new Error('Only the company Owner can reset the company dashboard default'), { statusCode: 403 });
+  const storedValue = await readMaintenanceKey('dashboardPreferences', {});
+  const stored = storedValue && typeof storedValue === 'object' && !Array.isArray(storedValue) ? storedValue : {};
+  delete stored[COMPANY_DASHBOARD_DEFAULT_KEY];
+  await writeMaintenanceKey('dashboardPreferences', stored);
+  return dashboardPreferencesForActor(stored, actor);
 }
 
 async function readMaintenanceWorkLogs() {
@@ -5141,6 +5173,7 @@ if (process.env.NODE_ENV === 'test') exports.__test = {
   financialDateRange,
   uniqueFinancialImportRows,
   normalizeDashboardPreferences,
+  dashboardPreferencesForActor,
   parseMultipartForm,
   parseFinancialAttachment,
   financialRowsReady,
@@ -5172,7 +5205,7 @@ async function routeRequest(event) {
     if (method === 'GET' && apiPath === '/version') {
       return json(200, {
         version: APP_VERSION,
-        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.30.12'
+        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.30.13'
       });
     }
 
@@ -5458,6 +5491,8 @@ async function routeRequest(event) {
     if (method === 'POST' && apiPath === '/management-reports/update') return json(200, await updateManagementReport(body, actor));
     if (method === 'POST' && apiPath === '/dashboard/preferences') return json(200, await saveDashboardPreferences(body, actor));
     if (method === 'POST' && apiPath === '/dashboard/preferences/reset') return json(200, await resetDashboardPreferences(actor));
+    if (method === 'POST' && apiPath === '/dashboard/company-default') return json(200, await saveCompanyDashboardDefault(body, actor));
+    if (method === 'POST' && apiPath === '/dashboard/company-default/reset') return json(200, await resetCompanyDashboardDefault(actor));
     if (method === 'POST' && apiPath === '/financial-reports/import') return json(200, await importFinancialReports(body, actor));
     if (method === 'POST' && apiPath === '/financial-reports/reassign') return json(200, await reassignFinancialReport(body, actor));
     if (method === 'POST' && apiPath === '/financial-reports/mapping') return json(200, await saveFinancialStoreMapping(body, actor));

@@ -1281,6 +1281,12 @@
         <div id="manageSetupGroupItems" class="manage-group-items"></div>
       </article>
 
+      <article class="card form-card collapsible-card" id="companyDashboardDefaultCard" hidden>
+        <h3>Company dashboard default</h3>
+        <p class="hint">Choose the starting dashboard layout for everyone in this organization. Area Managers and above can still save a personal layout without changing this company default.</p>
+        <button id="editCompanyDashboardBtn" type="button">Edit company default</button>
+      </article>
+
       <article class="card form-card collapsible-card" id="financialImportCard" hidden>
         <h3>Financial report import</h3>
         <p class="hint">Directors and Owners can upload the Excel or HTML version of the Day-to-Day Financial Recap LY report. Review every location match before saving. Existing figures for the same location and date will be updated.</p>
@@ -2002,11 +2008,11 @@
 
   <dialog id="dashboardCustomizeDialog" class="dashboard-customize-dialog">
     <form method="dialog">
-      <div class="modal-head"><div><p class="eyebrow">PERSONAL SETTINGS</p><h3>Customize dashboard</h3></div><button value="cancel" class="x" aria-label="Close">×</button></div>
-      <p class="hint">Choose what appears, move widgets into your preferred order, and select the view that should open by default. These settings apply only to your account.</p>
+      <div class="modal-head"><div><p class="eyebrow" id="dashboardCustomizeEyebrow">PERSONAL SETTINGS</p><h3 id="dashboardCustomizeTitle">Customize dashboard</h3></div><button value="cancel" class="x" aria-label="Close">×</button></div>
+      <p class="hint" id="dashboardCustomizeHint">Choose what appears, move widgets into your preferred order, and select the view that should open by default. These settings apply only to your account.</p>
       <div class="dashboard-default-grid">
         <label>Default time period<select id="dashboardDefaultRange"><option value="day">Current day</option><option value="week">Current week</option><option value="month">Current month</option></select></label>
-        <label>Default location<select id="dashboardDefaultLocation"></select></label>
+        <label id="dashboardDefaultLocationLabel">Default location<select id="dashboardDefaultLocation"></select></label>
       </div>
       <div id="dashboardWidgetSettings" class="dashboard-widget-settings"></div>
       <div class="dialog-actions"><button id="resetDashboardBtn" class="ghost" type="button">Reset to default</button><button id="saveDashboardBtn" type="button">Save dashboard</button></div>
@@ -2123,10 +2129,10 @@
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-30-12"></script>
-  <script src="auth.js?v=2026-08-30-tenant-onboarding"></script>
+  <script src="version.js?v=2026-08-30-13"></script>
+  <script src="auth.js?v=2026-08-30-auth-recovery"></script>
   <script src="financial-reports.js?v=2026-08-30-email-import"></script>
-  <script src="app.js?v=2026-08-30-fpc-record-repair"></script>
+  <script src="app.js?v=2026-08-30-company-dashboard"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>
