@@ -14,7 +14,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.26.0';
+const APP_VERSION = '1.27.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -713,6 +713,14 @@ async function updateAppFeedback(body = {}, actor) {
     method: 'PATCH',
     body: JSON.stringify({ status, admin_notes: String(body.adminNotes || '').trim().slice(0, 2000), updated_at: new Date().toISOString() })
   });
+  return readPlatformFeedback();
+}
+
+async function deleteAppFeedback(body = {}, actor) {
+  if (!isPlatformAdmin(actor)) throw Object.assign(new Error('Only an Average Guys platform administrator can delete feedback'), { statusCode: 403 });
+  const id = String(body.id || '').trim();
+  if (!id) throw Object.assign(new Error('Missing feedback item'), { statusCode: 400 });
+  await supabase(`/rest/v1/app_feedback?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' });
   return readPlatformFeedback();
 }
 
@@ -5327,7 +5335,7 @@ async function routeRequest(event) {
     if (method === 'GET' && apiPath === '/version') {
       return json(200, {
         version: APP_VERSION,
-        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.30.14'
+        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.31.2'
       });
     }
 
@@ -5383,6 +5391,7 @@ async function routeRequest(event) {
     if (method === 'POST' && apiPath === '/platform/password-reset') return json(200, await sendPlatformPasswordReset(body, actor));
     if (method === 'POST' && apiPath === '/feedback') return json(200, await saveAppFeedback(body, actor));
     if (method === 'POST' && apiPath === '/platform/feedback') return json(200, await updateAppFeedback(body, actor));
+    if (method === 'DELETE' && apiPath === '/platform/feedback') return json(200, await deleteAppFeedback(body, actor));
 
     const requiredFeature = requiredFeatureForPath(apiPath);
     if (requiredFeature) await assertSubscribedFeature(actor, requiredFeature, body.locationId || query.locationId || '');

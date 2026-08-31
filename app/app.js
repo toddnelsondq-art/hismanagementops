@@ -597,7 +597,7 @@ function applyTenantBranding() {
 }
 
 function toast(message) {
-  $('#toast').textContent = message;
+  $('#toast').textContent = window.DQOpsI18n?.translate(message) || message;
   $('#toast').classList.add('show');
   setTimeout(() => $('#toast').classList.remove('show'), 1800);
 }
@@ -3960,22 +3960,30 @@ function renderPlatformAdmin() {
   if (!allowed) return;
   const tenantNames = Object.fromEntries((platformAdminSupport.tenants || []).map(tenant => [tenant.id, tenant.name || tenant.app_name || tenant.id]));
   $('#platformAdminTenant').innerHTML = (platformAdminSupport.tenants || []).map(tenant => `<option value="${escapeHtml(tenant.id)}" ${tenant.id === platformAdminSupport.tenantId ? 'selected' : ''}>${escapeHtml(tenant.name || tenant.app_name || tenant.id)}${tenant.active === false ? ' (inactive)' : ''}</option>`).join('');
-  $('#platformAdminUsers').innerHTML = (platformAdminSupport.users || []).length ? (platformAdminSupport.users || []).map(user => `
+  const organizationUsers = platformAdminSupport.users || [];
+  $('#platformUserCount').textContent = `${organizationUsers.length} user${organizationUsers.length === 1 ? '' : 's'}`;
+  $('#platformAdminUsers').innerHTML = organizationUsers.length ? organizationUsers.map(user => `
     <article class="platform-user-row">
       <div><b>${escapeHtml(user.name || user.email || user.id)}</b><p>${escapeHtml(user.role || 'Employee')} · ${escapeHtml(user.email || 'PIN-only account')}</p><small>${user.active === false ? 'Inactive' : (user.auth_user_id ? 'Hosted login connected' : 'Login not connected yet')}</small></div>
       <button class="ghost" data-platform-password-reset="${escapeHtml(user.id)}" data-platform-tenant="${escapeHtml(platformAdminSupport.tenantId)}" type="button" ${!user.email || user.active === false ? 'disabled' : ''}>Send password reset</button>
     </article>`).join('') : '<p class="hint">No users were found for this organization.</p>';
 
   const feedback = platformAdminSupport.feedback || [];
-  $('#platformFeedbackCount').textContent = `${feedback.length} item${feedback.length === 1 ? '' : 's'}`;
+  const activeFeedback = feedback.filter(item => !['Completed', 'Declined'].includes(item.status));
+  const previousFeedback = feedback.filter(item => ['Completed', 'Declined'].includes(item.status));
+  const feedbackRow = item => `
+    <article class="platform-feedback-row">
+      <div class="platform-feedback-heading"><div><span class="status">${escapeHtml(item.category || 'Idea')}</span><b>${escapeHtml(item.title || 'Feedback')}</b></div><small>${escapeHtml(tenantNames[item.tenant_id] || item.tenant_id || '')} · ${escapeHtml(item.user_name || item.user_email || item.app_user_id || '')} · ${item.created_at ? new Date(item.created_at).toLocaleString() : ''}</small></div>
+      <p>${escapeHtml(item.message || '')}</p>
+      <div class="platform-feedback-actions"><label>Status<select data-platform-feedback-status="${escapeHtml(item.id)}">${['New', 'Reviewing', 'Planned', 'Completed', 'Declined'].map(status => `<option ${status === item.status ? 'selected' : ''}>${status}</option>`).join('')}</select></label><label>Internal note<input data-platform-feedback-note="${escapeHtml(item.id)}" value="${escapeHtml(item.admin_notes || '')}" placeholder="Optional Average Guys note"></label><div class="platform-feedback-buttons"><button class="ghost" data-platform-feedback-save="${escapeHtml(item.id)}" type="button">Save</button><button class="danger" data-platform-feedback-delete="${escapeHtml(item.id)}" type="button">Delete</button></div></div>
+    </article>`;
+  $('#platformFeedbackCount').textContent = `${activeFeedback.length} active`;
   $('#platformFeedbackInbox').innerHTML = !platformAdminSupport.feedbackMigrationReady
     ? '<p class="hint">Feedback storage needs its one-time Supabase setup. Run <b>supabase/add_app_feedback.sql</b>.</p>'
-    : feedback.length ? feedback.map(item => `
-      <article class="platform-feedback-row">
-        <div class="platform-feedback-heading"><div><span class="status">${escapeHtml(item.category || 'Idea')}</span><b>${escapeHtml(item.title || 'Feedback')}</b></div><small>${escapeHtml(tenantNames[item.tenant_id] || item.tenant_id || '')} · ${escapeHtml(item.user_name || item.user_email || item.app_user_id || '')} · ${item.created_at ? new Date(item.created_at).toLocaleString() : ''}</small></div>
-        <p>${escapeHtml(item.message || '')}</p>
-        <div class="platform-feedback-actions"><label>Status<select data-platform-feedback-status="${escapeHtml(item.id)}">${['New', 'Reviewing', 'Planned', 'Completed', 'Declined'].map(status => `<option ${status === item.status ? 'selected' : ''}>${status}</option>`).join('')}</select></label><label>Internal note<input data-platform-feedback-note="${escapeHtml(item.id)}" value="${escapeHtml(item.admin_notes || '')}" placeholder="Optional Average Guys note"></label><button class="ghost" data-platform-feedback-save="${escapeHtml(item.id)}" type="button">Save</button></div>
-      </article>`).join('') : '<p class="hint">No feedback has been submitted yet.</p>';
+    : activeFeedback.length ? activeFeedback.map(feedbackRow).join('') : '<p class="hint">No active feedback requests.</p>';
+  $('#platformPreviousFeedback').hidden = !platformAdminSupport.feedbackMigrationReady || previousFeedback.length === 0;
+  $('#platformPreviousFeedbackCount').textContent = previousFeedback.length;
+  $('#platformPreviousFeedbackInbox').innerHTML = previousFeedback.map(feedbackRow).join('');
 }
 
 async function loadPlatformAdmin(tenantId = platformAdminSupport.tenantId || subscriptionAdmin.tenantId, includeSubscription = true) {
@@ -4011,6 +4019,18 @@ async function updatePlatformFeedback(id) {
     renderPlatformAdmin();
     toast('Feedback updated');
   } catch (error) { toast(`Feedback did not update: ${error.message}`); }
+}
+
+async function deletePlatformFeedback(id) {
+  const item = (platformAdminSupport.feedback || []).find(entry => entry.id === id);
+  if (!item || !confirm(`Permanently delete “${item.title || 'this feedback request'}”? This cannot be undone.`)) return;
+  try {
+    const result = await api('/api/platform/feedback', { method: 'DELETE', body: JSON.stringify({ id }) });
+    platformAdminSupport.feedbackMigrationReady = result.migrationReady;
+    platformAdminSupport.feedback = result.feedback || [];
+    renderPlatformAdmin();
+    toast('Feedback deleted');
+  } catch (error) { toast(`Feedback was not deleted: ${error.message}`); }
 }
 
 function openFeedbackDialog() {
@@ -5264,6 +5284,8 @@ document.addEventListener('click', async event => {
   if (platformPasswordReset) return sendPlatformPasswordReset(platformPasswordReset.dataset.platformPasswordReset, platformPasswordReset.dataset.platformTenant);
   const platformFeedbackSave = event.target.closest('[data-platform-feedback-save]');
   if (platformFeedbackSave) return updatePlatformFeedback(platformFeedbackSave.dataset.platformFeedbackSave);
+  const platformFeedbackDelete = event.target.closest('[data-platform-feedback-delete]');
+  if (platformFeedbackDelete) return deletePlatformFeedback(platformFeedbackDelete.dataset.platformFeedbackDelete);
 
   const sectionButton = event.target.closest('[data-section-view]');
   if (sectionButton) {

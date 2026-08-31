@@ -37,8 +37,9 @@
     document.querySelector('#authOverlay')?.remove();
     const overlay = document.createElement('div');
     overlay.id = 'authOverlay';
-    overlay.innerHTML = `<div class="auth-card"><img class="auth-logo" src="${escapeHtml(state.tenant.logoUrl)}" alt="${escapeHtml(state.tenant.name)}"><h2>${escapeHtml(state.tenant.appName || 'DQ OPS')}</h2>${content}</div>`;
+    overlay.innerHTML = `<div class="auth-card"><div class="auth-language-tools"><button class="auth-language-button" data-language-toggle type="button"><span aria-hidden="true">🌐</span> <span data-language-label>Español</span></button></div><img class="auth-logo" src="${escapeHtml(state.tenant.logoUrl)}" alt="${escapeHtml(state.tenant.name)}"><h2>${escapeHtml(state.tenant.appName || 'DQ OPS')}</h2>${content}</div>`;
     document.body.append(overlay);
+    window.DQOpsI18n?.apply(overlay);
     return overlay;
   }
 

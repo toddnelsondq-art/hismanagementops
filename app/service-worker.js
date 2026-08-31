@@ -9,6 +9,7 @@ const APP_SHELL = [
   '/his-theme.css',
   '/subscription.css',
   '/auth.js',
+  '/i18n.js',
   '/financial-reports.js',
   '/version.js',
   '/app.js',

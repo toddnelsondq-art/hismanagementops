@@ -24,6 +24,20 @@ test('feedback migration is tenant scoped, private, and status tracked', () => {
   assert.match(migration, /revoke all privileges.*anon, authenticated/i);
 });
 
+test('platform feedback separates resolved requests and supports administrator deletion', () => {
+  const markup = fs.readFileSync(path.join(__dirname, '..', 'app', 'index.html'), 'utf8');
+  const client = fs.readFileSync(path.join(__dirname, '..', 'app', 'app.js'), 'utf8');
+  const api = fs.readFileSync(path.join(__dirname, '..', 'netlify', 'functions', 'api.js'), 'utf8');
+  assert.match(markup, /<details class="card platform-admin-details" id="platformUserSupportCard">/);
+  assert.doesNotMatch(markup, /<details class="card platform-admin-details" id="platformUserSupportCard" open>/);
+  assert.match(markup, /id="platformPreviousFeedback"/);
+  assert.match(client, /\['Completed', 'Declined'\]\.includes\(item\.status\)/);
+  assert.match(client, /data-platform-feedback-delete/);
+  assert.match(client, /method: 'DELETE'/);
+  assert.match(api, /async function deleteAppFeedback/);
+  assert.match(api, /method === 'DELETE' && apiPath === '\/platform\/feedback'/);
+});
+
 test('password recovery links open a new-password form in the app', () => {
   const authSource = fs.readFileSync(path.join(__dirname, '..', 'app', 'auth.js'), 'utf8');
   assert.match(authSource, /type=recovery/);
