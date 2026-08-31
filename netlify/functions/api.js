@@ -12,7 +12,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.23.2';
+const APP_VERSION = '1.23.3';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -1088,7 +1088,7 @@ function financialEmptySummary(range, locationId, start, end, extra = {}) {
   };
 }
 
-function financialAggregate(rows = [], locationNames = new Map()) {
+function financialAggregate(rows = []) {
   const totals = rows.reduce((summary, row) => {
     const netSales = Number(row.net_sales || 0);
     const netSalesLy = Number(row.net_sales_ly || 0);
@@ -1131,8 +1131,7 @@ function financialAggregate(rows = [], locationNames = new Map()) {
     salesVsLyPercent: financialPercentChange(totals.comparisonNetSales, totals.netSalesLy),
     laborPercent: totals.netSales > 0 ? Math.round((totals.laborCost / totals.netSales) * 10000) / 10000 : null,
     transactionChangePercent: financialPercentChange(totals.comparisonTransactions, totals.transactionsLy),
-    averageTicket: totals.transactions > 0 ? Math.round((totals.netSales / totals.transactions) * 100) / 100 : null,
-    locationName: rows.length === 1 ? locationNames.get(rows[0].location_id) || rows[0].source_store_name || rows[0].location_id : ''
+    averageTicket: totals.transactions > 0 ? Math.round((totals.netSales / totals.transactions) * 100) / 100 : null
   };
 }
 
@@ -1172,7 +1171,7 @@ async function financialSummary(actor, range = 'day', locationId = 'all') {
   const anchoredRange = financialDateRange(range, latestDate);
   const selected = available.filter(row => dateInRange(row.business_date, anchoredRange.start, anchoredRange.end));
   const locationNames = new Map(allLocations.map(location => [location.id, location.name]));
-  const totals = financialAggregate(selected, locationNames);
+  const totals = financialAggregate(selected);
   const grouped = selected.reduce((groups, row) => {
     groups[row.location_id] ??= [];
     groups[row.location_id].push(row);
@@ -1182,7 +1181,7 @@ async function financialSummary(actor, range = 'day', locationId = 'all') {
     locationId: scopedLocationId,
     locationName: locationNames.get(scopedLocationId) || locationRows[0]?.source_store_name || scopedLocationId,
     reportCount: locationRows.length,
-    ...financialAggregate(locationRows, locationNames)
+    ...financialAggregate(locationRows)
   })).sort((a, b) => a.locationName.localeCompare(b.locationName));
   const standouts = byLocation.flatMap(location => {
     const items = [];
