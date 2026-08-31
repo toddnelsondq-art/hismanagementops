@@ -8,6 +8,7 @@ const apiModule = require('../netlify/functions/api.js');
 const {
   requestedTenantId,
   selectTenantMembership,
+  eligibleTenantProfileCandidates,
   signKioskToken,
   verifyKioskToken
 } = apiModule.__test;
@@ -30,6 +31,21 @@ test('membership selection honors only allowed tenants', () => {
   assert.equal(selectTenantMembership(memberships, 'inactive-customer'), null);
 });
 
+test('stale Auth links can self-heal without bypassing a revoked membership', () => {
+  const authUser = { id: 'current-auth-id' };
+  const candidates = [
+    { id: 'invited', auth_user_id: null },
+    { id: 'stale', auth_user_id: 'old-auth-id' },
+    { id: 'revoked', auth_user_id: 'current-auth-id' }
+  ];
+
+  assert.deepEqual(
+    eligibleTenantProfileCandidates(candidates, authUser, true).map(candidate => candidate.id),
+    ['invited', 'stale']
+  );
+  assert.equal(eligibleTenantProfileCandidates(candidates, authUser, false).length, 3);
+});
+
 test('signed kiosk tokens cannot be reused across tenants', () => {
   const token = signKioskToken({
     type: 'session',
@@ -46,5 +62,5 @@ test('signed kiosk tokens cannot be reused across tenants', () => {
 test('public requests still use the safe HIS fallback tenant', async () => {
   const response = await apiModule.handler({ path: '/api/version', httpMethod: 'GET', headers: {} });
   assert.equal(response.statusCode, 200);
-  assert.equal(JSON.parse(response.body).version, '1.24.0');
+  assert.equal(JSON.parse(response.body).version, '1.24.1');
 });

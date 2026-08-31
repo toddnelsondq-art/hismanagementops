@@ -13,7 +13,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.24.0';
+const APP_VERSION = '1.24.1';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -1966,6 +1966,14 @@ function selectTenantMembership(memberships = [], requested = '') {
   return active.find(membership => membership.is_default) || active[0] || null;
 }
 
+function eligibleTenantProfileCandidates(candidates = [], authUser = {}, membershipsReady = false) {
+  if (!membershipsReady) return candidates;
+  // A matching email with no Auth ID is a normal invitation. A different Auth
+  // ID means the Supabase account was recreated and the old link is stale.
+  // A matching Auth ID with no active membership is an intentional revocation.
+  return candidates.filter(candidate => !candidate.auth_user_id || candidate.auth_user_id !== authUser.id);
+}
+
 async function readAuthTenantMemberships(authUser) {
   if (!authUser?.id) return [];
   try {
@@ -2015,9 +2023,7 @@ async function resolveTenantForEvent(event) {
     // Once memberships exist, only an unclaimed email profile may bootstrap a
     // first login. A removed/inactive membership must never fall back to the
     // app_users row and silently restore access.
-    const eligibleCandidates = memberships === null
-      ? candidates
-      : candidates.filter(candidate => !candidate.auth_user_id);
+    const eligibleCandidates = eligibleTenantProfileCandidates(candidates, authUser, memberships !== null);
     const candidateTenants = [...new Set(eligibleCandidates.map(candidate => candidate.tenant_id || DEFAULT_TENANT_ID))];
     if (requested) {
       if (!candidateTenants.includes(requested)) throw Object.assign(new Error('You do not have access to that organization'), { statusCode: 403 });
@@ -2318,7 +2324,7 @@ async function sessionProfile(event) {
   let profile = bestProfile(profileRows);
 
   if (profile) {
-    if (!profile.auth_user_id) {
+    if (!profile.auth_user_id || profile.auth_user_id !== authUser.id) {
       await supabase(`/rest/v1/app_users?${tenantQuery()}&id=eq.${encodeURIComponent(profile.id)}`, {
         method: 'PATCH',
         body: JSON.stringify({ auth_user_id: authUser.id, accepted_at: new Date().toISOString() })
@@ -4941,6 +4947,7 @@ if (process.env.NODE_ENV === 'test') exports.__test = {
   verifyMailgunRequest,
   requestedTenantId,
   selectTenantMembership,
+  eligibleTenantProfileCandidates,
   signKioskToken,
   verifyKioskToken
 };
@@ -4958,7 +4965,7 @@ async function routeRequest(event) {
     if (method === 'GET' && apiPath === '/version') {
       return json(200, {
         version: APP_VERSION,
-        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.30.09'
+        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.30.10'
       });
     }
 
