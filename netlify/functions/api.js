@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const { AsyncLocalStorage } = require('async_hooks');
 const Busboy = require('busboy');
 const XLSX = require('xlsx');
+const QRCode = require('qrcode');
 const financialParser = require('../../app/financial-reports.js');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -14,7 +15,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.27.0';
+const APP_VERSION = '1.28.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -24,6 +25,7 @@ const DEFAULT_TENANT_NAME = process.env.APP_TENANT_NAME || 'HIS Management Group
 const DEFAULT_TENANT_LOGO = process.env.APP_TENANT_LOGO || 'assets/his-management.png';
 const ALERT_TIME_ZONE = process.env.ALERT_TIME_ZONE || 'America/Chicago';
 const KIOSK_TOKEN_SECRET = process.env.KIOSK_TOKEN_SECRET || SUPABASE_SERVICE_ROLE_KEY || '';
+const QR_CHECKPOINT_SECRET = process.env.QR_CHECKPOINT_SECRET || KIOSK_TOKEN_SECRET;
 const KIOSK_SESSION_SECONDS = 8 * 60 * 60;
 const tenantRequestContext = new AsyncLocalStorage();
 const STORAGE_REFERENCE_PREFIX = 'dqops-storage://';
@@ -220,6 +222,30 @@ function verifyKioskToken(token, expectedType, expectedTenantId = tenantId()) {
     const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
     if ((expectedType && payload.type !== expectedType) || !payload.exp || payload.exp <= Math.floor(Date.now() / 1000)) return null;
     if (expectedTenantId && payload.tenantId !== expectedTenantId) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function signQrCheckpointToken(payload) {
+  if (!QR_CHECKPOINT_SECRET) throw Object.assign(new Error('QR checkpoints are not configured'), { statusCode: 503 });
+  const encoded = Buffer.from(JSON.stringify({ type: 'qr-checkpoint', ...payload })).toString('base64url');
+  const signature = crypto.createHmac('sha256', QR_CHECKPOINT_SECRET).update(encoded).digest('base64url');
+  return `${encoded}.${signature}`;
+}
+
+function verifyQrCheckpointToken(token, expectedTenantId = tenantId()) {
+  if (!token || !QR_CHECKPOINT_SECRET) return null;
+  const [encoded, signature] = String(token).split('.');
+  if (!encoded || !signature) return null;
+  const expected = crypto.createHmac('sha256', QR_CHECKPOINT_SECRET).update(encoded).digest();
+  let supplied;
+  try { supplied = Buffer.from(signature, 'base64url'); } catch { return null; }
+  if (expected.length !== supplied.length || !crypto.timingSafeEqual(expected, supplied)) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+    if (payload.type !== 'qr-checkpoint' || !payload.checkpointId || payload.tenantId !== expectedTenantId) return null;
     return payload;
   } catch {
     return null;
@@ -781,7 +807,7 @@ async function clientSubscriptionState(actor) {
 }
 
 function requiredFeatureForPath(apiPath = '') {
-  if (apiPath === '/day' || apiPath.startsWith('/task/') || apiPath === '/photo' || apiPath.startsWith('/temperature-')) return 'daily_operations';
+  if (apiPath === '/day' || apiPath.startsWith('/task/') || apiPath.startsWith('/qr-checkpoints/') || apiPath === '/photo' || apiPath.startsWith('/temperature-')) return 'daily_operations';
   if (apiPath === '/notices' || apiPath.startsWith('/notice') || apiPath.startsWith('/calendar/') || apiPath.startsWith('/resources/') || apiPath.startsWith('/store-documents/')) return 'communications';
   if (apiPath.startsWith('/maintenance-log/')) return 'maintenance_work_logs';
   if (apiPath.startsWith('/maintenance/')) return 'maintenance';
@@ -845,6 +871,9 @@ function newDay(locationId, templates = DEFAULT_TASK_TEMPLATES, date = today()) 
       area: task.area || '',
       prepArea: task.prepArea || '',
       managerPrep: Boolean(task.managerPrep || task.prepArea),
+      qrCheckpointId: task.qrCheckpointId || '',
+      qrCheckpointName: task.qrCheckpointName || '',
+      requiresQr: Boolean(task.qrCheckpointId),
       done: false
     };
     if (!baseTask.managerPrep || !baseTask.prepArea) return [baseTask];
@@ -1057,6 +1086,188 @@ function readingSession(reading) {
 function tempRequirementCount(definitions = TEMPERATURE_ITEMS) {
   return Object.values(definitions).filter(list => list.requiredDaily !== false)
     .reduce((sum, list) => sum + Object.values(list.areas || {}).reduce((itemSum, items) => itemSum + items.length, 0), 0) * 2;
+}
+
+function qrCheckpointToken(checkpoint) {
+  return signQrCheckpointToken({ tenantId: tenantId(), checkpointId: checkpoint.id });
+}
+
+function qrCheckpointClient(checkpoint, includeCode = false) {
+  const result = {
+    id: checkpoint.id,
+    locationId: checkpoint.location_id,
+    name: checkpoint.name,
+    area: checkpoint.area || '',
+    targetVisits: Number(checkpoint.target_visits || 0),
+    active: checkpoint.active !== false,
+    createdBy: checkpoint.created_by || '',
+    createdAt: checkpoint.created_at || '',
+    updatedAt: checkpoint.updated_at || ''
+  };
+  if (includeCode) {
+    result.token = qrCheckpointToken(checkpoint);
+    result.scanUrl = `${APP_PUBLIC_URL.replace(/\/$/, '')}/?checkpoint=${encodeURIComponent(result.token)}`;
+  }
+  return result;
+}
+
+async function qrCheckpointState(actor, query = {}) {
+  const requestedLocationId = String(query.locationId || '').trim();
+  if (requestedLocationId && requestedLocationId !== 'all' && AUTH_REQUIRED && !canAccessLocation(actor, requestedLocationId)) {
+    throw Object.assign(new Error('You do not have access to that location'), { statusCode: 403 });
+  }
+  const locationFilter = requestedLocationId && requestedLocationId !== 'all'
+    ? `&location_id=eq.${encodeURIComponent(requestedLocationId)}`
+    : '';
+  try {
+    const rows = await supabase(`/rest/v1/qr_checkpoints?${tenantQuery()}${locationFilter}&select=*&order=location_id.asc,name.asc`);
+    const accessible = rows.filter(row => !AUTH_REQUIRED || canAccessLocation(actor, row.location_id));
+    const mayManage = !AUTH_REQUIRED || canManage(actor);
+    const scanDate = String(query.date || localDate());
+    let scans = [];
+    if (mayManage) {
+      scans = await supabase(`/rest/v1/qr_checkpoint_scans?${tenantQuery()}${locationFilter}&scan_date=eq.${encodeURIComponent(scanDate)}&select=*&order=scanned_at.desc&limit=1000`);
+    }
+    return {
+      migrationReady: true,
+      canManage: mayManage,
+      checkpoints: accessible.map(row => qrCheckpointClient(row, mayManage)),
+      scans: scans.filter(row => !AUTH_REQUIRED || canAccessLocation(actor, row.location_id)).map(row => ({
+        id: row.id,
+        checkpointId: row.checkpoint_id,
+        locationId: row.location_id,
+        userId: row.app_user_id,
+        userName: row.user_name,
+        taskId: row.task_id || '',
+        taskName: row.task_name || '',
+        scanDate: row.scan_date,
+        scannedAt: row.scanned_at
+      }))
+    };
+  } catch (error) {
+    if ([400, 404].includes(error.statusCode)) return { migrationReady: false, canManage: !AUTH_REQUIRED || canManage(actor), checkpoints: [], scans: [] };
+    throw error;
+  }
+}
+
+async function saveQrCheckpoint(payload = {}, actor) {
+  if (AUTH_REQUIRED && !canManage(actor)) throw Object.assign(new Error('Only managers and above can manage QR checkpoints'), { statusCode: 403 });
+  const locationId = String(payload.locationId || '').trim();
+  const name = String(payload.name || '').trim().slice(0, 120);
+  if (!locationId || !name) throw Object.assign(new Error('Choose a location and enter a checkpoint name'), { statusCode: 400 });
+  if (AUTH_REQUIRED && !canAccessLocation(actor, locationId)) throw Object.assign(new Error('You do not have access to that location'), { statusCode: 403 });
+  const id = String(payload.id || '').trim();
+  const row = withTenant({
+    ...(id ? { id } : {}),
+    location_id: locationId,
+    name,
+    area: String(payload.area || '').trim().slice(0, 120),
+    target_visits: Math.min(100, Math.max(0, Number(payload.targetVisits || 0))),
+    active: payload.active !== false,
+    created_by: String(payload.createdBy || actor?.name || ''),
+    updated_at: new Date().toISOString()
+  });
+  try {
+    const rows = await supabase('/rest/v1/qr_checkpoints?on_conflict=tenant_id,id&select=*', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+      body: JSON.stringify(row)
+    });
+    return qrCheckpointClient(rows[0], true);
+  } catch (error) {
+    if ([400, 404].includes(error.statusCode)) throw Object.assign(new Error('QR checkpoint storage is not set up yet. Run supabase/add_qr_checkpoints.sql.'), { statusCode: 409 });
+    throw error;
+  }
+}
+
+async function deactivateQrCheckpoint(payload = {}, actor) {
+  if (AUTH_REQUIRED && !canManage(actor)) throw Object.assign(new Error('Only managers and above can manage QR checkpoints'), { statusCode: 403 });
+  const rows = await supabase(`/rest/v1/qr_checkpoints?${tenantQuery()}&id=eq.${encodeURIComponent(payload.id || '')}&select=*`);
+  const checkpoint = rows[0];
+  if (!checkpoint) throw Object.assign(new Error('Checkpoint not found'), { statusCode: 404 });
+  if (AUTH_REQUIRED && !canAccessLocation(actor, checkpoint.location_id)) throw Object.assign(new Error('You do not have access to that location'), { statusCode: 403 });
+  await supabase(`/rest/v1/qr_checkpoints?${tenantQuery()}&id=eq.${encodeURIComponent(checkpoint.id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ active: false, updated_at: new Date().toISOString() })
+  });
+  return { ok: true };
+}
+
+async function qrCheckpointSvg(query = {}, actor) {
+  if (AUTH_REQUIRED && !canManage(actor)) throw Object.assign(new Error('Only managers and above can print QR checkpoints'), { statusCode: 403 });
+  const rows = await supabase(`/rest/v1/qr_checkpoints?${tenantQuery()}&id=eq.${encodeURIComponent(query.id || '')}&active=eq.true&select=*`);
+  const checkpoint = rows[0];
+  if (!checkpoint) throw Object.assign(new Error('Active checkpoint not found'), { statusCode: 404 });
+  if (AUTH_REQUIRED && !canAccessLocation(actor, checkpoint.location_id)) throw Object.assign(new Error('You do not have access to that location'), { statusCode: 403 });
+  const client = qrCheckpointClient(checkpoint, true);
+  return { checkpoint: client, svg: await QRCode.toString(client.scanUrl, { type: 'svg', errorCorrectionLevel: 'M', margin: 2, width: 720 }) };
+}
+
+async function scanQrCheckpoint(payload = {}, actor) {
+  if (!actor?.id && AUTH_REQUIRED) throw Object.assign(new Error('Sign in or enter your employee PIN before scanning'), { statusCode: 401 });
+  const tokenData = verifyQrCheckpointToken(payload.token);
+  if (!tokenData) throw Object.assign(new Error('This QR checkpoint is not valid for this organization'), { statusCode: 400 });
+  const rows = await supabase(`/rest/v1/qr_checkpoints?${tenantQuery()}&id=eq.${encodeURIComponent(tokenData.checkpointId)}&active=eq.true&select=*`);
+  const checkpoint = rows[0];
+  if (!checkpoint) throw Object.assign(new Error('This QR checkpoint is inactive or no longer exists'), { statusCode: 404 });
+  if (AUTH_REQUIRED && !canAccessLocation(actor, checkpoint.location_id)) throw Object.assign(new Error('This checkpoint belongs to a different location'), { statusCode: 403 });
+  // Physical scans always belong to the server's current store day; clients cannot backdate proof of presence.
+  const scanDate = localDate();
+  let taskId = String(payload.taskId || '').trim();
+  let task = null;
+  let taskDay = null;
+  if (!taskId) {
+    taskDay = await readDay(checkpoint.location_id, scanDate);
+    task = (taskDay.tasks || []).find(entry => !entry.done && String(entry.qrCheckpointId || '') === String(checkpoint.id));
+    taskId = task?.id || '';
+  }
+  if (taskId) {
+    taskDay ||= await readDay(checkpoint.location_id, scanDate);
+    task ||= (taskDay.tasks || []).find(entry => String(entry.id) === taskId);
+    if (!task) throw Object.assign(new Error('That task is not on today’s checklist'), { statusCode: 404 });
+    if (String(task.qrCheckpointId || '') !== String(checkpoint.id)) throw Object.assign(new Error('This is not the checkpoint assigned to that task'), { statusCode: 403 });
+    if (task.done) return { duplicate: true, taskComplete: true, checkpoint: qrCheckpointClient(checkpoint), task };
+  }
+  if (!task) {
+    const duplicateSince = new Date(Date.now() - 60 * 1000).toISOString();
+    const duplicateRows = await supabase(`/rest/v1/qr_checkpoint_scans?${tenantQuery()}&checkpoint_id=eq.${encodeURIComponent(checkpoint.id)}&app_user_id=eq.${encodeURIComponent(actor?.id || 'local-user')}&scanned_at=gte.${encodeURIComponent(duplicateSince)}&select=*&order=scanned_at.desc&limit=1`);
+    if (duplicateRows[0]) return { duplicate: true, taskComplete: false, checkpoint: qrCheckpointClient(checkpoint), scan: duplicateRows[0] };
+  }
+  const inserted = await supabase('/rest/v1/qr_checkpoint_scans?select=*', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify(withTenant({
+      checkpoint_id: checkpoint.id,
+      location_id: checkpoint.location_id,
+      app_user_id: actor?.id || 'local-user',
+      user_name: actor?.name || 'Store employee',
+      task_id: task?.id || null,
+      task_name: task?.name || null,
+      scan_date: scanDate,
+      scanned_at: new Date().toISOString()
+    }))
+  });
+  const scan = inserted[0];
+  if (task && taskDay) {
+    task.done = true;
+    task.completedBy = actor?.name || 'Store employee';
+    task.completedById = actor?.id || '';
+    task.completedAt = scan.scanned_at;
+    task.qrScanEventId = scan.id;
+    await writeDay(checkpoint.location_id, scanDate, taskDay);
+  }
+  const countRows = await supabase(`/rest/v1/qr_checkpoint_scans?${tenantQuery()}&checkpoint_id=eq.${encodeURIComponent(checkpoint.id)}&scan_date=eq.${encodeURIComponent(scanDate)}&select=id`);
+  return { duplicate: false, taskComplete: Boolean(task), checkpoint: qrCheckpointClient(checkpoint), scan, countToday: countRows.length, day: taskDay };
+}
+
+async function assertQrTaskCompletions(savedDay = {}, submittedDay = {}) {
+  const priorTasks = new Map((savedDay.tasks || []).map(task => [String(task.id), task]));
+  const newlyCompleted = (submittedDay.tasks || []).filter(task => task.qrCheckpointId && task.done && !priorTasks.get(String(task.id))?.done);
+  for (const task of newlyCompleted) {
+    if (!task.qrScanEventId) throw Object.assign(new Error(`Scan the assigned QR checkpoint to complete “${task.name}”`), { statusCode: 403 });
+    const scans = await supabase(`/rest/v1/qr_checkpoint_scans?${tenantQuery()}&id=eq.${encodeURIComponent(task.qrScanEventId)}&checkpoint_id=eq.${encodeURIComponent(task.qrCheckpointId)}&task_id=eq.${encodeURIComponent(task.id)}&select=id&limit=1`);
+    if (!scans[0]) throw Object.assign(new Error(`A valid QR scan was not found for “${task.name}”`), { statusCode: 403 });
+  }
 }
 
 function complianceDateRange(start, end) {
@@ -2946,6 +3157,9 @@ function normalizeTaskTemplate(task = {}) {
     area: task.area || '',
     prepArea: task.prepArea || '',
     managerPrep: Boolean(task.managerPrep || task.prepArea),
+    qrCheckpointId: task.qrCheckpointId || '',
+    qrCheckpointName: task.qrCheckpointName || '',
+    requiresQr: Boolean(task.qrCheckpointId),
     locationId: task.locationId || 'all',
     photo: Boolean(task.photo),
     scheduleDays,
@@ -5319,7 +5533,9 @@ if (process.env.NODE_ENV === 'test') exports.__test = {
   storageObjectAllowedForTenant,
   dehydrateStorageReferences,
   fpcInspectionFiles,
-  consolidateFpcRecords
+  consolidateFpcRecords,
+  signQrCheckpointToken,
+  verifyQrCheckpointToken
 };
 
 async function routeRequest(event) {
@@ -5335,7 +5551,7 @@ async function routeRequest(event) {
     if (method === 'GET' && apiPath === '/version') {
       return json(200, {
         version: APP_VERSION,
-        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.08.31.2'
+        build: process.env.DEPLOY_ID || process.env.COMMIT_REF || '2026.09.01.1'
       });
     }
 
@@ -5485,6 +5701,8 @@ async function routeRequest(event) {
     if (method === 'GET' && apiPath === '/dashboard/preferences') return json(200, await dashboardPreferencesState(actor));
     if (method === 'GET' && apiPath === '/notification-preferences') return json(200, await managerNotificationPreferencesState(actor));
     if (method === 'GET' && apiPath === '/pop-campaigns/state') return json(200, await popCampaignState(actor));
+    if (method === 'GET' && apiPath === '/qr-checkpoints/state') return json(200, await qrCheckpointState(actor, query));
+    if (method === 'GET' && apiPath === '/qr-checkpoints/qr') return json(200, await qrCheckpointSvg(query, actor));
 
     if (method === 'POST' && apiPath === '/day') {
       const locationId = body.locationId || DEFAULT_LOCATION_ID;
@@ -5500,6 +5718,7 @@ async function routeRequest(event) {
           throw Object.assign(new Error('Day temperatures close at 2:00 PM'), { statusCode: 403 });
         }
       }
+      await assertQrTaskCompletions(savedDay, body.day || {});
       await writeDay(locationId, body.date, body.day);
       const readingKey = reading => `${reading.list || ''}|${reading.session || ''}|${reading.area || ''}|${reading.item || ''}|${reading.value}|${reading.time || ''}`;
       const priorReadings = new Set((savedDay.temps || []).map(readingKey));
@@ -5513,6 +5732,9 @@ async function routeRequest(event) {
     if (method === 'POST' && apiPath === '/task/snooze') {
       return json(200, await snoozeTask(body, actor));
     }
+    if (method === 'POST' && apiPath === '/qr-checkpoints/checkpoint') return json(200, { checkpoint: await saveQrCheckpoint(body, actor) });
+    if (method === 'POST' && apiPath === '/qr-checkpoints/deactivate') return json(200, await deactivateQrCheckpoint(body, actor));
+    if (method === 'POST' && apiPath === '/qr-checkpoints/scan') return json(200, await scanQrCheckpoint(body, actor));
 
     if (method === 'POST' && apiPath === '/photo') {
       const reference = await saveAttachment({ ...body, kind: body.taskId || 'checklist-photo', name: `${body.date}-${body.taskId}` });

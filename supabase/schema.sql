@@ -369,6 +369,40 @@ create index if not exists financial_daily_metrics_tenant_location_date_idx on p
 alter table public.financial_report_imports enable row level security;
 alter table public.financial_daily_metrics enable row level security;
 
+-- Printable physical checkpoints and their employee-attributed scan history.
+create table if not exists public.qr_checkpoints (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id text not null references public.tenants(id) on delete cascade,
+  location_id text not null,
+  name text not null,
+  area text not null default '',
+  target_visits integer not null default 0 check (target_visits >= 0 and target_visits <= 100),
+  active boolean not null default true,
+  created_by text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (tenant_id, id)
+);
+
+create table if not exists public.qr_checkpoint_scans (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id text not null references public.tenants(id) on delete cascade,
+  checkpoint_id uuid not null,
+  location_id text not null,
+  app_user_id text not null,
+  user_name text not null default '',
+  task_id text,
+  task_name text,
+  scan_date date not null,
+  scanned_at timestamptz not null default now(),
+  foreign key (tenant_id, checkpoint_id) references public.qr_checkpoints(tenant_id, id) on delete cascade,
+  foreign key (tenant_id, app_user_id) references public.app_users(tenant_id, id) on delete cascade
+);
+
+create index if not exists qr_checkpoints_tenant_location_idx on public.qr_checkpoints(tenant_id, location_id, active, name);
+create index if not exists qr_checkpoint_scans_tenant_date_idx on public.qr_checkpoint_scans(tenant_id, location_id, scan_date, scanned_at desc);
+create index if not exists qr_checkpoint_scans_checkpoint_idx on public.qr_checkpoint_scans(tenant_id, checkpoint_id, scanned_at desc);
+
 insert into public.subscription_plans(key, name, description, features, limits, sort_order)
 values
   ('basic', 'Basic', 'Core daily operations for a single organization.', '{"daily_operations":true,"communications":true,"food_safety_training":true}'::jsonb, '{"locations":5,"users":75,"history_days":90}'::jsonb, 10),
@@ -409,7 +443,9 @@ begin
     'billing_events',
     'financial_report_imports',
     'financial_daily_metrics',
-    'app_feedback'
+    'app_feedback',
+    'qr_checkpoints',
+    'qr_checkpoint_scans'
   ]
   loop
     if to_regclass(format('public.%I', table_name)) is not null then

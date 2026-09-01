@@ -14,6 +14,7 @@
   <link rel="stylesheet" href="temperature.css?v=2026-08-29-negative-overrun">
   <link rel="stylesheet" href="his-theme.css?v=2026-08-31-spanish">
   <link rel="stylesheet" href="subscription.css?v=1.22.0">
+  <link rel="stylesheet" href="qr-checkpoints.css?v=2026-09-01-1">
   <style>
     .receiving-issue-tools,.receiving-issue-list{width:100%;margin-top:12px}
     .receiving-issue{border-top:1px solid var(--line);padding:10px 0}
@@ -1420,6 +1421,10 @@
           <input id="newTask" placeholder="e.g. Deep clean ice machine">
         </label>
         <label class="check"><input type="checkbox" id="photoRequired"> Require a photo</label>
+        <label class="check"><input type="checkbox" id="newTaskQrRequired"> Require a QR checkpoint scan</label>
+        <label id="newTaskQrCheckpointLabel" hidden>Checkpoint
+          <select id="newTaskQrCheckpoint"></select>
+        </label>
         <button id="pushTaskBtn">Push to today's checklist</button>
       </article>
 
@@ -1464,6 +1469,9 @@
           <input id="templateTaskName" placeholder="e.g. Clean lobby windows">
         </label>
         <label class="check"><input type="checkbox" id="templatePhotoRequired"> Require a photo</label>
+        <label>QR checkpoint (optional)
+          <select id="templateQrCheckpoint"><option value="">No QR scan required</option></select>
+        </label>
         <button id="addTemplateTaskBtn" type="button">Add permanent task</button>
         <button id="loadAreaChecklistsBtn" class="ghost" type="button" hidden>Load DQ area checklists</button>
         <p class="hint">The prior imported items have been cleared while checklist names are preserved. Rebuild shorter lists here one item at a time or use the spreadsheet importer for reviewed batches.</p>
@@ -1544,6 +1552,20 @@
         <label>Escalate if not acknowledged<select id="storeAlarmEscalation"><option value="5">After 5 minutes</option><option value="10" selected>After 10 minutes</option><option value="15">After 15 minutes</option><option value="30">After 30 minutes</option></select></label>
         <div class="row-actions"><button id="sendStoreAlarmBtn" class="danger" type="button">Push alarm to tablet</button><button id="enableTabletNotificationsBtn" class="ghost" type="button">Enable notifications on this device</button></div>
         <h4>Recent alarm activity</h4><div id="storeAlarmHistory"><p class="hint">No alarm activity loaded.</p></div>
+      </article>
+
+      <article class="card form-card collapsible-card" id="qrCheckpointAdminCard">
+        <h3>QR checkpoints</h3>
+        <p class="hint">Create a printable code for a physical area. Every scan records the employee, store, checkpoint, and time. The same code can log repeated bathroom or cleaning checks throughout the day.</p>
+        <input id="qrCheckpointId" type="hidden">
+        <label>Location<select id="qrCheckpointLocation"></select></label>
+        <label>Checkpoint name<input id="qrCheckpointName" placeholder="e.g. Lobby restrooms"></label>
+        <label>Area or instructions<input id="qrCheckpointArea" placeholder="e.g. Check, clean, and restock both restrooms"></label>
+        <label>Daily visit target (optional)<input id="qrCheckpointTarget" type="number" min="0" max="100" value="0"></label>
+        <div class="row-actions"><button id="cancelQrCheckpointBtn" class="ghost" type="button" hidden>Cancel edit</button><button id="saveQrCheckpointBtn" type="button">Create checkpoint</button></div>
+        <p id="qrCheckpointMigrationHelp" class="hint" hidden>Run <b>supabase/add_qr_checkpoints.sql</b> in Supabase before creating checkpoints.</p>
+        <div id="qrCheckpointList"></div>
+        <details class="qr-scan-history"><summary>Checkpoint scan log</summary><label>Log date<input id="qrCheckpointLogDate" type="date"></label><div id="qrCheckpointScanLog"></div></details>
       </article>
 
       <article class="card form-card collapsible-card" id="temperatureStandardsCard">
@@ -2174,17 +2196,28 @@
     </form>
   </dialog>
 
+  <dialog id="qrScannerDialog" class="qr-scanner-dialog">
+    <form method="dialog">
+      <div class="modal-head"><div><p class="eyebrow">PHYSICAL CHECKPOINT</p><h3 id="qrScannerTitle">Scan QR checkpoint</h3></div><button id="closeQrScannerBtn" value="cancel" class="x" aria-label="Close">×</button></div>
+      <p id="qrScannerHint" class="hint">Point the camera at the printed DQ OPS checkpoint code.</p>
+      <video id="qrScannerVideo" class="qr-scanner-video" playsinline muted hidden></video>
+      <div id="qrScannerStatus" class="qr-scanner-status">Camera is not started.</div>
+      <button id="startQrScannerBtn" type="button">Start camera</button>
+      <details><summary>Camera scan not available?</summary><p class="hint">Use the phone or tablet Camera app to scan the printed code, or paste the checkpoint link below.</p><label>Checkpoint link or code<input id="qrScannerManualToken" autocomplete="off"></label><button id="submitQrManualBtn" type="button">Record scan</button></details>
+    </form>
+  </dialog>
+
   <section id="storeAlarmOverlay" class="store-alarm-overlay" hidden role="alertdialog" aria-modal="true" aria-labelledby="storeAlarmOverlayTitle">
     <div class="store-alarm-panel"><div class="store-alarm-beacon" aria-hidden="true">!</div><p class="eyebrow">URGENT STORE ALARM</p><h1 id="storeAlarmOverlayTitle">Required daily work is incomplete</h1><h2 id="storeAlarmOverlayLocation"></h2><p id="storeAlarmOverlayMessage"></p><p id="storeAlarmOverlaySummary" class="store-alarm-summary"></p><div id="storeAlarmOverlayMissing" class="store-alarm-missing"></div><p class="store-alarm-instruction">A signed-in employee must acknowledge this alarm. DQ OPS records the employee's name and the time.</p><div class="row-actions store-alarm-actions"><button id="acknowledgeStoreAlarmBtn" type="button">Acknowledge and open incomplete work</button><button id="enableAlarmSoundBtn" class="ghost" type="button">Enable alarm sound</button></div></div>
   </section>
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-08-31-2"></script>
-  <script src="i18n.js?v=2026-08-31-1"></script>
+  <script src="version.js?v=2026-09-01-1"></script>
+  <script src="i18n.js?v=2026-09-01-qr-checkpoints"></script>
   <script src="auth.js?v=2026-08-31-spanish"></script>
   <script src="financial-reports.js?v=2026-08-30-email-import"></script>
-  <script src="app.js?v=2026-08-31-spanish"></script>
+  <script src="app.js?v=2026-09-01-qr-checkpoints"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>

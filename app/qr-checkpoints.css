@@ -1,0 +1,24 @@
+.task-scan-tools { display: flex; justify-content: flex-end; margin: 10px 0 16px; }
+.qr-required-task { border-left: 4px solid #1f6fa8; }
+.qr-required-label { color: #1f6fa8 !important; font-weight: 800; margin-top: 5px; }
+.qr-task-scan-btn { background: #1f6fa8; white-space: nowrap; }
+.qr-checkpoint-row { display: flex; justify-content: space-between; gap: 16px; align-items: center; border-top: 1px solid var(--line); padding: 14px 0; }
+.qr-checkpoint-row:first-of-type { margin-top: 16px; }
+.qr-checkpoint-row p { margin: 3px 0 7px; }
+.qr-scan-history { margin-top: 18px; }
+.qr-scan-history summary { cursor: pointer; font-weight: 800; }
+.qr-scan-row { display: flex; justify-content: space-between; gap: 14px; border-top: 1px solid var(--line); padding: 10px 0; font-size: 13px; }
+.qr-scanner-dialog { width: min(94%, 560px); }
+.qr-scanner-video { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: #071b31; border-radius: 14px; margin: 14px 0; }
+.qr-scanner-status { background: #edf3fa; color: #0c315c; border-radius: 10px; padding: 12px; margin: 12px 0; }
+.qr-scanner-dialog details { margin-top: 15px; }
+.qr-scanner-dialog details summary { cursor: pointer; font-weight: 750; }
+.qr-scanner-dialog details button { width: 100%; }
+
+@media (max-width: 680px) {
+  .qr-checkpoint-row, .qr-scan-row { align-items: flex-start; flex-direction: column; }
+  .qr-checkpoint-row .row-actions { width: 100%; }
+  .qr-checkpoint-row .row-actions button { flex: 1; }
+  .task-scan-tools { justify-content: stretch; }
+  .task-scan-tools button { width: 100%; }
+}

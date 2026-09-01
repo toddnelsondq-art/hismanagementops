@@ -241,6 +241,11 @@ let dashboardMetrics = {
   maintenance: { completed: 0, open: 0, total: 0, percent: 0 }
 };
 let taskTemplates = baseTasks.map(task => ({ ...task, section: 'Opening', active: true }));
+let qrCheckpoints = { migrationReady: true, canManage: false, checkpoints: [], scans: [] };
+let qrScannerStream = null;
+let qrScannerTimer = null;
+let qrScannerTaskId = '';
+let qrCheckpointLogDate = dateKey;
 let pendingChecklistImport = [];
 let pendingFpcImport = [];
 let notices = [];
@@ -372,6 +377,7 @@ function setupDailyOpsLayout() {
     <div id="taskCategoryTabs" class="pill-row category-row"></div>
     <div id="taskSectionTabs" class="pill-row"></div>
     <div id="taskInStoreReminders"></div>
+    <div class="task-scan-tools"><button id="openQrScannerBtn" class="ghost" type="button">▣ Scan a checkpoint</button></div>
   `;
 
   const tempLogsView = document.createElement('section');
@@ -491,7 +497,7 @@ function arrangeManageSections() {
   locationLink.dataset.sectionView = 'locationsView';
   locationLink.innerHTML = '<span>⌖</span><b>Locations</b><small>Addresses, phone numbers, and store setup</small>';
   setupGroup.appendChild(locationLink);
-  ['companyDashboardDefaultCard', 'popCampaignAdminCard', 'checklistTemplateCard', 'temperatureStandardsCard', 'alertRulesCard'].forEach(id => setupGroup.appendChild($(`#${id}`)));
+  ['companyDashboardDefaultCard', 'popCampaignAdminCard', 'checklistTemplateCard', 'qrCheckpointAdminCard', 'temperatureStandardsCard', 'alertRulesCard'].forEach(id => setupGroup.appendChild($(`#${id}`)));
 
   $('#missingChecklistAdminCard').hidden = true;
   $('#teamProgressAdminCard').hidden = true;
@@ -842,6 +848,7 @@ async function loadState() {
     }
     if (!users.some(user => user.id === currentUserId)) currentUserId = users[0].id;
     if (!locations.some(location => location.id === currentLocationId)) currentLocationId = locations[0].id;
+    await loadQrCheckpointState();
     apiOnline = true;
   } catch (error) {
     const fallback = JSON.parse(localStorage.getItem('dailyops-v1') || '{}');
@@ -895,6 +902,16 @@ async function loadState() {
   await loadStoreAlarmState();
   await loadTemperatureStandards();
   render();
+  processPendingQrLink();
+}
+
+async function loadQrCheckpointState() {
+  if (!hostedAuthEnabled()) return;
+  try {
+    qrCheckpoints = await api(`/api/qr-checkpoints/state?locationId=all&date=${encodeURIComponent(qrCheckpointLogDate)}`);
+  } catch (error) {
+    qrCheckpoints = { migrationReady: false, canManage: canUseManage(), checkpoints: [], scans: [], error: error.message };
+  }
 }
 
 async function loadRolloutState() {
@@ -1657,17 +1674,19 @@ function render() {
       <p class="prep-readonly"><b>Quantity to prep:</b> ${prepQty !== '' ? escapeHtml(prepQty) : 'Not set by manager yet'}</p>
     ` : '';
     return `
-      <article class="card task task-clickable ${task.done ? 'done' : ''} ${task.pushed ? 'urgent' : ''} ${task.managerPrep || task.crewPrep ? 'prep-task' : ''}" data-task-card="${escapeHtml(task.id)}" role="button" tabindex="0" aria-label="${task.done ? 'Mark incomplete' : 'Mark complete'}: ${escapeHtml(task.name)}">
-        <input type="checkbox" data-check="${task.id}" ${task.done ? 'checked' : ''} ${task.photo && !task.photoUrl && !task.photoData ? 'disabled' : ''}>
+      <article class="card task task-clickable ${task.done ? 'done' : ''} ${task.pushed ? 'urgent' : ''} ${task.qrCheckpointId ? 'qr-required-task' : ''} ${task.managerPrep || task.crewPrep ? 'prep-task' : ''}" data-task-card="${escapeHtml(task.id)}" role="button" tabindex="0" aria-label="${task.qrCheckpointId && !task.done ? 'Scan checkpoint to complete' : task.done ? 'Mark incomplete' : 'Mark complete'}: ${escapeHtml(task.name)}">
+        <input type="checkbox" data-check="${task.id}" ${task.done ? 'checked' : ''} ${(task.qrCheckpointId && !task.done) || task.photo && !task.photoUrl && !task.photoData ? 'disabled' : ''}>
         <div>
           <div class="task-name">${escapeHtml(task.name)}</div>
           ${task.area ? `<span class="task-area-badge">${escapeHtml(task.area)}</span>` : ''}
           ${task.done && task.completedBy ? `<p class="task-completed-by">Completed by ${escapeHtml(task.completedBy)}${task.completedAt ? ` · ${escapeHtml(new Date(task.completedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))}` : ''}</p>` : ''}
           ${prepDetails}
           ${task.pushed ? '<span class="urgent-label">MANAGER ADDED</span>' : ''}
+          ${task.qrCheckpointId ? `<p class="qr-required-label">▣ ${task.done ? 'Completed at' : 'Scan required at'} ${escapeHtml(task.qrCheckpointName || 'assigned checkpoint')}</p>` : ''}
           ${task.snoozedFrom ? `<p class="hint">Snoozed from ${escapeHtml(prettyDate(task.snoozedFrom))}${task.snoozedBy ? ` by ${escapeHtml(task.snoozedBy)}` : ''}</p>` : ''}
         </div>
         <div class="task-actions">
+          ${task.qrCheckpointId && !task.done ? `<button class="qr-task-scan-btn" data-qr-task="${escapeHtml(task.id)}" type="button">Scan QR</button>` : ''}
           ${task.photo ? `<button class="photo-btn ${task.photoUrl || task.photoData ? 'photo-ok' : ''}" data-photo="${task.id}">${task.photoUrl || task.photoData ? '✓ Photo' : '📷 Required'}</button>` : ''}
           ${canUseManage(activeUser) && !task.done && !task.managerPrep && !task.crewPrep ? `<button class="ghost snooze-btn" data-snooze-task="${task.id}" type="button">Snooze</button>` : ''}
         </div>
@@ -1730,6 +1749,7 @@ function render() {
   renderTemperatureHistoryControls(visibleLocations, aboveStore);
   renderHistory();
   renderTaskTemplates();
+  renderQrCheckpoints();
   renderAlertRules();
   renderManagerNotificationPreferences();
   renderSubscriptionAdmin();
@@ -3360,6 +3380,180 @@ function renderOverdue() {
     : '<p class="hint">All locations have completed today’s checklist.</p>';
 }
 
+function checkpointOptions(locationId = currentLocationId, selected = '') {
+  return (qrCheckpoints.checkpoints || [])
+    .filter(checkpoint => checkpoint.active !== false && checkpoint.locationId === locationId)
+    .map(checkpoint => `<option value="${escapeHtml(checkpoint.id)}" ${checkpoint.id === selected ? 'selected' : ''}>${escapeHtml(checkpoint.name)}</option>`)
+    .join('');
+}
+
+function renderQrCheckpoints() {
+  if (!$('#qrCheckpointAdminCard')) return;
+  const canManage = qrCheckpoints.canManage && canUseManage();
+  $('#qrCheckpointAdminCard').hidden = !canManage;
+  if (!canManage) return;
+  const allowedLocations = locations.filter(location => isFullAccess() || userLocationIds().includes(location.id));
+  const preferredLocationId = $('#qrCheckpointLocation').value || currentLocationId;
+  const locationOptions = allowedLocations.map(location => `<option value="${escapeHtml(location.id)}">${escapeHtml(location.name)}</option>`).join('');
+  $('#qrCheckpointLocation').innerHTML = locationOptions;
+  $('#qrCheckpointLocation').value = allowedLocations.some(location => location.id === preferredLocationId) ? preferredLocationId : (allowedLocations.find(location => location.id === currentLocationId)?.id || allowedLocations[0]?.id || '');
+  $('#qrCheckpointMigrationHelp').hidden = qrCheckpoints.migrationReady;
+  $('#qrCheckpointLogDate').value = qrCheckpointLogDate;
+  $('#saveQrCheckpointBtn').disabled = !qrCheckpoints.migrationReady;
+  const active = (qrCheckpoints.checkpoints || []).filter(checkpoint => checkpoint.active !== false);
+  $('#qrCheckpointList').innerHTML = active.length ? active.map(checkpoint => {
+    const scans = (qrCheckpoints.scans || []).filter(scan => scan.checkpointId === checkpoint.id);
+    const period = qrCheckpointLogDate === dateKey ? 'today' : prettyDate(qrCheckpointLogDate);
+    const target = checkpoint.targetVisits ? `${scans.length}/${checkpoint.targetVisits} visits ${period}` : `${scans.length} visit${scans.length === 1 ? '' : 's'} ${period}`;
+    return `<article class="qr-checkpoint-row">
+      <div><b>${escapeHtml(checkpoint.name)}</b><p>${escapeHtml(locationName(checkpoint.locationId))}${checkpoint.area ? ` · ${escapeHtml(checkpoint.area)}` : ''}</p><span class="status">${escapeHtml(target)}</span></div>
+      <div class="row-actions"><button class="ghost" data-qr-print="${escapeHtml(checkpoint.id)}" type="button">Print QR</button><button class="ghost" data-qr-edit="${escapeHtml(checkpoint.id)}" type="button">Edit</button><button class="danger" data-qr-deactivate="${escapeHtml(checkpoint.id)}" type="button">Deactivate</button></div>
+    </article>`;
+  }).join('') : '<p class="hint">No QR checkpoints have been created yet.</p>';
+  $('#qrCheckpointScanLog').innerHTML = (qrCheckpoints.scans || []).length ? qrCheckpoints.scans.map(scan => {
+    const checkpoint = active.find(entry => entry.id === scan.checkpointId);
+    return `<div class="qr-scan-row"><span><b>${escapeHtml(checkpoint?.name || 'Checkpoint')}</b> · ${escapeHtml(locationName(scan.locationId))}${scan.taskName ? ` · Task: ${escapeHtml(scan.taskName)}` : ''}</span><span>${escapeHtml(scan.userName)} · ${escapeHtml(new Date(scan.scannedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))}</span></div>`;
+  }).join('') : '<p class="hint">No checkpoint scans were recorded for the selected date.</p>';
+
+  const todayCheckpointOptions = checkpointOptions(currentLocationId);
+  $('#newTaskQrCheckpoint').innerHTML = todayCheckpointOptions || '<option value="">Create a checkpoint first</option>';
+  $('#newTaskQrRequired').disabled = !todayCheckpointOptions;
+  $('#newTaskQrCheckpointLabel').hidden = !$('#newTaskQrRequired').checked;
+  const templateLocation = templateScope === 'all' ? '' : templateScope;
+  $('#templateQrCheckpoint').innerHTML = `<option value="">No QR scan required</option>${templateLocation ? checkpointOptions(templateLocation, $('#templateQrCheckpoint').value) : ''}`;
+  $('#templateQrCheckpoint').disabled = !templateLocation;
+  $('#templateQrCheckpoint').title = templateLocation ? '' : 'Choose a store-only checklist scope before assigning a physical checkpoint.';
+}
+
+async function saveQrCheckpoint() {
+  const body = {
+    id: $('#qrCheckpointId').value,
+    locationId: $('#qrCheckpointLocation').value,
+    name: $('#qrCheckpointName').value.trim(),
+    area: $('#qrCheckpointArea').value.trim(),
+    targetVisits: Number($('#qrCheckpointTarget').value || 0)
+  };
+  if (!body.name) return toast('Enter a checkpoint name');
+  try {
+    await api('/api/qr-checkpoints/checkpoint', { method: 'POST', body: JSON.stringify(body) });
+    cancelQrCheckpointEdit();
+    await loadQrCheckpointState();
+    render();
+    toast(body.id ? 'QR checkpoint updated' : 'QR checkpoint created');
+  } catch (error) { toast(`Checkpoint did not save: ${error.message}`); }
+}
+
+function editQrCheckpoint(id) {
+  const checkpoint = (qrCheckpoints.checkpoints || []).find(entry => entry.id === id);
+  if (!checkpoint) return;
+  $('#qrCheckpointId').value = checkpoint.id;
+  $('#qrCheckpointLocation').value = checkpoint.locationId;
+  $('#qrCheckpointName').value = checkpoint.name;
+  $('#qrCheckpointArea').value = checkpoint.area || '';
+  $('#qrCheckpointTarget').value = checkpoint.targetVisits || 0;
+  $('#saveQrCheckpointBtn').textContent = 'Save checkpoint';
+  $('#cancelQrCheckpointBtn').hidden = false;
+  $('#qrCheckpointName').focus();
+}
+
+function cancelQrCheckpointEdit() {
+  $('#qrCheckpointId').value = '';
+  $('#qrCheckpointName').value = '';
+  $('#qrCheckpointArea').value = '';
+  $('#qrCheckpointTarget').value = '0';
+  $('#saveQrCheckpointBtn').textContent = 'Create checkpoint';
+  $('#cancelQrCheckpointBtn').hidden = true;
+}
+
+async function deactivateQrCheckpoint(id) {
+  const checkpoint = (qrCheckpoints.checkpoints || []).find(entry => entry.id === id);
+  if (!checkpoint || !confirm(`Deactivate ${checkpoint.name}? The printed code will stop working.`)) return;
+  try {
+    await api('/api/qr-checkpoints/deactivate', { method: 'POST', body: JSON.stringify({ id }) });
+    await loadQrCheckpointState(); render(); toast('QR checkpoint deactivated');
+  } catch (error) { toast(`Checkpoint did not deactivate: ${error.message}`); }
+}
+
+async function printQrCheckpoint(id) {
+  const printWindow = window.open('', '_blank', 'width=850,height=1000');
+  if (!printWindow) return toast('Allow pop-ups to print the QR checkpoint');
+  printWindow.document.write('<p style="font-family:sans-serif;padding:30px">Preparing printable checkpoint…</p>');
+  try {
+    const result = await api(`/api/qr-checkpoints/qr?id=${encodeURIComponent(id)}`);
+    const checkpoint = result.checkpoint;
+    printWindow.document.open();
+    printWindow.document.write(`<!doctype html><html><head><title>${escapeHtml(checkpoint.name)} QR checkpoint</title><style>body{font-family:Arial,sans-serif;text-align:center;margin:0;padding:40px;color:#0c315c}.sheet{border:5px solid #0c315c;border-radius:28px;max-width:720px;margin:auto;padding:36px}h1{font-size:42px;margin:0 0 8px}.location{font-size:25px;font-weight:bold}.instructions{font-size:22px;color:#52677f}svg{width:min(90vw,560px);height:auto}.footer{margin-top:20px;font-size:18px}@media print{button{display:none}.sheet{break-inside:avoid}}</style></head><body><div class="sheet"><p>DQ OPS PHYSICAL CHECKPOINT</p><h1>${escapeHtml(checkpoint.name)}</h1><p class="location">${escapeHtml(locationName(checkpoint.locationId))}</p>${checkpoint.area ? `<p class="instructions">${escapeHtml(checkpoint.area)}</p>` : ''}${result.svg}<p class="footer">Scan with the store device, then identify yourself with your employee PIN if requested.</p><button onclick="window.print()">Print checkpoint</button></div></body></html>`);
+    printWindow.document.close();
+  } catch (error) { printWindow.close(); toast(`QR code did not load: ${error.message}`); }
+}
+
+function tokenFromCheckpointInput(value = '') {
+  const input = String(value || '').trim();
+  if (!input) return '';
+  try { return new URL(input, location.origin).searchParams.get('checkpoint') || input; } catch { return input; }
+}
+
+function stopQrScanner() {
+  if (qrScannerTimer) clearInterval(qrScannerTimer);
+  qrScannerTimer = null;
+  if (qrScannerStream) qrScannerStream.getTracks().forEach(track => track.stop());
+  qrScannerStream = null;
+  if ($('#qrScannerVideo')) { $('#qrScannerVideo').srcObject = null; $('#qrScannerVideo').hidden = true; }
+}
+
+function openQrScanner(taskId = '') {
+  qrScannerTaskId = taskId;
+  const task = (day.tasks || []).find(entry => entry.id === taskId);
+  $('#qrScannerTitle').textContent = task ? `Scan for: ${task.name}` : 'Scan QR checkpoint';
+  $('#qrScannerHint').textContent = task?.qrCheckpointName ? `Scan the “${task.qrCheckpointName}” code to complete this task.` : 'Point the camera at the printed DQ OPS checkpoint code.';
+  $('#qrScannerStatus').textContent = 'Camera is not started.';
+  $('#qrScannerManualToken').value = '';
+  $('#qrScannerDialog').showModal();
+}
+
+async function startQrScanner() {
+  stopQrScanner();
+  if (!('BarcodeDetector' in window)) {
+    $('#qrScannerStatus').textContent = 'This device does not support in-app QR scanning. Use its Camera app to open the printed code.';
+    return;
+  }
+  try {
+    const detector = new BarcodeDetector({ formats: ['qr_code'] });
+    qrScannerStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+    const video = $('#qrScannerVideo');
+    video.srcObject = qrScannerStream; video.hidden = false; await video.play();
+    $('#qrScannerStatus').textContent = 'Looking for a QR checkpoint…';
+    qrScannerTimer = setInterval(async () => {
+      if (!qrScannerStream || video.readyState < 2) return;
+      const codes = await detector.detect(video).catch(() => []);
+      if (codes[0]?.rawValue) { stopQrScanner(); await recordQrCheckpointScan(tokenFromCheckpointInput(codes[0].rawValue), qrScannerTaskId); }
+    }, 500);
+  } catch (error) { stopQrScanner(); $('#qrScannerStatus').textContent = `Camera could not start: ${error.message}`; }
+}
+
+async function recordQrCheckpointScan(token, taskId = '') {
+  if (!token) return toast('Scan or paste a checkpoint code');
+  try {
+    const result = await api('/api/qr-checkpoints/scan', { method: 'POST', body: JSON.stringify({ token, taskId, date: dateKey }) });
+    if (result.day) day = result.day;
+    await loadQrCheckpointState();
+    $('#qrScannerDialog')?.close(); stopQrScanner(); render();
+    toast(result.duplicate ? (result.taskComplete ? 'This task was already completed' : 'This visit was already recorded') : (result.taskComplete ? 'Task completed by QR scan' : `${result.checkpoint.name} visit recorded`));
+  } catch (error) { $('#qrScannerStatus').textContent = error.message; toast(`Scan did not save: ${error.message}`); }
+}
+
+let pendingQrLinkHandled = false;
+async function processPendingQrLink() {
+  if (pendingQrLinkHandled || !apiOnline) return;
+  const url = new URL(location.href);
+  const token = url.searchParams.get('checkpoint');
+  if (!token) return;
+  pendingQrLinkHandled = true;
+  url.searchParams.delete('checkpoint');
+  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+  await recordQrCheckpointScan(token);
+}
+
 function renderTaskTemplates() {
   if (!$('#templateSection')) return;
   const actor = currentUser();
@@ -3429,6 +3623,9 @@ function renderTaskTemplates() {
                   </select>
                 </label>
                 <label class="check"><input type="checkbox" data-template-edit-photo="${escapeHtml(id)}" ${task.photo ? 'checked' : ''}> Require a photo</label>
+                <label>QR checkpoint
+                  <select data-template-edit-qr="${escapeHtml(id)}"><option value="">No QR scan required</option>${checkpointOptions(templateLocationId(task), task.qrCheckpointId || '')}</select>
+                </label>
                 <div class="row-actions">
                   <button data-template-save="${escapeHtml(id)}" type="button">Save</button>
                   <button class="ghost" data-template-cancel="${escapeHtml(id)}" type="button">Cancel</button>
@@ -3438,7 +3635,7 @@ function renderTaskTemplates() {
           <div class="template-row">
             <div>
               <b>${escapeHtml(task.name)}</b>
-              <p class="hint">${escapeHtml(task.category || taskCategory(task))}${task.area ? ` • ${escapeHtml(task.area)}` : ''}${task.prepArea ? ` • ${escapeHtml(task.prepArea)} prep quantity item` : ''} • ${task.photo ? 'Photo required' : 'No photo required'}</p>
+              <p class="hint">${escapeHtml(task.category || taskCategory(task))}${task.area ? ` • ${escapeHtml(task.area)}` : ''}${task.prepArea ? ` • ${escapeHtml(task.prepArea)} prep quantity item` : ''} • ${task.photo ? 'Photo required' : 'No photo required'}${task.qrCheckpointId ? ` • QR: ${escapeHtml(task.qrCheckpointName || 'checkpoint required')}` : ''}</p>
             </div>
             <div class="row-actions">
               <button class="ghost" data-template-edit="${escapeHtml(id)}" type="button">Edit</button>
@@ -4284,6 +4481,8 @@ async function savePermanentTask() {
   const prepArea = $('#templatePrepArea')?.value || '';
   const category = prepArea ? 'Manager' : ($('#templateCategory')?.value || 'Manager');
   const area = $('#templateTaskArea')?.value || '';
+  const qrCheckpointId = $('#templateQrCheckpoint')?.value || '';
+  const qrCheckpointName = (qrCheckpoints.checkpoints || []).find(checkpoint => checkpoint.id === qrCheckpointId)?.name || '';
   const name = $('#templateTaskName').value.trim();
   if (!name) return toast('Enter a task description');
   try {
@@ -4297,7 +4496,9 @@ async function savePermanentTask() {
         area,
         prepArea,
         managerPrep: Boolean(prepArea),
-        photo: $('#templatePhotoRequired').checked
+        photo: $('#templatePhotoRequired').checked,
+        qrCheckpointId,
+        qrCheckpointName
       })
     })).taskTemplates;
     $('#templateCustomSection').value = '';
@@ -4305,6 +4506,7 @@ async function savePermanentTask() {
     if ($('#templatePrepArea')) $('#templatePrepArea').value = '';
     if ($('#templateTaskArea')) $('#templateTaskArea').value = '';
     $('#templatePhotoRequired').checked = false;
+    if ($('#templateQrCheckpoint')) $('#templateQrCheckpoint').value = '';
     render();
     toast('Permanent task added');
   } catch (error) {
@@ -4452,6 +4654,8 @@ async function saveTemplateEdit(id) {
   const area = document.querySelector(`[data-template-edit-area="${CSS.escape(id)}"]`)?.value || '';
   const category = prepArea ? 'Manager' : (document.querySelector(`[data-template-edit-category="${CSS.escape(id)}"]`)?.value || task.category || taskCategory(task));
   const photo = document.querySelector(`[data-template-edit-photo="${CSS.escape(id)}"]`)?.checked || false;
+  const qrCheckpointId = document.querySelector(`[data-template-edit-qr="${CSS.escape(id)}"]`)?.value || '';
+  const qrCheckpointName = (qrCheckpoints.checkpoints || []).find(checkpoint => checkpoint.id === qrCheckpointId)?.name || '';
   if (!name) return toast('Enter a task description');
   try {
     taskTemplates = (await api('/api/task-template', {
@@ -4461,6 +4665,8 @@ async function saveTemplateEdit(id) {
         id: taskTemplateId(task),
         name,
         photo,
+        qrCheckpointId,
+        qrCheckpointName,
         category,
         area,
         prepArea,
@@ -5208,6 +5414,14 @@ updatePageBackButtons(document.querySelector('.view.active')?.id || 'homeView');
 
 document.addEventListener('click', async event => {
   if (event.target.closest('.dashboard-alert-more > summary')) return;
+  const qrTaskButton = event.target.closest('[data-qr-task]');
+  if (qrTaskButton) { openQrScanner(qrTaskButton.dataset.qrTask); return; }
+  const qrPrintButton = event.target.closest('[data-qr-print]');
+  if (qrPrintButton) { await printQrCheckpoint(qrPrintButton.dataset.qrPrint); return; }
+  const qrEditButton = event.target.closest('[data-qr-edit]');
+  if (qrEditButton) { editQrCheckpoint(qrEditButton.dataset.qrEdit); return; }
+  const qrDeactivateButton = event.target.closest('[data-qr-deactivate]');
+  if (qrDeactivateButton) { await deactivateQrCheckpoint(qrDeactivateButton.dataset.qrDeactivate); return; }
   const removeTempLog = event.target.closest('[data-temp-log-remove]');
   if (removeTempLog) { if (confirm('Delete this temperature log and all of its configured items?')) removeTempLog.closest('.temperature-log-editor').remove(); return; }
   const addTempItem = event.target.closest('[data-temp-item-add]');
@@ -5376,6 +5590,7 @@ document.addEventListener('click', async event => {
   const checkbox = event.target.closest('[data-check]');
   if (checkbox) {
     const task = day.tasks.find(entry => entry.id === checkbox.dataset.check);
+    if (task.qrCheckpointId && !task.done) { checkbox.checked = false; openQrScanner(task.id); return; }
     task.done = checkbox.checked;
     task.completedBy = checkbox.checked ? currentUser().name : '';
     task.completedById = checkbox.checked ? currentUser().id : '';
@@ -5388,6 +5603,7 @@ document.addEventListener('click', async event => {
   if (taskCard && !event.target.closest('button, input, select, textarea, a, label')) {
     const task = day.tasks.find(entry => entry.id === taskCard.dataset.taskCard);
     if (!task) return;
+    if (task.qrCheckpointId && !task.done) { openQrScanner(task.id); return; }
     if (task.photo && !task.photoUrl && !task.photoData) return toast('Attach the required photo before completing this item');
     task.done = !task.done;
     task.completedBy = task.done ? currentUser().name : '';
@@ -5668,6 +5884,13 @@ document.addEventListener('change', async event => {
     localStorage.setItem('dailyops-template-scope', templateScope);
     editingTemplateId = null;
     renderTaskTemplates();
+    renderQrCheckpoints();
+  }
+  if (event.target.matches('#newTaskQrRequired')) $('#newTaskQrCheckpointLabel').hidden = !event.target.checked;
+  if (event.target.matches('#qrCheckpointLogDate')) {
+    qrCheckpointLogDate = event.target.value || dateKey;
+    await loadQrCheckpointState();
+    renderQrCheckpoints();
   }
   if (event.target.matches('#templatePrepArea')) {
     if (event.target.value && $('#templateCategory')) $('#templateCategory').value = 'Manager';
@@ -6977,11 +7200,16 @@ $('#pushTaskBtn').onclick = async () => {
   const name = $('#newTask').value.trim();
   if (!name) return toast('Enter a task description');
   const section = $('#newTaskSection').value;
-  day.tasks.push({ id: `extra-${Date.now()}`, name, section, photo: $('#photoRequired').checked, done: false, pushed: true });
+  const qrCheckpointId = $('#newTaskQrRequired').checked ? $('#newTaskQrCheckpoint').value : '';
+  if ($('#newTaskQrRequired').checked && !qrCheckpointId) return toast('Choose a QR checkpoint');
+  const qrCheckpointName = (qrCheckpoints.checkpoints || []).find(checkpoint => checkpoint.id === qrCheckpointId)?.name || '';
+  day.tasks.push({ id: `extra-${Date.now()}`, name, section, photo: $('#photoRequired').checked, qrCheckpointId, qrCheckpointName, requiresQr: Boolean(qrCheckpointId), done: false, pushed: true });
   selectedTaskSection = section;
   localStorage.setItem('dailyops-task-section', selectedTaskSection);
   $('#newTask').value = '';
   $('#photoRequired').checked = false;
+  $('#newTaskQrRequired').checked = false;
+  $('#newTaskQrCheckpointLabel').hidden = true;
   await persistAndRender('Task pushed to today');
 };
 
@@ -7017,6 +7245,14 @@ $('#createKioskCodeBtn').onclick = async () => {
 $('#noticesBtn').onclick = async () => { await refreshNoticesQuietly(); switchView('noticesView'); };
 $('#togglePreviousNoticesBtn').onclick = () => { showPreviousNotices = !showPreviousNotices; renderNotices(); };
 $('#addTemplateTaskBtn').onclick = savePermanentTask;
+$('#saveQrCheckpointBtn').onclick = saveQrCheckpoint;
+$('#cancelQrCheckpointBtn').onclick = cancelQrCheckpointEdit;
+$('#openQrScannerBtn').onclick = () => openQrScanner();
+$('#startQrScannerBtn').onclick = startQrScanner;
+$('#submitQrManualBtn').onclick = () => recordQrCheckpointScan(tokenFromCheckpointInput($('#qrScannerManualToken').value), qrScannerTaskId);
+$('#closeQrScannerBtn').onclick = stopQrScanner;
+$('#qrScannerDialog').addEventListener('close', stopQrScanner);
+$('#qrScannerDialog').addEventListener('cancel', stopQrScanner);
 $('#checklistImportFile').onchange = event => previewChecklistImport(event.target.files?.[0]);
 $('#importChecklistItemsBtn').onclick = importChecklistItems;
 $('#loadAreaChecklistsBtn').onclick = importAreaChecklists;
