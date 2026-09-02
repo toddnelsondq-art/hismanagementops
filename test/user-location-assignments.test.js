@@ -16,6 +16,7 @@ const migration = fs.readFileSync(
   path.join(__dirname, '..', 'supabase', 'add_user_location_assignments.sql'),
   'utf8'
 );
+const appSource = fs.readFileSync(path.join(__dirname, '..', 'app', 'app.js'), 'utf8');
 
 test('location assignment migration creates a tenant-safe normalized table and backfills legacy users', () => {
   assert.match(migration, /create table if not exists public\.user_location_assignments/i);
@@ -57,4 +58,10 @@ test('normalized assignments take precedence and notification subsets stay insid
     notificationLocationsForUser(user, { locationIds: ['store-b', 'store-c'] }, locations).map(location => location.id),
     ['store-b']
   );
+});
+
+test('new-user form preserves its chosen home store during renders and resets stale assignments after save', () => {
+  assert.match(appSource, /const selectedHomeLocation = \$\('#newUserLocation'\)\.value/);
+  assert.match(appSource, /location\.id === selectedHomeLocation/);
+  assert.match(appSource, /renderNewUserLocationChecks\(\{ reset: true \}\)/);
 });

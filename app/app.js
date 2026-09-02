@@ -3792,7 +3792,9 @@ function renderUsers() {
   const actor = currentUser();
   const visibleLocations = locations.filter(location => isFullAccess(actor) || userLocationIds(actor).includes(location.id));
   const roles = allowedAssignableRoles(actor);
+  const selectedHomeLocation = $('#newUserLocation').value;
   $('#newUserLocation').innerHTML = visibleLocations.map(location => `<option value="${location.id}">${location.name}</option>`).join('');
+  if (visibleLocations.some(location => location.id === selectedHomeLocation)) $('#newUserLocation').value = selectedHomeLocation;
   $('#newUserRole').innerHTML = roles.map(role => `<option>${role}</option>`).join('');
   renderNewUserLocationChecks();
   $('#addUserCard').style.display = roles.length ? '' : 'none';
@@ -3830,10 +3832,10 @@ function roleRank(role = 'Employee') {
   }[role] ?? 0;
 }
 
-function renderNewUserLocationChecks() {
+function renderNewUserLocationChecks({ reset = false } = {}) {
   if (!$('#newUserLocations')) return;
   const locationId = $('#newUserLocation').value;
-  const selected = [...document.querySelectorAll('#newUserLocations input:checked')].map(input => input.value);
+  const selected = reset ? [] : [...document.querySelectorAll('#newUserLocations input:checked')].map(input => input.value);
   const selectedIds = [...new Set([...(selected.length ? selected : []), locationId].filter(Boolean))];
   renderLocationChecks('#newUserLocations', selectedIds);
   $('#newUserLocationsWrap').style.display = roleUsesMultipleLocations($('#newUserRole').value) ? 'block' : 'none';
@@ -6388,7 +6390,7 @@ $('#addUserBtn').onclick = async () => {
     $('#newUserPin').value = '';
     $('#newUserMaintenance').checked = false;
     $('#newUserRole').value = 'Employee';
-    renderNewUserLocationChecks();
+    renderNewUserLocationChecks({ reset: true });
     toast(role === 'Employee' ? 'Employee added with PIN' : 'User added with temporary password');
   } catch (error) {
     toast(`User did not save: ${error.message}`);
