@@ -126,6 +126,8 @@ For an existing Supabase project, run [`supabase/add_kiosk_pin_login.sql`](supab
 
 For financial Day/Week/Month dashboard reporting, also run [`supabase/add_financial_reports.sql`](supabase/add_financial_reports.sql). Directors and Owners can then upload the Excel version of the Day-to-Day Financial Recap LY report from Manage. Managers and Area Managers only see financial results for their assigned locations.
 
+Store inspection documents can be filed automatically from an approved email sender. Configure the Netlify variables and Mailgun recipient route in [`DOCUMENT_EMAIL_SETUP.md`](DOCUMENT_EMAIL_SETUP.md), then maintain store-number mappings from Resources → Documents → Email document intake. Unclear documents remain in a Director/Owner review queue instead of being assigned by a guess.
+
 1. Sign in with a Manager, Area Manager, Director, or Owner account.
 2. Open Manage and set a four-digit PIN while adding or editing an Employee.
 3. In **Store tablets & employee PINs**, choose the store, name the tablet, and generate a setup code.

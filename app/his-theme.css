@@ -657,6 +657,24 @@ nav button[data-view="manageView"]{order:12}
 .financial-admin-row>div:first-child,.financial-correction-row>div:first-child{align-items:flex-start;flex-direction:column;gap:2px;min-width:0}
 .financial-admin-row small,.financial-correction-row small{color:var(--muted)}
 .financial-correction-row select{min-width:220px}
+.store-doc-email-admin{padding:0;overflow:hidden}
+.store-doc-email-admin>summary{display:flex;align-items:center;gap:14px;padding:18px 20px;cursor:pointer;list-style:none;color:var(--navy)}
+.store-doc-email-admin>summary::-webkit-details-marker{display:none}
+.store-doc-email-admin>summary>span:first-child{display:grid;gap:3px}
+.store-doc-email-admin>summary small{color:var(--muted);font-weight:600}
+.store-doc-email-admin>summary .status{margin-left:auto}
+.store-doc-email-body{padding:2px 20px 20px;border-top:1px solid var(--line)}
+.store-doc-email-mapping{display:grid;grid-template-columns:minmax(150px,.5fr) minmax(230px,1fr) auto;gap:12px;align-items:end;margin:14px 0}
+.store-doc-email-mapping label{margin:0}
+.store-doc-email-mapping-list{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
+.store-doc-email-mapping-list>span{padding:7px 10px;border-radius:999px;background:#eef3f9;color:var(--navy);font-size:13px}
+.store-doc-email-row{display:flex;justify-content:space-between;gap:18px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
+.store-doc-email-row>div:first-child{display:flex;flex-direction:column;align-items:flex-start;gap:3px;min-width:0}
+.store-doc-email-row small{color:var(--muted)}
+.store-doc-email-review-controls{display:grid;grid-template-columns:minmax(190px,1fr) 100px auto;gap:8px;align-items:center}
+.store-doc-email-review-controls select,.store-doc-email-review-controls input{width:100%}
+.store-doc-email-history{margin-top:18px}
+.store-doc-email-history>summary{cursor:pointer;color:var(--navy);font-weight:900}
 .dashboard-customize-dialog{width:min(680px,calc(100vw - 28px));max-height:88vh}
 .dashboard-customize-dialog form{overflow:auto;max-height:82vh}
 .dashboard-default-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}
@@ -704,6 +722,9 @@ nav button[data-view="manageView"]{order:12}
   .financial-admin-row,.financial-correction-row{align-items:stretch;flex-direction:column;gap:8px}
   .financial-admin-row>div:last-child,.financial-correction-row>div:last-child{justify-content:space-between}
   .financial-correction-row select{min-width:0;width:100%}
+  .store-doc-email-admin>summary,.store-doc-email-row{align-items:stretch;flex-direction:column}
+  .store-doc-email-admin>summary .status{margin-left:0;width:max-content}
+  .store-doc-email-mapping,.store-doc-email-review-controls{grid-template-columns:1fr}
 }
 
 .chart-legend{

@@ -15,7 +15,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.32.0';
+const APP_VERSION = '1.33.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -2022,7 +2022,7 @@ async function reassignFinancialReport(payload = {}, actor) {
   return { moved: true, businessDate, state: await financialReportState(actor, { range: 'day', locationId: 'all' }) };
 }
 
-function parseMultipartForm(event) {
+function parseMultipartForm(event, options = {}) {
   return new Promise((resolve, reject) => {
     const contentType = event.headers?.['content-type'] || event.headers?.['Content-Type'] || '';
     if (!/^multipart\/form-data/i.test(contentType)) return reject(Object.assign(new Error('Expected a multipart email request'), { statusCode: 400 }));
@@ -2030,7 +2030,9 @@ function parseMultipartForm(event) {
     const files = [];
     let parser;
     try {
-      parser = Busboy({ headers: { 'content-type': contentType }, limits: { files: 12, fileSize: 4 * 1024 * 1024, fields: 80 } });
+      const fileSize = Number(options.fileSize || 4 * 1024 * 1024);
+      const files = Number(options.files || 12);
+      parser = Busboy({ headers: { 'content-type': contentType }, limits: { files, fileSize, fields: 80 } });
     } catch (error) {
       return reject(Object.assign(error, { statusCode: 400 }));
     }
@@ -2038,7 +2040,7 @@ function parseMultipartForm(event) {
     parser.on('file', (name, stream, info) => {
       const chunks = [];
       stream.on('data', chunk => chunks.push(chunk));
-      stream.on('limit', () => reject(Object.assign(new Error(`${info.filename || 'Attachment'} exceeds the 4 MB email import limit`), { statusCode: 413 })));
+      stream.on('limit', () => reject(Object.assign(new Error(`${info.filename || 'Attachment'} exceeds the ${Math.floor(fileSize / 1024 / 1024)} MB email import limit`), { statusCode: 413 })));
       stream.on('end', () => files.push({ fieldName: name, filename: info.filename || name, mimeType: info.mimeType || '', buffer: Buffer.concat(chunks) }));
     });
     parser.on('error', reject);
@@ -2052,9 +2054,10 @@ function mailgunSenderAddress(value = '') {
   return String(angle?.[1] || value).trim().toLowerCase();
 }
 
-function verifyMailgunRequest(fields = {}) {
+function verifyMailgunRequest(fields = {}, options = {}) {
+  const label = String(options.label || 'Financial report');
   const signingKey = process.env.MAILGUN_WEBHOOK_SIGNING_KEY || '';
-  if (!signingKey) throw Object.assign(new Error('Financial email intake is not configured'), { statusCode: 503 });
+  if (!signingKey) throw Object.assign(new Error(`${label} email intake is not configured`), { statusCode: 503 });
   const timestamp = String(fields.timestamp || '');
   const token = String(fields.token || '');
   const suppliedHex = String(fields.signature || '').toLowerCase();
@@ -2066,9 +2069,10 @@ function verifyMailgunRequest(fields = {}) {
     throw Object.assign(new Error('Mailgun signature could not be verified'), { statusCode: 406 });
   }
   const sender = mailgunSenderAddress(fields.sender || fields.from || '');
-  const allowed = String(process.env.FINANCIAL_REPORT_ALLOWED_SENDERS || '').split(',').map(mailgunSenderAddress).filter(Boolean);
-  if (!allowed.length) throw Object.assign(new Error('No financial report senders are configured'), { statusCode: 503 });
-  if (!allowed.includes(sender)) throw Object.assign(new Error('This sender is not approved for financial report imports'), { statusCode: 406 });
+  const allowed = String(options.allowedSenders === undefined ? process.env.FINANCIAL_REPORT_ALLOWED_SENDERS || '' : options.allowedSenders)
+    .split(',').map(mailgunSenderAddress).filter(Boolean);
+  if (!allowed.length) throw Object.assign(new Error(`No ${label.toLowerCase()} senders are configured`), { statusCode: 503 });
+  if (!allowed.includes(sender)) throw Object.assign(new Error(`This sender is not approved for ${label.toLowerCase()} imports`), { statusCode: 406 });
   return sender;
 }
 
@@ -4316,8 +4320,270 @@ async function readStoreDocuments() {
   return Array.isArray(docs) ? docs : [];
 }
 
-async function storeDocumentsState() {
-  return { documents: await readStoreDocuments() };
+async function readDocumentEmailImports() {
+  const entries = await readMaintenanceKey('storeDocumentEmailImports', []);
+  return Array.isArray(entries) ? entries : [];
+}
+
+function normalizeDocumentStoreMapping(value) {
+  if (typeof value === 'string') return { locationId: value, locationName: '' };
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return { locationId: '', locationName: '' };
+  return { locationId: String(value.locationId || ''), locationName: String(value.locationName || value.sourceStoreName || '').slice(0, 160) };
+}
+
+async function readDocumentStoreMappings(allLocations = null) {
+  const locations = allLocations || await readLocations();
+  const locationIds = new Set(locations.map(location => location.id));
+  const mappings = {};
+  const financialMappings = await readFinancialStoreMappings(locations).catch(() => ({}));
+  for (const [code, value] of Object.entries(financialMappings)) {
+    const normalized = normalizeDocumentStoreMapping(value);
+    if (/^\d{4,6}$/.test(code) && locationIds.has(normalized.locationId)) mappings[code] = normalized;
+  }
+  for (const location of locations) {
+    for (const code of String(location.name || '').match(/\b\d{4,6}\b/g) || []) {
+      mappings[code] = { locationId: location.id, locationName: location.name };
+    }
+  }
+  const stored = await readMaintenanceKey('documentStoreMappings', {}).catch(() => ({}));
+  if (stored && typeof stored === 'object' && !Array.isArray(stored)) {
+    for (const [code, value] of Object.entries(stored)) {
+      const normalized = normalizeDocumentStoreMapping(value);
+      if (/^\d{4,6}$/.test(code) && locationIds.has(normalized.locationId)) mappings[code] = normalized;
+    }
+  }
+  return mappings;
+}
+
+function documentEmailCodes(value = '') {
+  return [...new Set(String(value).match(/\b\d{4,6}\b/g) || [])];
+}
+
+function documentEmailRecipientMatches(recipient = '', inboundAddress = '') {
+  const inbound = mailgunSenderAddress(inboundAddress);
+  if (!inbound) return true;
+  const received = mailgunSenderAddress(recipient);
+  const [localPart, domain] = inbound.split('@');
+  if (!localPart || !domain) return false;
+  return received === inbound || new RegExp(`^${localPart.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\+\\d{4,6}@${domain.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i').test(received);
+}
+
+function resolveDocumentEmailLocation({ recipient = '', subject = '', filename = '', mappings = {}, locations = [] } = {}) {
+  const recipientCodes = [...new Set([
+    ...[...String(recipient).matchAll(/\+(\d{4,6})(?=@)/gi)].map(match => match[1]),
+    ...documentEmailCodes(recipient)
+  ])];
+  const detectedCodes = [...new Set([...recipientCodes, ...documentEmailCodes(subject), ...documentEmailCodes(filename)])];
+  const matches = detectedCodes
+    .map(code => ({ code, ...normalizeDocumentStoreMapping(mappings[code]) }))
+    .filter(match => match.locationId && locations.some(location => location.id === match.locationId));
+  const matchedLocationIds = [...new Set(matches.map(match => match.locationId))];
+  if (matchedLocationIds.length === 1) {
+    const location = locations.find(item => item.id === matchedLocationIds[0]);
+    const code = matches.find(match => match.locationId === matchedLocationIds[0])?.code || '';
+    return { status: 'matched', location, code, detectedCodes };
+  }
+  if (matchedLocationIds.length > 1) return { status: 'ambiguous', location: null, code: '', detectedCodes };
+
+  const searchable = `${subject} ${filename}`.toLowerCase();
+  const nameMatches = locations.filter(location => {
+    const name = String(location.name || '').trim().toLowerCase();
+    return name.length >= 4 && searchable.includes(name);
+  });
+  if (nameMatches.length === 1) return { status: 'matched', location: nameMatches[0], code: '', detectedCodes };
+  return { status: nameMatches.length > 1 ? 'ambiguous' : 'unmatched', location: null, code: '', detectedCodes };
+}
+
+function supportedDocumentEmailFile(file = {}) {
+  const extension = path.extname(file.filename || '').toLowerCase();
+  return ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.csv', '.txt', '.jpg', '.jpeg', '.png', '.heic', '.webp'].includes(extension)
+    || /^image\//i.test(file.mimeType || '');
+}
+
+function documentEmailCategory(subject = '', filename = '') {
+  const text = `${subject} ${filename}`.toLowerCase();
+  if (/\bpermit\b/.test(text)) return 'Permit';
+  if (/\binsurance\b/.test(text)) return 'Insurance';
+  if (/\btraining\b/.test(text)) return 'Training';
+  if (/\boperations?\b/.test(text)) return 'Operations';
+  return 'Inspection';
+}
+
+function documentEmailTitle(subject = '', filename = '') {
+  const cleanSubject = String(subject || '').replace(/^(?:\s*(?:re|fw|fwd)\s*:\s*)+/i, '').trim();
+  if (cleanSubject && !/^(?:store )?document$/i.test(cleanSubject)) return cleanSubject.slice(0, 180);
+  return (path.basename(String(filename || ''), path.extname(String(filename || ''))) || 'Emailed store document').slice(0, 180);
+}
+
+async function saveBufferAttachment(file, locationId, kind = 'store-document-email') {
+  const mimeType = String(file.mimeType || 'application/octet-stream').slice(0, 150);
+  const pathname = tenantStoragePath({ locationId, kind, name: file.filename || 'emailed-document', mimeType });
+  const response = await fetch(`${SUPABASE_URL}/storage/v1/object/${STORAGE_BUCKET}/${pathname}`, {
+    method: 'POST',
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type': mimeType,
+      'x-upsert': 'false'
+    },
+    body: file.buffer
+  });
+  if (!response.ok) throw Object.assign(new Error(await response.text() || 'Emailed document could not be stored'), { statusCode: response.status });
+  return storageObjectReference(STORAGE_BUCKET, pathname);
+}
+
+async function storeDocumentsState(actor) {
+  const canReview = !AUTH_REQUIRED || isFullAccess(actor);
+  const allowedSenders = process.env.STORE_DOCUMENT_ALLOWED_SENDERS || process.env.FINANCIAL_REPORT_ALLOWED_SENDERS || '';
+  const inboundAddress = process.env.STORE_DOCUMENT_INBOUND_ADDRESS || '';
+  const allDocuments = await readStoreDocuments();
+  const documents = !AUTH_REQUIRED || isFullAccess(actor)
+    ? allDocuments
+    : allDocuments.filter(document => canAccessLocation(actor, document.locationId));
+  return {
+    documents,
+    emailImports: canReview ? await readDocumentEmailImports() : [],
+    mappings: canReview ? await readDocumentStoreMappings() : {},
+    canReview,
+    emailAutomation: canReview ? {
+      configured: Boolean(process.env.MAILGUN_WEBHOOK_SIGNING_KEY && allowedSenders && inboundAddress),
+      inboundAddress,
+      allowedSenders: allowedSenders.split(',').map(mailgunSenderAddress).filter(Boolean)
+    } : { configured: false, inboundAddress: '', allowedSenders: [] }
+  };
+}
+
+async function saveDocumentStoreMapping(payload, actor) {
+  if (AUTH_REQUIRED && !isFullAccess(actor)) throw Object.assign(new Error('Only Directors and Owners can change document store mappings'), { statusCode: 403 });
+  const storeCode = String(payload.storeCode || '').trim();
+  const locationId = String(payload.locationId || '');
+  if (!/^\d{4,6}$/.test(storeCode)) throw Object.assign(new Error('Enter a 4- to 6-digit store number'), { statusCode: 400 });
+  const locations = await readLocations();
+  const location = locations.find(item => item.id === locationId);
+  if (!location) throw Object.assign(new Error('Choose a valid DQ OPS location'), { statusCode: 400 });
+  const stored = await readMaintenanceKey('documentStoreMappings', {}).catch(() => ({}));
+  const mappings = stored && typeof stored === 'object' && !Array.isArray(stored) ? { ...stored } : {};
+  mappings[storeCode] = { locationId, locationName: location.name, updatedAt: new Date().toISOString(), updatedBy: actor?.name || actor?.email || 'Director' };
+  await writeMaintenanceKey('documentStoreMappings', mappings);
+  return storeDocumentsState(actor);
+}
+
+async function receiveStoreDocumentEmail(event) {
+  requireSupabase();
+  const entitlement = await effectiveSubscription(tenantId());
+  if (!entitlement.features.communications) throw Object.assign(new Error('Store documents are not enabled for this subscription'), { statusCode: 406 });
+  const { fields, files } = await parseMultipartForm(event, { files: 12, fileSize: 4 * 1024 * 1024 });
+  const allowedSenders = process.env.STORE_DOCUMENT_ALLOWED_SENDERS || process.env.FINANCIAL_REPORT_ALLOWED_SENDERS || '';
+  const sender = verifyMailgunRequest(fields, { label: 'Store document', allowedSenders });
+  const recipient = String(fields.recipient || fields.to || '').slice(0, 300);
+  if (!documentEmailRecipientMatches(recipient, process.env.STORE_DOCUMENT_INBOUND_ADDRESS || '')) {
+    throw Object.assign(new Error('This recipient is not configured for store document imports'), { statusCode: 406 });
+  }
+  const subject = String(fields.subject || 'Store document').slice(0, 200);
+  const locations = await readLocations();
+  const mappings = await readDocumentStoreMappings(locations);
+  const documents = await readStoreDocuments();
+  const imports = await readDocumentEmailImports();
+  let filed = 0;
+  let review = 0;
+  let duplicates = 0;
+  let unsupported = 0;
+
+  for (const file of files) {
+    if (!supportedDocumentEmailFile(file)) { unsupported += 1; continue; }
+    const sourceHash = crypto.createHash('sha256').update(file.buffer).digest('hex');
+    const match = resolveDocumentEmailLocation({ recipient, subject, filename: file.filename, mappings, locations });
+    const existingDocument = match.location && documents.find(document => document.sourceHash === sourceHash && document.locationId === match.location.id);
+    const existingReview = !match.location && imports.find(entry => entry.sourceHash === sourceHash && entry.status === 'needs_review');
+    if (existingDocument || existingReview) {
+      duplicates += 1;
+      imports.unshift({
+        id: `DOCMAIL-${Date.now()}-${crypto.randomUUID()}`,
+        status: 'duplicate', sender, recipient, subject, sourceFilename: file.filename,
+        sourceHash, detectedCodes: match.detectedCodes, locationId: match.location?.id || '',
+        locationName: match.location?.name || '', message: 'This attachment was already received.', createdAt: new Date().toISOString()
+      });
+      continue;
+    }
+
+    const url = await saveBufferAttachment(file, match.location?.id || 'email-review');
+    const title = documentEmailTitle(subject, file.filename);
+    const category = documentEmailCategory(subject, file.filename);
+    const baseImport = {
+      id: `DOCMAIL-${Date.now()}-${crypto.randomUUID()}`,
+      sender, recipient, subject, sourceFilename: file.filename, sourceHash, url, title, category,
+      detectedCodes: match.detectedCodes, detectedCode: match.code || '', createdAt: new Date().toISOString()
+    };
+    if (match.location) {
+      documents.unshift({
+        id: `DOC-${Date.now()}-${crypto.randomUUID()}`,
+        locationId: match.location.id,
+        locationName: match.location.name,
+        title,
+        category,
+        notes: `Received by email from ${sender}`,
+        url,
+        fileName: file.filename,
+        sourceHash,
+        sourceEmailId: baseImport.id,
+        createdBy: 'Automatic document email',
+        createdAt: new Date().toISOString(),
+        active: true
+      });
+      imports.unshift({ ...baseImport, status: 'filed', locationId: match.location.id, locationName: match.location.name, message: `Filed automatically under ${match.location.name}.` });
+      filed += 1;
+    } else {
+      imports.unshift({ ...baseImport, status: 'needs_review', locationId: '', locationName: '', message: match.status === 'ambiguous' ? 'More than one location matched. Choose the correct location.' : 'No saved store-number or location match was found.' });
+      review += 1;
+    }
+  }
+
+  if (!files.length || (!filed && !review && !duplicates && unsupported)) {
+    imports.unshift({
+      id: `DOCMAIL-${Date.now()}-${crypto.randomUUID()}`,
+      status: 'failed', sender, recipient, subject, sourceFilename: '', sourceHash: '', detectedCodes: [],
+      locationId: '', locationName: '', message: unsupported ? 'No supported document attachment was found.' : 'The email did not contain an attachment.', createdAt: new Date().toISOString()
+    });
+  }
+  await writeMaintenanceKey('storeDocuments', documents);
+  await writeMaintenanceKey('storeDocumentEmailImports', imports.slice(0, 100));
+  return json(200, { accepted: true, filed, review, duplicates, unsupported });
+}
+
+async function fileReviewedStoreDocumentEmail(payload, actor) {
+  if (AUTH_REQUIRED && !isFullAccess(actor)) throw Object.assign(new Error('Only Directors and Owners can file emailed documents'), { statusCode: 403 });
+  const imports = await readDocumentEmailImports();
+  const index = imports.findIndex(entry => entry.id === String(payload.id || ''));
+  const entry = imports[index];
+  if (!entry || entry.status !== 'needs_review' || !entry.url) throw Object.assign(new Error('That document is no longer waiting for review'), { statusCode: 404 });
+  const locations = await readLocations();
+  const location = locations.find(item => item.id === String(payload.locationId || ''));
+  if (!location) throw Object.assign(new Error('Choose the correct location'), { statusCode: 400 });
+  const documents = await readStoreDocuments();
+  const duplicate = documents.some(document => document.sourceHash === entry.sourceHash && document.locationId === location.id);
+  if (!duplicate) {
+    documents.unshift({
+      id: `DOC-${Date.now()}-${crypto.randomUUID()}`,
+      locationId: location.id,
+      locationName: location.name,
+      title: entry.title || documentEmailTitle(entry.subject, entry.sourceFilename),
+      category: entry.category || 'Inspection',
+      notes: `Received by email from ${entry.sender || 'approved sender'}`,
+      url: entry.url,
+      fileName: entry.sourceFilename || 'Emailed document',
+      sourceHash: entry.sourceHash || '',
+      sourceEmailId: entry.id,
+      createdBy: actor?.name || actor?.email || 'Director',
+      createdAt: new Date().toISOString(),
+      active: true
+    });
+    await writeMaintenanceKey('storeDocuments', documents);
+  }
+  imports[index] = { ...entry, status: duplicate ? 'duplicate' : 'filed', locationId: location.id, locationName: location.name, message: duplicate ? `Already filed under ${location.name}.` : `Filed after review under ${location.name}.`, completedAt: new Date().toISOString(), completedBy: actor?.name || actor?.email || 'Director' };
+  await writeMaintenanceKey('storeDocumentEmailImports', imports.slice(0, 100));
+  const storeCode = String(payload.storeCode || (Array.isArray(entry.detectedCodes) && entry.detectedCodes.length === 1 ? entry.detectedCodes[0] : '')).trim();
+  if (/^\d{4,6}$/.test(storeCode)) await saveDocumentStoreMapping({ storeCode, locationId: location.id }, actor);
+  return storeDocumentsState(actor);
 }
 
 async function saveStoreDocument(payload, actor) {
@@ -4338,12 +4604,13 @@ async function saveStoreDocument(payload, actor) {
     notes: payload.notes || '',
     url: documentUrl,
     fileName: payload.attachment?.name || payload.fileName || title,
+    sourceHash: payload.sourceHash || '',
     createdBy: actor?.name || payload.createdBy || 'Area Manager',
     createdAt: new Date().toISOString(),
     active: true
   });
   await writeMaintenanceKey('storeDocuments', documents);
-  return storeDocumentsState();
+  return storeDocumentsState(actor);
 }
 
 function defaultManagerNotificationPreferences() {
@@ -5770,6 +6037,12 @@ if (process.env.NODE_ENV === 'test') exports.__test = {
   parseFinancialAttachment,
   financialRowsReady,
   verifyMailgunRequest,
+  documentEmailCodes,
+  documentEmailRecipientMatches,
+  resolveDocumentEmailLocation,
+  supportedDocumentEmailFile,
+  documentEmailCategory,
+  documentEmailTitle,
   requestedTenantId,
   selectTenantMembership,
   eligibleTenantProfileCandidates,
@@ -5798,6 +6071,7 @@ async function routeRequest(event) {
 
     if (method === 'OPTIONS') return json(200, {});
     if (method === 'POST' && apiPath === '/financial-reports/email-ingest') return await receiveFinancialReportEmail(event);
+    if (method === 'POST' && apiPath === '/store-documents/email-ingest') return await receiveStoreDocumentEmail(event);
     const body = event.body ? JSON.parse(event.body) : {};
 
     if (method === 'GET' && apiPath === '/version') {
@@ -5944,7 +6218,7 @@ async function routeRequest(event) {
     if (method === 'GET' && apiPath === '/temperature-compliance') return json(200, await temperatureComplianceHistory(actor, query));
     if (method === 'GET' && apiPath === '/alerts/check') return json(200, await checkAlerts(query, actor));
     if (method === 'GET' && apiPath === '/fpc/state') return json(200, await fpcState(actor));
-    if (method === 'GET' && apiPath === '/store-documents/state') return json(200, await storeDocumentsState());
+    if (method === 'GET' && apiPath === '/store-documents/state') return json(200, await storeDocumentsState(actor));
     if (method === 'GET' && apiPath === '/resources/state') return json(200, await resourcesState());
     if (method === 'GET' && apiPath === '/receipts/state') return json(200, await receiptState(actor));
     if (method === 'GET' && apiPath === '/inspections/state') return json(200, await inspectionState(actor));
@@ -6081,6 +6355,12 @@ async function routeRequest(event) {
     }
     if (method === 'POST' && apiPath === '/store-documents/document') {
       return json(200, await saveStoreDocument(body, actor));
+    }
+    if (method === 'POST' && apiPath === '/store-documents/email-mapping') {
+      return json(200, await saveDocumentStoreMapping(body, actor));
+    }
+    if (method === 'POST' && apiPath === '/store-documents/email-file') {
+      return json(200, await fileReviewedStoreDocumentEmail(body, actor));
     }
     if (method === 'POST' && apiPath === '/receipts/receipt') return json(200, await saveReceipt(body, actor));
     if (method === 'POST' && apiPath === '/inspections/inspection') return json(200, await saveVisitInspection(body, actor));

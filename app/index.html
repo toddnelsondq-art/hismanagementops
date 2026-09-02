@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="assets/pwa-icon-180.png">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="temperature.css?v=2026-08-29-negative-overrun">
-  <link rel="stylesheet" href="his-theme.css?v=2026-09-02-work-order-timeline">
+  <link rel="stylesheet" href="his-theme.css?v=2026-09-02-document-email">
   <link rel="stylesheet" href="subscription.css?v=1.22.0">
   <link rel="stylesheet" href="qr-checkpoints.css?v=2026-09-01-1">
   <style>
@@ -735,6 +735,29 @@
         <button id="saveStoreDocBtn" type="button">Upload document</button>
       </article>
 
+      <details id="storeDocsEmailAdmin" class="card store-doc-email-admin" hidden>
+        <summary><span><b>Email document intake</b><small>Automatic filing, store mappings, and items needing review</small></span><span id="storeDocsEmailReviewCount" class="status">0 to review</span></summary>
+        <div class="store-doc-email-body">
+          <p id="storeDocsEmailStatus" class="hint">Email intake is not configured yet.</p>
+          <div class="store-doc-email-mapping">
+            <label>Store number
+              <input id="storeDocEmailStoreCode" inputmode="numeric" maxlength="6" placeholder="e.g. 10204">
+            </label>
+            <label>DQ OPS location
+              <select id="storeDocEmailMappingLocation"></select>
+            </label>
+            <button id="saveStoreDocEmailMappingBtn" type="button">Save mapping</button>
+          </div>
+          <div id="storeDocEmailMappings" class="store-doc-email-mapping-list"></div>
+          <h4>Needs review</h4>
+          <div id="storeDocEmailReviewList"></div>
+          <details class="store-doc-email-history">
+            <summary>Recent email import history</summary>
+            <div id="storeDocEmailHistory"></div>
+          </details>
+        </div>
+      </details>
+
       <div id="storeDocsList"></div>
     </section>
 
@@ -1118,6 +1141,7 @@
         <article class="card help-section" id="help-documents">
           <h3>Documents</h3>
           <p>Provides location-specific store documents and shared files. Choose a location to filter the list. Area Managers and above can upload a file or add a shared link with a title, category, and notes.</p>
+          <p class="hint">Approved inspection documents can also be emailed into HIS OPS. A store number in the email address, subject, or attachment filename files it automatically; anything unclear is held for Director or Owner review.</p>
           <a href="#helpContents">Back to contents</a>
         </article>
 
@@ -2267,12 +2291,12 @@
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-09-02-1"></script>
+  <script src="version.js?v=2026-09-02-2"></script>
   <script src="i18n.js?v=2026-09-01-qr-checkpoints"></script>
   <script src="auth.js?v=2026-08-31-spanish"></script>
   <script src="financial-reports.js?v=2026-08-30-email-import"></script>
   <script src="agent-tools.js?v=2026-09-01-agent-scope"></script>
-  <script src="app.js?v=2026-09-02-work-order-timeline"></script>
+  <script src="app.js?v=2026-09-02-document-email"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>

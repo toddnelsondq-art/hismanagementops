@@ -289,7 +289,7 @@ let calendarLocationFilter = localStorage.getItem('calendar-location-filter') ||
 let maintenancePriorityOrder = [];
 let fpc = { records: [] };
 let fpcLocationId = localStorage.getItem('fpc-location') || 'all';
-let storeDocuments = { documents: [] };
+let storeDocuments = { documents: [], emailImports: [], mappings: {}, canReview: false, emailAutomation: { configured: false, inboundAddress: '', allowedSenders: [] } };
 let storeDocsLocationId = localStorage.getItem('store-docs-location') || 'all';
 let resources = { resources: [] };
 let resourcesLocationId = localStorage.getItem('resources-location') || 'all';
@@ -1100,7 +1100,7 @@ async function loadStoreDocumentsState() {
   try {
     storeDocuments = await api('/api/store-documents/state');
   } catch {
-    storeDocuments = { documents: [] };
+    storeDocuments = { documents: [], emailImports: [], mappings: {}, canReview: false, emailAutomation: { configured: false, inboundAddress: '', allowedSenders: [] } };
   }
 }
 
@@ -3129,6 +3129,48 @@ function renderStoreDocuments() {
       </div>
     </article>
   `).join('') : '<div class="empty">No store documents for this view yet.</div>';
+
+  const emailAdmin = $('#storeDocsEmailAdmin');
+  if (!emailAdmin) return;
+  emailAdmin.hidden = !storeDocuments.canReview;
+  if (!storeDocuments.canReview) return;
+  const automation = storeDocuments.emailAutomation || {};
+  const inboundLabel = automation.inboundAddress ? ` Send inspection attachments to ${automation.inboundAddress}.` : '';
+  $('#storeDocsEmailStatus').textContent = automation.configured
+    ? `Email intake is configured.${inboundLabel} Attachments must be under 4 MB.`
+    : 'Email intake code is ready. Add the inbound address and approved senders in Netlify, then add the Mailgun route.';
+  const locationOptions = locations.map(location => `<option value="${escapeHtml(location.id)}">${escapeHtml(location.name)}</option>`).join('');
+  $('#storeDocEmailMappingLocation').innerHTML = locationOptions;
+  const mappings = Object.entries(storeDocuments.mappings || {}).sort(([a], [b]) => a.localeCompare(b));
+  $('#storeDocEmailMappings').innerHTML = mappings.length
+    ? mappings.map(([code, value]) => {
+      const locationId = typeof value === 'string' ? value : value.locationId;
+      return `<span><b>${escapeHtml(code)}</b> → ${escapeHtml(locationName(locationId))}</span>`;
+    }).join('')
+    : '<span class="hint">No document-specific store mappings saved yet. Financial-report mappings and store numbers in location names are also recognized.</span>';
+
+  const imports = storeDocuments.emailImports || [];
+  const pending = imports.filter(entry => entry.status === 'needs_review');
+  $('#storeDocsEmailReviewCount').textContent = `${pending.length} to review`;
+  $('#storeDocEmailReviewList').innerHTML = pending.length ? pending.map(entry => {
+    const detectedCode = Array.isArray(entry.detectedCodes) && entry.detectedCodes.length === 1 ? entry.detectedCodes[0] : '';
+    return `
+      <article class="store-doc-email-row" data-document-email-review-row="${escapeHtml(entry.id)}">
+        <div><b>${escapeHtml(entry.sourceFilename || entry.subject || 'Emailed document')}</b><small>${escapeHtml(entry.sender || '')}${entry.createdAt ? ` · ${escapeHtml(new Date(entry.createdAt).toLocaleString())}` : ''}</small><small>${escapeHtml(entry.message || '')}</small>${entry.url ? `<a href="${escapeHtml(entry.url)}" target="_blank" rel="noopener">Open attachment</a>` : ''}</div>
+        <div class="store-doc-email-review-controls"><select data-document-email-location>${locationOptions}</select><input data-document-email-code inputmode="numeric" maxlength="6" value="${escapeHtml(detectedCode)}" placeholder="Store #"><button data-file-document-email="${escapeHtml(entry.id)}" type="button">File document</button></div>
+      </article>`;
+  }).join('') : '<p class="hint">No emailed documents need review.</p>';
+  document.querySelectorAll('[data-file-document-email]').forEach(button => {
+    button.onclick = () => fileStoreDocumentEmail(button);
+  });
+
+  const statusClass = status => status === 'filed' ? 'done' : status === 'needs_review' ? 'open' : status === 'duplicate' ? '' : 'critical';
+  $('#storeDocEmailHistory').innerHTML = imports.length ? imports.slice(0, 30).map(entry => `
+    <article class="store-doc-email-row compact">
+      <div><b>${escapeHtml(entry.sourceFilename || entry.subject || 'Email')}</b><small>${escapeHtml(entry.locationName || entry.sender || '')}${entry.createdAt ? ` · ${escapeHtml(new Date(entry.createdAt).toLocaleString())}` : ''}</small><small>${escapeHtml(entry.message || '')}</small></div>
+      <span class="status-pill ${statusClass(entry.status)}">${escapeHtml(String(entry.status || 'received').replace('_', ' '))}</span>
+    </article>
+  `).join('') : '<p class="hint">No document emails have been received yet.</p>';
 }
 
 function renderResources() {
@@ -5345,6 +5387,52 @@ async function saveStoreDocument() {
     button.textContent = 'Upload document';
   }
 }
+
+async function saveStoreDocumentEmailMapping() {
+  const storeCode = $('#storeDocEmailStoreCode').value.trim();
+  const locationId = $('#storeDocEmailMappingLocation').value;
+  if (!/^\d{4,6}$/.test(storeCode)) return toast('Enter a 4- to 6-digit store number');
+  const button = $('#saveStoreDocEmailMappingBtn');
+  button.disabled = true;
+  try {
+    storeDocuments = await api('/api/store-documents/email-mapping', {
+      method: 'POST',
+      body: JSON.stringify({ storeCode, locationId })
+    });
+    $('#storeDocEmailStoreCode').value = '';
+    renderStoreDocuments();
+    toast(`Store ${storeCode} document mapping saved`);
+  } catch (error) {
+    toast(`Mapping did not save: ${error.message}`);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function fileStoreDocumentEmail(button) {
+  const row = button.closest('[data-document-email-review-row]');
+  const id = button.dataset.fileDocumentEmail;
+  const locationId = row?.querySelector('[data-document-email-location]')?.value || '';
+  const storeCode = row?.querySelector('[data-document-email-code]')?.value.trim() || '';
+  if (!locationId) return toast('Choose the correct location');
+  if (storeCode && !/^\d{4,6}$/.test(storeCode)) return toast('The optional store number must be 4 to 6 digits');
+  button.disabled = true;
+  button.textContent = 'Filing…';
+  try {
+    storeDocuments = await api('/api/store-documents/email-file', {
+      method: 'POST',
+      body: JSON.stringify({ id, locationId, storeCode })
+    });
+    renderStoreDocuments();
+    toast('Emailed document filed');
+  } catch (error) {
+    toast(`Document did not file: ${error.message}`);
+    button.disabled = false;
+    button.textContent = 'File document';
+  }
+}
+
+$('#saveStoreDocEmailMappingBtn').onclick = saveStoreDocumentEmailMapping;
 
 function resetResourceForm() {
   $('#resourceId').value = '';
