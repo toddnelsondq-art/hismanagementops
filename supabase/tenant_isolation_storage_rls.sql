@@ -40,6 +40,7 @@ begin
     'tenants',
     'locations',
     'app_users',
+    'user_location_assignments',
     'kiosk_devices',
     'kiosk_enrollments',
     'invites',
@@ -74,7 +75,7 @@ from pg_class c
 join pg_namespace n on n.oid = c.relnamespace
 where n.nspname = 'public'
   and c.relname in (
-    'tenants', 'locations', 'app_users', 'kiosk_devices', 'kiosk_enrollments',
+    'tenants', 'locations', 'app_users', 'user_location_assignments', 'kiosk_devices', 'kiosk_enrollments',
     'invites', 'days', 'maintenance_data', 'tenant_memberships',
     'subscription_plans', 'tenant_subscriptions', 'location_addons',
     'billing_events', 'financial_report_imports', 'financial_daily_metrics',

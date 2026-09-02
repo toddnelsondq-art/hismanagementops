@@ -15,7 +15,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.28.0';
+const APP_VERSION = '1.29.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -932,11 +932,91 @@ async function readLocations() {
   }));
 }
 
+function legacyUserLocationIds(user = {}) {
+  const stored = Array.isArray(user.location_ids) ? user.location_ids : [];
+  return [...new Set([user.location_id, ...stored]
+    .filter(value => value !== null && value !== undefined && String(value).trim())
+    .map(String))];
+}
+
+function assignmentIsCurrent(assignment = {}, now = new Date()) {
+  if (assignment.active === false) return false;
+  if (assignment.starts_at && new Date(assignment.starts_at) > now) return false;
+  if (assignment.ends_at && new Date(assignment.ends_at) <= now) return false;
+  return true;
+}
+
+async function readUserLocationAssignmentRows({ userIds = [], locationId = '' } = {}) {
+  const filters = [tenantQuery(), 'active=eq.true'];
+  const cleanUserIds = [...new Set(userIds.map(String).filter(Boolean))];
+  if (cleanUserIds.length) filters.push(`user_id=in.(${cleanUserIds.map(id => `"${id.replace(/"/g, '')}"`).join(',')})`);
+  if (locationId) filters.push(`location_id=eq.${encodeURIComponent(locationId)}`);
+  try {
+    const rows = await supabase(`/rest/v1/user_location_assignments?${filters.join('&')}&select=user_id,location_id,is_primary,active,starts_at,ends_at,assigned_at`);
+    return rows.filter(row => assignmentIsCurrent(row));
+  } catch (error) {
+    // The matching SQL migration may briefly trail an application deployment.
+    // Legacy location columns remain a safe compatibility source until it runs.
+    if (/user_location_assignments|schema cache|relation .* does not exist|PGRST20[045]/i.test(String(error.message || error))) return null;
+    throw error;
+  }
+}
+
+async function hydrateUserLocationAssignments(rows = []) {
+  if (!rows.length) return [];
+  const assignments = await readUserLocationAssignmentRows({ userIds: rows.map(row => row.id) });
+  if (assignments === null) return rows.map(row => ({ ...row, locationIds: legacyUserLocationIds(row) }));
+  const byUser = new Map();
+  for (const assignment of assignments) {
+    if (!byUser.has(assignment.user_id)) byUser.set(assignment.user_id, []);
+    byUser.get(assignment.user_id).push(assignment);
+  }
+  return rows.map(row => {
+    const assigned = (byUser.get(String(row.id)) || []).sort((a, b) => Number(b.is_primary) - Number(a.is_primary) || String(a.location_id).localeCompare(String(b.location_id)));
+    const locationIds = assigned.length ? assigned.map(item => item.location_id) : legacyUserLocationIds(row);
+    const primary = assigned.find(item => item.is_primary)?.location_id || row.location_id || locationIds[0];
+    return { ...row, location_id: primary, locationIds };
+  });
+}
+
+async function replaceUserLocationAssignments(userId, homeLocationId, locationIds = [], assignedBy = '') {
+  const cleanIds = [...new Set([homeLocationId, ...locationIds]
+    .filter(value => value !== null && value !== undefined && String(value).trim())
+    .map(String))];
+  const primary = String(homeLocationId || cleanIds[0] || DEFAULT_LOCATION_ID);
+  try {
+    // Clear the previous primary first so the partial unique index cannot conflict.
+    await supabase(`/rest/v1/user_location_assignments?${tenantQuery()}&user_id=eq.${encodeURIComponent(userId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ active: false, is_primary: false, updated_at: new Date().toISOString() })
+    });
+    await supabase('/rest/v1/user_location_assignments?on_conflict=tenant_id,user_id,location_id', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates' },
+      body: JSON.stringify(cleanIds.map(locationId => withTenant({
+        user_id: userId,
+        location_id: locationId,
+        is_primary: locationId === primary,
+        active: true,
+        starts_at: null,
+        ends_at: null,
+        assigned_by: assignedBy || null,
+        updated_at: new Date().toISOString()
+      })))
+    });
+    return true;
+  } catch (error) {
+    if (/user_location_assignments|schema cache|relation .* does not exist|PGRST20[045]/i.test(String(error.message || error))) return false;
+    throw error;
+  }
+}
+
 async function readUsers() {
-  const [rows, maintenanceEligibleUserIds] = await Promise.all([
+  const [rawRows, maintenanceEligibleUserIds] = await Promise.all([
     supabase(`/rest/v1/app_users?${tenantQuery()}&active=eq.true&select=*&order=name.asc`),
     readMaintenanceKey('maintenanceEligibleUserIds', []).catch(() => [])
   ]);
+  const rows = await hydrateUserLocationAssignments(rawRows);
   const maintenanceIds = new Set((maintenanceEligibleUserIds || []).map(String));
   return rows.map(row => ({
     id: row.id,
@@ -946,7 +1026,7 @@ async function readUsers() {
     role: row.role,
     pinEnabled: Boolean(row.pin_hash),
     locationId: row.location_id,
-    locationIds: Array.isArray(row.location_ids) ? row.location_ids : [row.location_id],
+    locationIds: row.locationIds || legacyUserLocationIds(row),
     maintenance: row.role === MAINTENANCE_ROLE || maintenanceIds.has(String(row.id))
   }));
 }
@@ -2065,9 +2145,13 @@ async function retryFinancialEmailImport(payload = {}, actor) {
 async function dashboardSummary(actor, range = 'day', locationId = 'all') {
   const { start, end, dates } = dateRange(range);
   const allLocations = await readLocations();
-  const actorLocations = AUTH_REQUIRED
-    ? (isFullAccess(actor) ? allLocations.map(location => location.id) : userLocationIds(actor))
-    : allLocations.map(location => location.id);
+  const allLocationIds = allLocations.map(location => location.id);
+  const explicitLocationScope = Array.isArray(actor?.locationScopeOverride)
+    ? allLocationIds.filter(id => actor.locationScopeOverride.includes(id))
+    : null;
+  const actorLocations = explicitLocationScope || (AUTH_REQUIRED
+    ? (isFullAccess(actor) ? allLocationIds : userLocationIds(actor))
+    : allLocationIds);
   const selectedLocations = locationId && locationId !== 'all'
     ? actorLocations.filter(id => id === locationId)
     : actorLocations;
@@ -2197,8 +2281,11 @@ async function dashboardSummary(actor, range = 'day', locationId = 'all') {
 }
 
 async function saveUser(user) {
-  const locationIds = (user.locationIds || [user.locationId || DEFAULT_LOCATION_ID]).filter(Boolean);
+  const locationIds = [...new Set((user.locationIds || [user.locationId || DEFAULT_LOCATION_ID])
+    .filter(value => value !== null && value !== undefined && String(value).trim())
+    .map(String))];
   const locationId = user.locationId || locationIds[0] || DEFAULT_LOCATION_ID;
+  if (!locationIds.includes(locationId)) locationIds.unshift(locationId);
   const id = user.id || safeName(user.email || user.name);
   await supabase('/rest/v1/app_users?on_conflict=tenant_id,id', {
     method: 'POST',
@@ -2216,6 +2303,7 @@ async function saveUser(user) {
       updated_at: new Date().toISOString()
     }))
   });
+  await replaceUserLocationAssignments(id, locationId, locationIds, user.assignedBy || user.invitedBy || 'HIS OPS');
   if (typeof user.maintenance === 'boolean' || user.role === MAINTENANCE_ROLE) {
     const savedIds = await readMaintenanceKey('maintenanceEligibleUserIds', []);
     const maintenanceIds = new Set((savedIds || []).map(String));
@@ -2244,6 +2332,12 @@ async function deactivateUser(id, actor) {
   await supabase(`/rest/v1/app_users?${tenantQuery()}&id=eq.${encodeURIComponent(id)}`, {
     method: 'PATCH',
     body: JSON.stringify({ active: false, updated_at: new Date().toISOString() })
+  });
+  await supabase(`/rest/v1/user_location_assignments?${tenantQuery()}&user_id=eq.${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ active: false, is_primary: false, updated_at: new Date().toISOString() })
+  }).catch(error => {
+    if (!/user_location_assignments|schema cache|relation .* does not exist|PGRST20[045]/i.test(String(error.message || error))) throw error;
   });
   return readUsers();
 }
@@ -2523,7 +2617,9 @@ async function availableTenantsForAuthUser(event) {
 }
 
 function userLocationIds(profile) {
-  return Array.isArray(profile?.location_ids) && profile.location_ids.length ? profile.location_ids : [profile?.location_id || DEFAULT_LOCATION_ID];
+  if (Array.isArray(profile?.locationIds) && profile.locationIds.length) return profile.locationIds;
+  if (Array.isArray(profile?.location_ids) && profile.location_ids.length) return profile.location_ids;
+  return [profile?.location_id || DEFAULT_LOCATION_ID];
 }
 
 function appProfile(row) {
@@ -2619,7 +2715,9 @@ async function enrollKiosk(payload) {
 
 async function kioskEmployees(event) {
   const device = await kioskDeviceFromToken(event);
-  const rows = await supabase(`/rest/v1/app_users?${tenantQuery()}&location_id=eq.${encodeURIComponent(device.location_id)}&role=eq.Employee&active=eq.true&pin_hash=not.is.null&select=id,name&order=name.asc`);
+  const rows = (await hydrateUserLocationAssignments(await supabase(`/rest/v1/app_users?${tenantQuery()}&role=eq.Employee&active=eq.true&pin_hash=not.is.null&select=*&order=name.asc`)))
+    .filter(user => userLocationIds(user).includes(device.location_id))
+    .map(user => ({ id: user.id, name: user.name }));
   const locations = await supabase(`/rest/v1/locations?${tenantQuery()}&id=eq.${encodeURIComponent(device.location_id)}&select=id,name`);
   return { employees: rows, location: locations[0], deviceName: device.name };
 }
@@ -2628,8 +2726,9 @@ async function kioskPinLogin(event, payload) {
   const device = await kioskDeviceFromToken(event);
   const pin = String(payload.pin || '');
   if (!/^\d{4}$/.test(pin)) throw Object.assign(new Error('Enter a four-digit PIN'), { statusCode: 400 });
-  const rows = await supabase(`/rest/v1/app_users?${tenantQuery()}&id=eq.${encodeURIComponent(payload.userId || '')}&location_id=eq.${encodeURIComponent(device.location_id)}&role=eq.Employee&active=eq.true&select=*`);
+  const rows = await hydrateUserLocationAssignments(await supabase(`/rest/v1/app_users?${tenantQuery()}&id=eq.${encodeURIComponent(payload.userId || '')}&role=eq.Employee&active=eq.true&select=*`));
   const user = rows[0];
+  if (user && !userLocationIds(user).includes(device.location_id)) throw Object.assign(new Error('That employee is not assigned to this location'), { statusCode: 403 });
   if (!user?.pin_hash || !user.pin_salt) throw Object.assign(new Error('PIN sign-in is not enabled for that employee'), { statusCode: 401 });
   if (user.pin_locked_until && new Date(user.pin_locked_until) > new Date()) throw Object.assign(new Error('Too many attempts. Ask a manager or wait 15 minutes.'), { statusCode: 429 });
   const supplied = Buffer.from(hashPin(pin, user.pin_salt), 'hex');
@@ -2642,16 +2741,25 @@ async function kioskPinLogin(event, payload) {
   }
   await supabase(`/rest/v1/app_users?${tenantQuery()}&id=eq.${encodeURIComponent(user.id)}`, { method: 'PATCH', body: JSON.stringify({ pin_failures: 0, pin_locked_until: null, pin_last_used_at: new Date().toISOString() }) });
   const token = signKioskToken({ type: 'session', tenantId: tenantId(), deviceId: device.id, userId: user.id, locationId: device.location_id, exp: Math.floor(Date.now() / 1000) + KIOSK_SESSION_SECONDS });
-  return { token, profile: appProfile({ ...user, authMode: 'kiosk' }) };
+  return {
+    token,
+    profile: appProfile({
+      ...user,
+      location_id: device.location_id,
+      location_ids: [device.location_id],
+      locationIds: [device.location_id],
+      authMode: 'kiosk'
+    })
+  };
 }
 
 async function setUserPin(id, pin, actor) {
   if (!canManage(actor)) throw Object.assign(new Error('Only managers can set employee PINs'), { statusCode: 403 });
   if (!/^\d{4}$/.test(String(pin || ''))) throw Object.assign(new Error('PIN must be exactly four digits'), { statusCode: 400 });
-  const rows = await supabase(`/rest/v1/app_users?${tenantQuery()}&id=eq.${encodeURIComponent(id)}&select=*`);
+  const rows = await hydrateUserLocationAssignments(await supabase(`/rest/v1/app_users?${tenantQuery()}&id=eq.${encodeURIComponent(id)}&select=*`));
   const target = rows[0];
   if (!target || target.role !== 'Employee') throw Object.assign(new Error('PINs are only available for employees'), { statusCode: 400 });
-  if (!canAccessLocation(actor, target.location_id)) throw Object.assign(new Error('You can only set PINs for employees at your locations'), { statusCode: 403 });
+  if (!isFullAccess(actor) && !userLocationIds(target).some(locationId => userLocationIds(actor).includes(locationId))) throw Object.assign(new Error('You can only set PINs for employees at your locations'), { statusCode: 403 });
   const salt = crypto.randomBytes(16).toString('hex');
   await supabase(`/rest/v1/app_users?${tenantQuery()}&id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ pin_salt: salt, pin_hash: hashPin(pin, salt), pin_failures: 0, pin_locked_until: null, updated_at: new Date().toISOString() }) });
   return { ok: true };
@@ -2725,14 +2833,20 @@ async function currentProfile(event) {
   if (kiosk?.userId) {
     const deviceRows = await supabase(`/rest/v1/kiosk_devices?${tenantQuery()}&id=eq.${encodeURIComponent(kiosk.deviceId)}&location_id=eq.${encodeURIComponent(kiosk.locationId)}&active=eq.true&select=id`);
     if (!deviceRows[0]) throw Object.assign(new Error('This tablet is no longer authorized'), { statusCode: 401 });
-    const rows = await supabase(`/rest/v1/app_users?${tenantQuery()}&id=eq.${encodeURIComponent(kiosk.userId)}&location_id=eq.${encodeURIComponent(kiosk.locationId)}&role=eq.Employee&active=eq.true&select=*`);
-    if (!rows[0]) throw Object.assign(new Error('Employee session is no longer active'), { statusCode: 401 });
-    return { ...rows[0], authMode: 'kiosk' };
+    const rows = await hydrateUserLocationAssignments(await supabase(`/rest/v1/app_users?${tenantQuery()}&id=eq.${encodeURIComponent(kiosk.userId)}&role=eq.Employee&active=eq.true&select=*`));
+    if (!rows[0] || !userLocationIds(rows[0]).includes(kiosk.locationId)) throw Object.assign(new Error('Employee session is no longer active at this location'), { statusCode: 401 });
+    return {
+      ...rows[0],
+      location_id: kiosk.locationId,
+      location_ids: [kiosk.locationId],
+      locationIds: [kiosk.locationId],
+      authMode: 'kiosk'
+    };
   }
   const authUser = await currentAuthUser(event);
   if (!authUser?.email) throw Object.assign(new Error('Not signed in'), { statusCode: 401 });
   const email = authUser.email.toLowerCase();
-  const rows = await supabase(`/rest/v1/app_users?${tenantQuery()}&or=(auth_user_id.eq.${authUser.id},email.eq.${encodeURIComponent(email)})&active=eq.true&select=*`);
+  const rows = await hydrateUserLocationAssignments(await supabase(`/rest/v1/app_users?${tenantQuery()}&or=(auth_user_id.eq.${authUser.id},email.eq.${encodeURIComponent(email)})&active=eq.true&select=*`));
   const profile = bestProfile(rows);
   if (!profile) throw Object.assign(new Error(`No active app profile found for ${email}`), { statusCode: 403 });
   return profile;
@@ -2744,7 +2858,10 @@ function assertManageAccess(actor, payload = {}) {
   if (!allowedRoles(actor).includes(payload.role || 'Employee')) throw Object.assign(new Error('You cannot assign that role'), { statusCode: 403 });
   if (isFullAccess(actor)) return;
   const actorLocations = userLocationIds(actor);
-  const requestedLocations = (payload.locationIds || [payload.locationId || DEFAULT_LOCATION_ID]).filter(Boolean);
+  const requestedLocations = [...new Set([
+    payload.locationId || DEFAULT_LOCATION_ID,
+    ...(Array.isArray(payload.locationIds) ? payload.locationIds : [])
+  ].filter(Boolean))];
   if (requestedLocations.some(locationId => !actorLocations.includes(locationId))) {
     throw Object.assign(new Error('You can only assign your locations'), { statusCode: 403 });
   }
@@ -2754,7 +2871,7 @@ async function sessionProfile(event) {
   const authUser = await currentAuthUser(event);
   if (!authUser?.email) throw Object.assign(new Error('Not signed in'), { statusCode: 401 });
   const email = authUser.email.toLowerCase();
-  let profileRows = await supabase(`/rest/v1/app_users?${tenantQuery()}&or=(auth_user_id.eq.${authUser.id},email.eq.${encodeURIComponent(email)})&active=eq.true&select=*`);
+  let profileRows = await hydrateUserLocationAssignments(await supabase(`/rest/v1/app_users?${tenantQuery()}&or=(auth_user_id.eq.${authUser.id},email.eq.${encodeURIComponent(email)})&active=eq.true&select=*`));
   let profile = bestProfile(profileRows);
 
   if (profile) {
@@ -2763,7 +2880,7 @@ async function sessionProfile(event) {
         method: 'PATCH',
         body: JSON.stringify({ auth_user_id: authUser.id, accepted_at: new Date().toISOString() })
       });
-      profileRows = await supabase(`/rest/v1/app_users?${tenantQuery()}&email=eq.${encodeURIComponent(email)}&select=*`);
+      profileRows = await hydrateUserLocationAssignments(await supabase(`/rest/v1/app_users?${tenantQuery()}&email=eq.${encodeURIComponent(email)}&select=*`));
       profile = bestProfile(profileRows);
     }
     await ensureTenantMembership(profile, authUser);
@@ -3783,10 +3900,16 @@ function reportIsDue(report, now) {
 
 async function performanceReportText(user, preferences) {
   const range = preferences.performanceReport.cadence === 'daily' ? 'day' : preferences.performanceReport.cadence === 'weekly' ? 'week' : 'month';
-  const summary = await dashboardSummary(user, range, 'all');
   const { dates } = dateRange(range);
   const [locations, templates, definitions] = await Promise.all([readLocations(), readTaskTemplates(), readTemperatureDefinitions()]);
-  const assigned = isFullAccess(user) ? locations : locations.filter(location => userLocationIds(user).includes(location.id));
+  const assigned = notificationLocationsForUser(user, preferences, locations);
+  const scopedUser = {
+    ...user,
+    locationIds: assigned.map(location => location.id),
+    location_ids: assigned.map(location => location.id),
+    locationScopeOverride: assigned.map(location => location.id)
+  };
+  const summary = await dashboardSummary(scopedUser, range, 'all');
   const tasks = { completed: 0, total: 0 }, temps = { completed: 0, total: 0 };
   for (const location of assigned) for (const date of dates) {
     const payload = await readDay(location.id, date);
@@ -3816,7 +3939,7 @@ async function checkManagerNotificationSchedules(now = new Date()) {
   const sent = [];
   for (const user of users.filter(managerNotificationAllowed)) {
     const preferences = normalizeManagerNotificationPreferences(stored[user.id] || {});
-    const assigned = isFullAccess(user) ? locations : locations.filter(location => userLocationIds(user).includes(location.id));
+    const assigned = notificationLocationsForUser(user, preferences, locations);
     if (preferences.incompleteTemps.enabled && timeHasPassed(preferences.incompleteTemps.dueTime, now)) {
       for (const location of assigned) {
         const key = `${user.id}|incompleteTemps|${location.id}|${date}`;
@@ -3851,6 +3974,7 @@ async function notifyOutOfRangeTemperature(locationId, readings = []) {
   const sent = [];
   for (const user of users.filter(managerNotificationAllowed).filter(item => isFullAccess(item) || userLocationIds(item).includes(locationId))) {
     const preferences = normalizeManagerNotificationPreferences(stored[user.id] || {});
+    if (!notificationLocationsForUser(user, preferences, locations).some(item => item.id === locationId)) continue;
     if (!preferences.outOfRangeTemps.enabled) continue;
     const text = readings.map(reading => {
       const unit = reading.unit === '%' || (String(reading.list || '').toLowerCase() === 'chill' && String(reading.item || '').toLowerCase() === 'overrun') ? '%' : '°F';
@@ -3869,6 +3993,7 @@ async function notifyNewMaintenanceRequest(workOrder) {
   const sent = [];
   for (const user of users.filter(item => canAreaManage(item) && (isFullAccess(item) || (appLocation && userLocationIds(item).includes(appLocation.id))))) {
     const preferences = normalizeManagerNotificationPreferences(stored[user.id] || {});
+    if (appLocation && !notificationLocationsForUser(user, preferences, appLocations).some(item => item.id === appLocation.id)) continue;
     if (!preferences.newMaintenanceRequest.enabled) continue;
     const text = `${locationName || 'An assigned location'} submitted ${workOrder['Work Order ID']}: ${workOrder['Issue Description'] || workOrder.Category || 'New maintenance request'}. Priority: ${workOrder.Priority || 'Medium'}.`;
     sent.push(...await sendPreferredNotification({ recipient: user, channels: preferences.newMaintenanceRequest.channels, type: 'New maintenance request', title: 'HIS OPS new maintenance request', text, locationId: appLocation?.id || '', locationName }));
@@ -4223,6 +4348,7 @@ async function saveStoreDocument(payload, actor) {
 
 function defaultManagerNotificationPreferences() {
   return {
+    locationIds: [],
     incompleteTemps: { enabled: false, dueTime: '14:00', channels: ['in-app'] },
     outOfRangeTemps: { enabled: false, channels: ['in-app'] },
     newMaintenanceRequest: { enabled: false, channels: ['in-app'] },
@@ -4245,6 +4371,7 @@ function normalizeManagerNotificationPreferences(input = {}) {
   const validTime = value => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value || ''));
   const cadence = ['none', 'daily', 'weekly', 'monthly'].includes(input.performanceReport?.cadence) ? input.performanceReport.cadence : 'none';
   return {
+    locationIds: Array.isArray(input.locationIds) ? [...new Set(input.locationIds.map(String).filter(Boolean))] : [],
     incompleteTemps: {
       enabled: Boolean(input.incompleteTemps?.enabled),
       dueTime: validTime(input.incompleteTemps?.dueTime) ? input.incompleteTemps.dueTime : defaults.incompleteTemps.dueTime,
@@ -4267,16 +4394,28 @@ async function managerNotificationPreferencesState(actor) {
   const allowed = !AUTH_REQUIRED || managerNotificationAllowed(actor);
   if (!allowed) return { allowed: false, preferences: defaultManagerNotificationPreferences() };
   const stored = await readMaintenanceKey('managerNotificationPreferences', {});
-  return { allowed: true, preferences: normalizeManagerNotificationPreferences(stored?.[actor?.id] || {}) };
+  const preferences = normalizeManagerNotificationPreferences(stored?.[actor?.id] || {});
+  const assigned = new Set(userLocationIds(actor));
+  preferences.locationIds = preferences.locationIds.filter(locationId => isFullAccess(actor) || assigned.has(locationId));
+  return { allowed: true, preferences };
 }
 
 async function saveManagerNotificationPreferences(payload, actor) {
   if (AUTH_REQUIRED && !managerNotificationAllowed(actor)) throw Object.assign(new Error('Notification settings are available to Managers and above'), { statusCode: 403 });
   const stored = await readMaintenanceKey('managerNotificationPreferences', {});
   const preferences = normalizeManagerNotificationPreferences(payload.preferences || payload);
+  const assigned = new Set(userLocationIds(actor));
+  preferences.locationIds = preferences.locationIds.filter(locationId => isFullAccess(actor) || assigned.has(locationId));
   stored[actor?.id || 'local-manager'] = { ...preferences, updatedAt: new Date().toISOString() };
   await writeMaintenanceKey('managerNotificationPreferences', stored);
   return { allowed: true, preferences };
+}
+
+function notificationLocationsForUser(user, preferences, locations = []) {
+  const assigned = isFullAccess(user) ? locations : locations.filter(location => userLocationIds(user).includes(location.id));
+  if (!preferences.locationIds?.length) return assigned;
+  const selected = new Set(preferences.locationIds);
+  return assigned.filter(location => selected.has(location.id));
 }
 
 async function addPersonalAppNotice(recipient, title, message) {
@@ -5525,6 +5664,10 @@ if (process.env.NODE_ENV === 'test') exports.__test = {
   requestedTenantId,
   selectTenantMembership,
   eligibleTenantProfileCandidates,
+  legacyUserLocationIds,
+  assignmentIsCurrent,
+  userLocationIds,
+  notificationLocationsForUser,
   signKioskToken,
   verifyKioskToken,
   storageObjectReference,
@@ -5743,7 +5886,7 @@ async function routeRequest(event) {
     if (method === 'POST' && apiPath === '/user') {
       assertManageAccess(actor, body);
       await assertSubscriptionLimit('users', body.id || safeName(body.email || body.name));
-      await saveUser(body);
+      await saveUser({ ...body, assignedBy: actor?.name || actor?.email || 'HIS OPS' });
       if (body.pin) await setUserPin(body.id || safeName(body.email || body.name), body.pin, actor);
       return json(200, { users: await readUsers() });
     }

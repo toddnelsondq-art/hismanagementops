@@ -693,7 +693,7 @@ function canUseLocationHealth(user = currentUser()) {
 }
 
 function usesAssignedLocations(user = currentUser()) {
-  return isAboveStore(user) || isMaintenanceTech(user);
+  return isFullAccess(user) || isMaintenanceTech(user) || userLocationIds(user).length > 1;
 }
 
 function isFullAccess(user = currentUser()) {
@@ -775,8 +775,7 @@ function canEditUser(targetUser, actor = currentUser()) {
   if (!allowedAssignableRoles(actor).includes(targetUser.role)) return false;
   const actorLocations = userLocationIds(actor);
   const targetLocations = userLocationIds(targetUser);
-  if (actor.role === 'Area Manager') return targetLocations.some(locationId => actorLocations.includes(locationId));
-  if (actor.role === 'Manager') return targetLocations.includes(actorLocations[0]);
+  if (actor.role === 'Area Manager' || actor.role === 'Manager') return targetLocations.every(locationId => actorLocations.includes(locationId));
   return false;
 }
 
@@ -877,7 +876,7 @@ async function loadState() {
 
   const user = currentUser();
   const allowedLocations = userLocationIds(user);
-  if (!isAboveStore(user) && allowedLocations[0] && currentLocationId !== allowedLocations[0]) {
+  if (!usesAssignedLocations(user) && allowedLocations[0] && currentLocationId !== allowedLocations[0]) {
     currentLocationId = allowedLocations[0];
     localStorage.setItem('dailyops-current-location', currentLocationId);
     if (apiOnline) return loadState();
@@ -3816,7 +3815,7 @@ function renderUsers() {
 }
 
 function roleUsesMultipleLocations(role) {
-  return ['Area Manager', maintenanceRole, 'Director of Operations', 'Owner'].includes(role);
+  return ['Employee', 'Shift Manager', 'Manager', 'Area Manager', maintenanceRole, 'Director of Operations', 'Owner'].includes(role);
 }
 
 function roleRank(role = 'Employee') {
@@ -3835,7 +3834,7 @@ function renderNewUserLocationChecks() {
   if (!$('#newUserLocations')) return;
   const locationId = $('#newUserLocation').value;
   const selected = [...document.querySelectorAll('#newUserLocations input:checked')].map(input => input.value);
-  const selectedIds = selected.length ? selected : [locationId].filter(Boolean);
+  const selectedIds = [...new Set([...(selected.length ? selected : []), locationId].filter(Boolean))];
   renderLocationChecks('#newUserLocations', selectedIds);
   $('#newUserLocationsWrap').style.display = roleUsesMultipleLocations($('#newUserRole').value) ? 'block' : 'none';
 }
@@ -4261,6 +4260,11 @@ function renderManagerNotificationPreferences() {
   card.style.display = allowed ? '' : 'none';
   if (!allowed) return;
   const prefs = managerNotificationPreferences.preferences;
+  const available = locations.filter(location => isFullAccess() || userLocationIds().includes(location.id));
+  const selectedLocationIds = prefs.locationIds?.length ? prefs.locationIds : available.map(location => location.id);
+  $('#prefNotificationLocations').innerHTML = available.map(location => `
+    <label class="location-check"><input type="checkbox" value="${escapeHtml(location.id)}" ${selectedLocationIds.includes(location.id) ? 'checked' : ''}> ${escapeHtml(location.name)}</label>
+  `).join('');
   $('#prefIncompleteTempsEnabled').checked = Boolean(prefs.incompleteTemps.enabled);
   $('#prefIncompleteTempsTime').value = prefs.incompleteTemps.dueTime || '14:00';
   $('#prefOutOfRangeEnabled').checked = Boolean(prefs.outOfRangeTemps.enabled);
@@ -4392,10 +4396,15 @@ async function saveManagerNotificationPreferences() {
     if ($(`#${inputId}`).checked && !channels(key).length) return toast('Choose at least one delivery method for each enabled alert');
   }
   if ($('#prefReportCadence').value !== 'none' && !channels('performanceReport').length) return toast('Choose how to deliver the performance report');
+  const availableLocationIds = locations.filter(location => isFullAccess() || userLocationIds().includes(location.id)).map(location => location.id);
+  const selectedLocationIds = [...document.querySelectorAll('#prefNotificationLocations input:checked')].map(input => input.value);
+  if (!selectedLocationIds.length) return toast('Choose at least one location for your alerts and reports');
+  const locationIds = selectedLocationIds.length === availableLocationIds.length ? [] : selectedLocationIds;
   try {
     managerNotificationPreferences = await api('/api/notification-preferences', {
       method: 'POST',
       body: JSON.stringify({ preferences: {
+        locationIds,
         incompleteTemps: { enabled: $('#prefIncompleteTempsEnabled').checked, dueTime: $('#prefIncompleteTempsTime').value || '14:00', channels: channels('incompleteTemps') },
         outOfRangeTemps: { enabled: $('#prefOutOfRangeEnabled').checked, channels: channels('outOfRangeTemps') },
         newMaintenanceRequest: { enabled: $('#prefMaintenanceEnabled').checked, channels: channels('newMaintenanceRequest') },
@@ -5847,7 +5856,7 @@ $('#currentUser').onchange = async event => {
   currentUserId = event.target.value;
   localStorage.setItem('dailyops-current-user', currentUserId);
   const user = currentUser();
-  if (!isAboveStore(user) && userLocationIds(user)[0]) {
+  if (!usesAssignedLocations(user) && userLocationIds(user)[0]) {
     currentLocationId = userLocationIds(user)[0];
     localStorage.setItem('dailyops-current-location', currentLocationId);
     historyScope = 'location';
@@ -6407,7 +6416,7 @@ function openUserDialog(id) {
   if (!roles.includes(user.role)) $('#editUserRole').innerHTML += `<option selected>${escapeHtml(user.role)}</option>`;
   $('#editUserLocation').innerHTML = visibleLocations.map(location => `<option value="${location.id}" ${user.locationId === location.id ? 'selected' : ''}>${location.name}</option>`).join('');
   renderLocationChecks('#editUserLocations', userLocationIds(user));
-  $('#editUserLocationsWrap').style.display = isAboveStore(user) ? 'block' : 'none';
+  $('#editUserLocationsWrap').style.display = 'block';
   $('#editUserPinWrap').style.display = user.role === 'Employee' ? 'block' : 'none';
   $('#userDialog').showModal();
 }
@@ -6415,6 +6424,12 @@ function openUserDialog(id) {
 $('#editUserRole').onchange = () => {
   $('#editUserLocationsWrap').style.display = roleUsesMultipleLocations($('#editUserRole').value) ? 'block' : 'none';
   $('#editUserPinWrap').style.display = $('#editUserRole').value === 'Employee' ? 'block' : 'none';
+};
+
+$('#editUserLocation').onchange = () => {
+  const homeLocationId = $('#editUserLocation').value;
+  const checkbox = [...document.querySelectorAll('#editUserLocations input')].find(input => input.value === homeLocationId);
+  if (checkbox) checkbox.checked = true;
 };
 
 $('#newUserRole').onchange = () => {

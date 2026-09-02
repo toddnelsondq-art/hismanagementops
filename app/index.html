@@ -1367,6 +1367,11 @@
         <h3>My notifications &amp; reports</h3>
         <p class="hint">Choose your own alerts for assigned locations. Texts go to your employee phone number and emails go to your employee email address.</p>
         <div class="preference-setting">
+          <h4>Locations included</h4>
+          <p class="hint">Select the locations to include in these alerts and reports.</p>
+          <div id="prefNotificationLocations" class="location-checks"></div>
+        </div>
+        <div class="preference-setting">
           <label class="check"><input type="checkbox" id="prefIncompleteTempsEnabled"> Temperature logs are not complete by</label>
           <input id="prefIncompleteTempsTime" type="time" value="14:00">
           <div class="preference-channels" data-preference-channels="incompleteTemps"></div>
@@ -1679,8 +1684,8 @@
           <select id="newUserLocation"></select>
         </label>
         <div id="newUserLocationsWrap">
-          <b>Attached locations</b>
-          <p class="hint">For Area Managers, Director of Operations, and Owner-level users.</p>
+          <b>Assigned locations</b>
+          <p class="hint">Select every store where this person may work or view information. The home location is always included.</p>
           <div id="newUserLocations" class="location-checks"></div>
         </div>
         <button id="addUserBtn">Add user</button>
@@ -1853,8 +1858,8 @@
         <select id="editUserLocation"></select>
       </label>
       <div id="editUserLocationsWrap">
-        <b>Attached locations</b>
-        <p class="hint">For Area Managers, Director of Operations, and Owner-level users.</p>
+        <b>Assigned locations</b>
+        <p class="hint">Select every store where this person may work or view information. The home location is always included.</p>
         <div id="editUserLocations" class="location-checks"></div>
       </div>
       <label>Set temporary password
@@ -1862,7 +1867,7 @@
       </label>
       <label id="editUserPinWrap">Set employee PIN
         <input id="editUserPin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="new-password" placeholder="Leave blank to keep current PIN">
-        <span class="hint">Exactly four digits. Only works on a tablet connected to this employee's store.</span>
+        <span class="hint">Exactly four digits. The same PIN works on tablets at every assigned location.</span>
       </label>
       <button id="saveUserEditBtn" value="default">Save user</button>
     </form>

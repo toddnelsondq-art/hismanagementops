@@ -14,7 +14,7 @@ This is the target start-to-finish process for onboarding restaurant operators u
 
 ## Work required before the first outside customer
 
-Version 1.25.0 completes the first identity and file-storage boundaries: authenticated requests resolve their tenant from `tenant_memberships`, the browser's requested Tenant ID is accepted only when that membership allows it, kiosk tokens remain tenant-locked, uploaded files use private tenant/location paths, and application tables no longer permit direct browser access. Run `supabase/add_tenant_memberships.sql`, deploy version 1.25.0, and then run `supabase/tenant_isolation_storage_rls.sql` before creating a second organization.
+Version 1.25.0 completes the first identity and file-storage boundaries: authenticated requests resolve their tenant from `tenant_memberships`, the browser's requested Tenant ID is accepted only when that membership allows it, kiosk tokens remain tenant-locked, uploaded files use private tenant/location paths, and application tables no longer permit direct browser access. Run `supabase/add_tenant_memberships.sql`, deploy version 1.25.0, and then run `supabase/tenant_isolation_storage_rls.sql` before creating a second organization. Run `supabase/add_user_location_assignments.sql` before enabling multi-location users; it gives each tenant a dedicated normalized assignment table with one home store and multiple assigned stores per user.
 
 The remaining safeguards are:
 

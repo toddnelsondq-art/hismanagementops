@@ -140,6 +140,31 @@ create index if not exists kiosk_enrollments_code_hash_idx on public.kiosk_enrol
 create unique index if not exists days_tenant_id_location_id_date_key on public.days(tenant_id, location_id, date);
 create unique index if not exists maintenance_data_tenant_id_key_key on public.maintenance_data(tenant_id, key);
 
+-- Normalized many-to-many assignments. location_id/location_ids remain on
+-- app_users as compatibility columns while all new access checks use this table.
+create table if not exists public.user_location_assignments (
+  tenant_id text not null,
+  user_id text not null,
+  location_id text not null,
+  is_primary boolean not null default false,
+  active boolean not null default true,
+  starts_at timestamptz,
+  ends_at timestamptz,
+  assigned_by text,
+  assigned_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (tenant_id, user_id, location_id),
+  foreign key (tenant_id, user_id) references public.app_users(tenant_id, id) on delete cascade,
+  foreign key (tenant_id, location_id) references public.locations(tenant_id, id) on delete cascade,
+  check (ends_at is null or starts_at is null or ends_at > starts_at)
+);
+
+create index if not exists user_location_assignments_location_idx on public.user_location_assignments(tenant_id, location_id, active);
+create index if not exists user_location_assignments_user_idx on public.user_location_assignments(tenant_id, user_id, active);
+create unique index if not exists user_location_assignments_one_primary_key
+  on public.user_location_assignments(tenant_id, user_id)
+  where is_primary = true and active = true;
+
 -- Maps one Supabase Auth identity to each organization it may access. The API
 -- resolves this membership before any tenant-scoped query is allowed to run.
 create table if not exists public.tenant_memberships (
@@ -229,6 +254,77 @@ select 'store-' || lpad(i::text, 2, '0'), 'Store ' || i
 from generate_series(1, 13) as i
 on conflict (id) do nothing;
 
+create or replace function public.sync_app_user_locations_from_assignments(
+  target_tenant_id text,
+  target_user_id text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  primary_location text;
+  assigned_locations jsonb;
+begin
+  select a.location_id
+  into primary_location
+  from public.user_location_assignments a
+  where a.tenant_id = target_tenant_id
+    and a.user_id = target_user_id
+    and a.active = true
+    and (a.starts_at is null or a.starts_at <= now())
+    and (a.ends_at is null or a.ends_at > now())
+  order by a.is_primary desc, a.assigned_at, a.location_id
+  limit 1;
+
+  select coalesce(jsonb_agg(a.location_id order by a.is_primary desc, a.assigned_at, a.location_id), '[]'::jsonb)
+  into assigned_locations
+  from public.user_location_assignments a
+  where a.tenant_id = target_tenant_id
+    and a.user_id = target_user_id
+    and a.active = true
+    and (a.starts_at is null or a.starts_at <= now())
+    and (a.ends_at is null or a.ends_at > now());
+
+  if primary_location is not null then
+    update public.app_users
+    set location_id = primary_location,
+        location_ids = assigned_locations,
+        updated_at = now()
+    where tenant_id = target_tenant_id and id = target_user_id;
+  end if;
+end;
+$$;
+
+create or replace function public.sync_app_user_locations_assignment_trigger()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if tg_op = 'DELETE' then
+    perform public.sync_app_user_locations_from_assignments(old.tenant_id, old.user_id);
+    return old;
+  end if;
+
+  if tg_op = 'UPDATE'
+     and (old.tenant_id is distinct from new.tenant_id or old.user_id is distinct from new.user_id) then
+    perform public.sync_app_user_locations_from_assignments(old.tenant_id, old.user_id);
+  end if;
+
+  perform public.sync_app_user_locations_from_assignments(new.tenant_id, new.user_id);
+  return new;
+end;
+$$;
+
+drop trigger if exists user_location_assignments_sync_app_user
+  on public.user_location_assignments;
+create trigger user_location_assignments_sync_app_user
+after insert or update or delete on public.user_location_assignments
+for each row execute function public.sync_app_user_locations_assignment_trigger();
+
 insert into public.app_users(id, email, name, role, location_id, location_ids)
 values (
   'owner',
@@ -239,6 +335,40 @@ values (
   (select jsonb_agg(id order by id) from public.locations)
 )
 on conflict (id) do nothing;
+
+insert into public.user_location_assignments(
+  tenant_id, user_id, location_id, is_primary, active, assigned_by
+)
+select distinct
+  source.tenant_id,
+  source.user_id,
+  source.location_id,
+  source.location_id = source.primary_location_id,
+  source.user_active,
+  'Initial schema assignment'
+from (
+  select
+    u.tenant_id,
+    u.id as user_id,
+    u.location_id as primary_location_id,
+    u.active as user_active,
+    legacy.location_id
+  from public.app_users u
+  cross join lateral (
+    select u.location_id
+    union
+    select jsonb_array_elements_text(
+      case when jsonb_typeof(u.location_ids) = 'array' then u.location_ids else '[]'::jsonb end
+    )
+  ) legacy
+) source
+join public.locations l
+  on l.tenant_id = source.tenant_id and l.id = source.location_id
+where source.location_id is not null and btrim(source.location_id) <> ''
+on conflict (tenant_id, user_id, location_id) do update set
+  is_primary = excluded.is_primary,
+  active = excluded.active,
+  updated_at = now();
 
 -- Private Supabase Storage bucket used for checklist photos, work order photos,
 -- and uploaded service manuals. Upload and download authorization is issued by
@@ -431,6 +561,7 @@ begin
     'tenants',
     'locations',
     'app_users',
+    'user_location_assignments',
     'kiosk_devices',
     'kiosk_enrollments',
     'invites',

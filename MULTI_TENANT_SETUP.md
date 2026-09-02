@@ -25,6 +25,10 @@ Then run:
 
 `supabase/add_tenant_memberships.sql`
 
+For normalized home and multi-store user assignments, also run:
+
+`supabase/add_user_location_assignments.sql`
+
 After deploying version 1.25.0 or later, run:
 
 `supabase/tenant_isolation_storage_rls.sql`
@@ -40,6 +44,7 @@ Together, the migrations add:
 
 - `tenants`
 - `tenant_memberships`
+- `user_location_assignments`
 - `tenant_id` columns on core tables
 - tenant-aware keys for daily records and shared app data
 - tenant-scoped email and Supabase Auth identity uniqueness
@@ -64,6 +69,8 @@ Do not create a separate Netlify deployment merely to change `APP_TENANT_ID`. Fo
 - Resolves the Tenant ID from the signed-in user's allowed memberships.
 - Rejects a browser-supplied Tenant ID when the user is not a member.
 - Allows one Supabase Auth user to belong to more than one tenant.
+- Allows every role to have one home location and any number of assigned locations.
+- Keeps store-tablet employee sessions locked to the enrolled tablet location.
 - Lets the frontend receive tenant branding from the backend.
 - Keeps HIS as the default tenant.
 - Keeps legacy HIS uploads available without moving or deleting them.
