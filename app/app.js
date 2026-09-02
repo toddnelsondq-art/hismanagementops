@@ -192,7 +192,7 @@ let photoTask = null;
 let apiOnline = false;
 let selectedReportDate = null;
 let selectedReportLocationId = null;
-let maintenance = { locations: [], equipment: [], workOrders: [], pmSchedule: [], vendors: [], lists: {} };
+let maintenance = { locations: [], equipment: [], workOrders: [], workOrderUpdates: [], workOrderUpdatesReady: true, pmSchedule: [], vendors: [], lists: {} };
 let maintenanceWorkLog = { mode: 'none', canEdit: false, canManagePermissions: false, entries: [], technicians: [], areaManagers: [], permissions: { areaManagerIds: [] } };
 let locationHealth = { configured: false, cameras: [], mappings: {}, canManage: false, message: '', thermostats: [], thermostatConfigured: false, thermostatMessage: '' };
 let rollout = { allowed: false, canManagePermissions: false, sections: [], records: {}, installerUserIds: [], users: [] };
@@ -1072,7 +1072,7 @@ async function loadMaintenanceState() {
     maintenancePriorityOrder = maintenance.priorityOrder || [];
     filterMaintenanceScope();
   } catch {
-    maintenance = { locations: [], equipment: [], workOrders: [], pmSchedule: [], vendors: [], lists: {} };
+    maintenance = { locations: [], equipment: [], workOrders: [], workOrderUpdates: [], workOrderUpdatesReady: false, pmSchedule: [], vendors: [], lists: {} };
     maintenancePriorityOrder = [];
   }
 }
@@ -1235,6 +1235,8 @@ function filterMaintenanceScope() {
     maintenance.equipment = maintenance.equipment.filter(row => allowed.includes(String(row['Location ID'])));
     maintenance.pmSchedule = maintenance.pmSchedule.filter(row => allowed.includes(String(row['Location ID'])));
   }
+  const visibleOrderIds = new Set(maintenance.workOrders.map(row => String(row['Work Order ID'])));
+  maintenance.workOrderUpdates = (maintenance.workOrderUpdates || []).filter(update => visibleOrderIds.has(String(update.workOrderId)));
   maintenance.locations = isFullAccess() ? maintenance.locations : maintenance.locations.filter(row => allowed.includes(String(row['Location ID'])));
 }
 
@@ -2920,6 +2922,12 @@ async function saveMaintenanceHoursPermissions() {
   } catch (error) { toast(`Access permissions did not save: ${error.message}`); }
 }
 
+function workOrderUpdatesFor(workOrderId) {
+  return (maintenance.workOrderUpdates || [])
+    .filter(update => String(update.workOrderId) === String(workOrderId))
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+}
+
 function renderMaintenance() {
   if (!$('#maintenanceLocation')) return;
   $('#maintenanceLocation').innerHTML = maintenanceLocationOptions();
@@ -2955,17 +2963,21 @@ function renderMaintenance() {
       ? high
       : openOrders;
   $('#woCount').textContent = `${shownOrders.length} shown`;
-  $('#workOrderList').innerHTML = shownOrders.length ? shownOrders.map(order => `
+  $('#workOrderList').innerHTML = shownOrders.length ? shownOrders.map(order => {
+    const updates = workOrderUpdatesFor(order['Work Order ID']);
+    const latest = updates[0];
+    return `
     <article class="card maintenance-row ${order.Priority === 'Emergency' ? 'urgent' : ''}">
       <div>
         <b>${escapeHtml(order['Work Order ID'])} · ${escapeHtml(order['Equipment Name'] || order.Category || 'General')}</b>
         <p>${escapeHtml(order['Location Name'] || '')} · ${escapeHtml(order.Category || '')} · ${escapeHtml(order.Priority || '')} · ${escapeHtml(order.Status || '')}</p>
         <p>${escapeHtml(order['Issue Description'] || '')}</p>
+        ${updates.length ? `<p class="hint">${updates.length} repair update${updates.length === 1 ? '' : 's'} · Latest ${escapeHtml(latest.createdByName || 'App User')}${latest.createdAt ? ` on ${escapeHtml(new Date(latest.createdAt).toLocaleDateString())}` : ''}</p>` : ''}
         <p>${order['Photo Link'] ? `<a href="${escapeHtml(fullPhotoUrl(order['Photo Link']))}" target="_blank">Photo</a>` : ''} ${order['Manual Link'] ? `<a href="${escapeHtml(fullPhotoUrl(order['Manual Link']))}" target="_blank">Manual</a>` : ''}</p>
       </div>
       <div class="row-actions"><span class="status">${escapeHtml(order.Status || 'New')}</span><button data-edit-wo="${escapeHtml(order['Work Order ID'])}">Edit</button></div>
     </article>
-  `).join('') : '<div class="empty">No open work orders for this view.</div>';
+  `; }).join('') : '<div class="empty">No open work orders for this view.</div>';
 
   $('#pmCount').textContent = `${overduePm.length} due · ${maintenance.pmSchedule.length} total`;
   const pmRows = [...maintenance.pmSchedule].sort((a, b) => String(a.Status || '').localeCompare(String(b.Status || '')) || String(a['Next Due'] || '').localeCompare(String(b['Next Due'] || '')));
@@ -3332,6 +3344,37 @@ function toDateInput(value) {
   return value ? String(value).slice(0, 10) : '';
 }
 
+function repairUpdateDateTime(value = '') {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function renderWorkOrderTimeline(workOrderId) {
+  const updates = workOrderUpdatesFor(workOrderId);
+  $('#workOrderUpdateCount').textContent = `${updates.length} update${updates.length === 1 ? '' : 's'}`;
+  $('#workOrderTimeline').open = maintenance.workOrderUpdatesReady === false;
+  $('#toggleWorkOrderUpdateBtn').disabled = maintenance.workOrderUpdatesReady === false;
+  $('#toggleWorkOrderUpdateBtn').title = maintenance.workOrderUpdatesReady === false ? (maintenance.workOrderUpdatesMessage || 'Repair History is not set up yet') : '';
+  if (maintenance.workOrderUpdatesReady === false) {
+    $('#workOrderTimelineList').innerHTML = `<div class="empty">${escapeHtml(maintenance.workOrderUpdatesMessage || 'Repair History is not set up yet.')}</div>`;
+    return;
+  }
+  $('#workOrderTimelineList').innerHTML = updates.length ? updates.map(update => {
+    const meta = [
+      update.status ? `Status: ${update.status}` : '',
+      update.timeSpentHours !== null && update.timeSpentHours !== undefined ? `${update.timeSpentHours} hour${Number(update.timeSpentHours) === 1 ? '' : 's'}` : '',
+      update.followUpDate ? `Follow up ${prettyDate(update.followUpDate)}` : ''
+    ].filter(Boolean);
+    return `
+      <article class="work-order-update-entry">
+        <div class="work-order-update-entry-head"><b>${escapeHtml(update.updateType || 'Progress update')}</b><span class="hint">${escapeHtml(repairUpdateDateTime(update.createdAt))}</span></div>
+        <p>${escapeHtml(update.note || '')}</p>
+        <div class="work-order-update-meta"><span>${escapeHtml(update.createdByName || 'App User')}</span>${meta.map(value => `<span>· ${escapeHtml(value)}</span>`).join('')}</div>
+        ${update.attachmentUrl ? `<a href="${escapeHtml(fullPhotoUrl(update.attachmentUrl))}" target="_blank" rel="noopener">📎 ${escapeHtml(update.attachmentName || 'View attachment')}</a>` : ''}
+      </article>`;
+  }).join('') : '<div class="empty">No repair updates have been added yet.</div>';
+}
+
 function openWorkOrderDialog(workOrderId) {
   const order = maintenance.workOrders.find(row => row['Work Order ID'] === workOrderId);
   if (!order) return;
@@ -3339,7 +3382,11 @@ function openWorkOrderDialog(workOrderId) {
   $('#editWoTitle').textContent = `${order['Work Order ID']} · ${order['Equipment Name'] || order.Category || 'Work Order'}`;
   $('#editWoId').value = order['Work Order ID'];
   $('#editWoLocationId').value = order['Location ID'];
-  $('#editWoStatus').innerHTML = (list.statuses || ['New', 'Assigned', 'In Progress', 'Completed']).map(value => `<option ${order.Status === value ? 'selected' : ''}>${escapeHtml(value)}</option>`).join('');
+  const workOrderStatuses = [...new Set([
+    ...(list.statuses || []),
+    'New', 'Assigned', 'In Progress', 'Waiting on Parts', 'Waiting on Vendor', 'Scheduled', 'On Hold', 'Completed', 'Cancelled'
+  ])];
+  $('#editWoStatus').innerHTML = workOrderStatuses.map(value => `<option ${order.Status === value ? 'selected' : ''}>${escapeHtml(value)}</option>`).join('');
   $('#editWoPriority').innerHTML = (list.priorities || ['Emergency', 'High', 'Medium', 'Low']).map(value => `<option ${order.Priority === value ? 'selected' : ''}>${escapeHtml(value)}</option>`).join('');
   setAssignmentFields('editWo', {
     assignmentType: order.assignmentType,
@@ -3356,6 +3403,16 @@ function openWorkOrderDialog(workOrderId) {
   $('#editWoVendorCost').value = order['Vendor Cost'] || '';
   $('#editWoPhoto').value = '';
   $('#editWoManual').value = '';
+  const updateStatuses = workOrderStatuses.filter(value => !['Completed', 'Cancelled'].includes(value));
+  $('#workOrderUpdateStatus').innerHTML = '<option value="">No status change</option>' + updateStatuses.map(value => `<option>${escapeHtml(value)}</option>`).join('');
+  $('#workOrderUpdateType').value = 'Progress update';
+  $('#workOrderUpdateNote').value = '';
+  $('#workOrderUpdateHours').value = '';
+  $('#workOrderUpdateFollowUp').value = '';
+  $('#workOrderUpdateAttachment').value = '';
+  $('#workOrderUpdateForm').hidden = true;
+  $('#toggleWorkOrderUpdateBtn').textContent = '+ Add update';
+  renderWorkOrderTimeline(order['Work Order ID']);
   const technician = isMaintenanceTech();
   ['#editWoPriority', '#editWoAssignmentType', '#editWoAssigneeUser', '#editWoVendor', '#editWoAssignmentNotify', '#editWoIssue', '#editWoTargetDate', '#editWoParts', '#editWoVendorCost'].forEach(selector => {
     $(selector).closest('label').style.display = technician ? 'none' : '';
@@ -6287,6 +6344,9 @@ $('#addPmBtn').onclick = async () => {
 
 async function saveWorkOrderChanges(forceComplete = false) {
   const technician = isMaintenanceTech();
+  if (forceComplete && !$('#editWoResolution').value.trim()) {
+    return toast('Enter the final resolution before completing this work order');
+  }
   const payload = {
     workOrderId: $('#editWoId').value,
     locationId: $('#editWoLocationId').value,
@@ -6321,6 +6381,67 @@ async function saveWorkOrderChanges(forceComplete = false) {
 
 $('#saveWorkOrderBtn').onclick = () => saveWorkOrderChanges(false);
 $('#completeWorkOrderBtn').onclick = () => saveWorkOrderChanges(true);
+
+function closeWorkOrderUpdateForm() {
+  $('#workOrderUpdateForm').hidden = true;
+  $('#toggleWorkOrderUpdateBtn').textContent = '+ Add update';
+}
+
+$('#toggleWorkOrderUpdateBtn').onclick = () => {
+  const form = $('#workOrderUpdateForm');
+  form.hidden = !form.hidden;
+  $('#toggleWorkOrderUpdateBtn').textContent = form.hidden ? '+ Add update' : 'Close update form';
+  if (!form.hidden) $('#workOrderUpdateNote').focus();
+};
+
+$('#cancelWorkOrderUpdateBtn').onclick = closeWorkOrderUpdateForm;
+
+$('#saveWorkOrderUpdateBtn').onclick = async () => {
+  const workOrderId = $('#editWoId').value;
+  const note = $('#workOrderUpdateNote').value.trim();
+  if (!note) return toast('Enter a repair update before saving');
+  const file = $('#workOrderUpdateAttachment').files?.[0];
+  const button = $('#saveWorkOrderUpdateBtn');
+  button.disabled = true;
+  button.textContent = 'Saving…';
+  try {
+    const attachmentUrl = file
+      ? await uploadMaintenanceFile('#workOrderUpdateAttachment', 'work-order-update', $('#editWoLocationId').value)
+      : '';
+    const saved = await api('/api/maintenance/work-order/update-entry', {
+      method: 'POST',
+      body: JSON.stringify({
+        workOrderId,
+        updateType: $('#workOrderUpdateType').value,
+        status: $('#workOrderUpdateStatus').value,
+        note,
+        timeSpentHours: $('#workOrderUpdateHours').value,
+        followUpDate: $('#workOrderUpdateFollowUp').value,
+        attachmentUrl,
+        attachmentName: file?.name || ''
+      })
+    });
+    maintenance = saved.state;
+    filterMaintenanceScope();
+    renderMaintenance();
+    $('#editWoStatus').value = saved.workOrder.Status || $('#editWoStatus').value;
+    $('#workOrderUpdateType').value = 'Progress update';
+    $('#workOrderUpdateStatus').value = '';
+    $('#workOrderUpdateNote').value = '';
+    $('#workOrderUpdateHours').value = '';
+    $('#workOrderUpdateFollowUp').value = '';
+    $('#workOrderUpdateAttachment').value = '';
+    closeWorkOrderUpdateForm();
+    renderWorkOrderTimeline(workOrderId);
+    $('#workOrderTimeline').open = true;
+    toast(`Added repair update to ${workOrderId}`);
+  } catch (error) {
+    toast(`Repair update did not save: ${error.message}`);
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Save update';
+  }
+};
 
 async function completePmTask(pmId) {
   try {

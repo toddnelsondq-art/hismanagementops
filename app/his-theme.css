@@ -961,6 +961,81 @@ input[type=number]{
   align-items:center;
 }
 
+.work-order-timeline-block{
+  margin:16px 0;
+  padding:14px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:#f8fafc;
+}
+
+.work-order-timeline-heading{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:14px;
+}
+
+.work-order-timeline-heading p{
+  margin:3px 0 0;
+}
+
+.work-order-update-form{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px 12px;
+  margin-top:14px;
+  padding:14px;
+  border-radius:12px;
+  background:#fff;
+  box-shadow:inset 0 0 0 1px var(--line);
+}
+
+.work-order-update-form[hidden]{display:none}
+.work-order-update-form label{margin:0}
+.work-order-update-note,.work-order-update-attachment,.work-order-update-actions{grid-column:1/-1}
+.work-order-update-actions{justify-content:flex-end;margin-top:2px}
+
+.work-order-timeline{
+  margin-top:12px;
+  border-top:1px solid var(--line);
+}
+
+.work-order-timeline>summary{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:12px 2px 2px;
+  cursor:pointer;
+  color:var(--navy);
+  font-weight:900;
+}
+
+.work-order-timeline-list{
+  display:grid;
+  gap:10px;
+  margin-top:12px;
+}
+
+.work-order-update-entry{
+  padding:12px;
+  border-left:4px solid #9fc5e8;
+  border-radius:8px 12px 12px 8px;
+  background:#fff;
+}
+
+.work-order-update-entry-head{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:flex-start;
+}
+
+.work-order-update-entry p{margin:7px 0 0;white-space:pre-wrap}
+.work-order-update-meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;color:var(--muted);font-size:13px}
+.work-order-update-entry a{display:inline-block;margin-top:8px;font-weight:800}
+
 .row-actions{
   display:flex;
   gap:8px;
@@ -2002,6 +2077,10 @@ button.danger{
   .maintenance-row{display:block}
   .maintenance-row .status{display:inline-block;margin-top:8px}
   .row-actions{justify-content:flex-start;margin-top:8px}
+  .work-order-timeline-heading{align-items:stretch;flex-direction:column}
+  .work-order-update-form{grid-template-columns:1fr}
+  .work-order-update-note,.work-order-update-attachment,.work-order-update-actions{grid-column:auto}
+  .work-order-update-entry-head{flex-direction:column;gap:3px}
 }
 
 

@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="assets/pwa-icon-180.png">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="temperature.css?v=2026-08-29-negative-overrun">
-  <link rel="stylesheet" href="his-theme.css?v=2026-08-31-spanish">
+  <link rel="stylesheet" href="his-theme.css?v=2026-09-02-work-order-timeline">
   <link rel="stylesheet" href="subscription.css?v=1.22.0">
   <link rel="stylesheet" href="qr-checkpoints.css?v=2026-09-01-1">
   <style>
@@ -2180,8 +2180,47 @@
       <label>Issue / comments
         <textarea id="editWoIssue"></textarea>
       </label>
-      <label>Resolution notes
-        <textarea id="editWoResolution"></textarea>
+      <section class="work-order-timeline-block" aria-labelledby="workOrderTimelineHeading">
+        <div class="work-order-timeline-heading">
+          <div><b id="workOrderTimelineHeading">Repair history</b><p class="hint">Progress notes remain in order with the author and time recorded automatically.</p></div>
+          <button id="toggleWorkOrderUpdateBtn" class="ghost" type="button">+ Add update</button>
+        </div>
+        <div id="workOrderUpdateForm" class="work-order-update-form" hidden>
+          <label>Update type
+            <select id="workOrderUpdateType">
+              <option>Progress update</option>
+              <option>Diagnosis</option>
+              <option>Parts ordered</option>
+              <option>Vendor visit</option>
+              <option>Testing</option>
+              <option>Correction</option>
+              <option>Other</option>
+            </select>
+          </label>
+          <label>Status change
+            <select id="workOrderUpdateStatus"></select>
+          </label>
+          <label class="work-order-update-note">Repair update
+            <textarea id="workOrderUpdateNote" rows="3" maxlength="2000" placeholder="What was checked, completed, ordered, or learned?"></textarea>
+          </label>
+          <label>Time spent
+            <input id="workOrderUpdateHours" type="number" min="0" max="1000" step="0.25" placeholder="Optional hours">
+          </label>
+          <label>Follow-up date
+            <input id="workOrderUpdateFollowUp" type="date">
+          </label>
+          <label class="work-order-update-attachment">Photo or document
+            <input id="workOrderUpdateAttachment" type="file" accept="image/*,application/pdf">
+          </label>
+          <div class="dialog-actions work-order-update-actions"><button id="cancelWorkOrderUpdateBtn" class="ghost" type="button">Cancel</button><button id="saveWorkOrderUpdateBtn" type="button">Save update</button></div>
+        </div>
+        <details id="workOrderTimeline" class="work-order-timeline">
+          <summary><span>View repair history</span><b id="workOrderUpdateCount">0 updates</b></summary>
+          <div id="workOrderTimelineList" class="work-order-timeline-list"></div>
+        </details>
+      </section>
+      <label>Final resolution (required to complete)
+        <textarea id="editWoResolution" placeholder="Final summary of what resolved the issue"></textarea>
       </label>
       <label>Target date
         <input id="editWoTargetDate" type="date">
@@ -2228,12 +2267,12 @@
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-09-01-3"></script>
+  <script src="version.js?v=2026-09-02-1"></script>
   <script src="i18n.js?v=2026-09-01-qr-checkpoints"></script>
   <script src="auth.js?v=2026-08-31-spanish"></script>
   <script src="financial-reports.js?v=2026-08-30-email-import"></script>
   <script src="agent-tools.js?v=2026-09-01-agent-scope"></script>
-  <script src="app.js?v=2026-09-01-agent-scope"></script>
+  <script src="app.js?v=2026-09-02-work-order-timeline"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>

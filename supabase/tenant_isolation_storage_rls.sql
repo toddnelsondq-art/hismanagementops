@@ -53,7 +53,8 @@ begin
     'billing_events',
     'financial_report_imports',
     'financial_daily_metrics',
-    'app_feedback'
+    'app_feedback',
+    'work_order_updates'
   ]
   loop
     if to_regclass(format('public.%I', table_name)) is not null then
@@ -79,7 +80,8 @@ where n.nspname = 'public'
     'invites', 'days', 'maintenance_data', 'tenant_memberships',
     'subscription_plans', 'tenant_subscriptions', 'location_addons',
     'billing_events', 'financial_report_imports', 'financial_daily_metrics',
-    'app_feedback'
+    'app_feedback',
+    'work_order_updates'
   )
 order by c.relname;
 

@@ -14,7 +14,7 @@ test('tenant isolation migration makes both upload buckets private', () => {
 });
 
 test('tenant isolation migration enables RLS and revokes browser table access', () => {
-  for (const tableName of ['tenants', 'locations', 'app_users', 'user_location_assignments', 'days', 'maintenance_data', 'tenant_memberships', 'financial_daily_metrics', 'app_feedback']) {
+  for (const tableName of ['tenants', 'locations', 'app_users', 'user_location_assignments', 'days', 'maintenance_data', 'work_order_updates', 'tenant_memberships', 'financial_daily_metrics', 'app_feedback']) {
     assert.match(migration, new RegExp(`'${tableName}'`, 'i'));
   }
   assert.match(migration, /alter table public\.%I enable row level security/i);

@@ -15,7 +15,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.31.0';
+const APP_VERSION = '1.32.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -5297,22 +5297,62 @@ async function maintenanceLists() {
   return result;
 }
 
+function clientWorkOrderUpdate(row = {}) {
+  return {
+    id: row.id,
+    workOrderId: row.work_order_id,
+    locationId: row.location_id,
+    updateType: row.update_type || 'Progress update',
+    status: row.status || '',
+    note: row.note || '',
+    timeSpentHours: row.time_spent_hours === null || row.time_spent_hours === undefined ? null : Number(row.time_spent_hours),
+    followUpDate: row.follow_up_date || '',
+    attachmentUrl: row.attachment_url || '',
+    attachmentName: row.attachment_name || '',
+    createdById: row.created_by_id || '',
+    createdByName: row.created_by_name || '',
+    createdAt: row.created_at || ''
+  };
+}
+
+async function readWorkOrderUpdates() {
+  const rows = await supabase(`/rest/v1/work_order_updates?${tenantQuery()}&select=*&order=created_at.desc&limit=5000`);
+  const hydrated = await hydrateStorageReferences(rows);
+  return hydrated.map(clientWorkOrderUpdate);
+}
+
 async function maintenanceState(locationId = 'all') {
-  let [workOrders, equipment, pmSchedule, vendors, locations, lists, priorityOrder] = await Promise.all([
+  let [workOrders, equipment, pmSchedule, vendors, locations, lists, priorityOrder, updateState] = await Promise.all([
     readMaintenanceKey('workOrders', []),
     readMaintenanceKey('equipment', []),
     readMaintenanceKey('pmSchedule', []),
     readMaintenanceKey('vendors', []),
     readMaintenanceKey('locations', []),
     maintenanceLists(),
-    readMaintenanceKey('maintenancePriorityOrder', [])
+    readMaintenanceKey('maintenancePriorityOrder', []),
+    readWorkOrderUpdates()
+      .then(items => ({ ready: true, items }))
+      .catch(error => ({ ready: false, items: [], message: error.message }))
   ]);
   if (locationId && locationId !== 'all') {
     workOrders = workOrders.filter(row => String(row['Location ID']) === String(locationId));
     equipment = equipment.filter(row => String(row['Location ID']) === String(locationId));
     pmSchedule = pmSchedule.filter(row => String(row['Location ID']) === String(locationId));
   }
-  return { locations, equipment, workOrders, pmSchedule, vendors, lists, priorityOrder: Array.isArray(priorityOrder) ? priorityOrder : [] };
+  const visibleOrderIds = new Set(workOrders.map(row => String(row['Work Order ID'])));
+  const workOrderUpdates = updateState.items.filter(update => visibleOrderIds.has(String(update.workOrderId)));
+  return {
+    locations,
+    equipment,
+    workOrders,
+    workOrderUpdates,
+    workOrderUpdatesReady: updateState.ready,
+    workOrderUpdatesMessage: updateState.ready ? '' : 'Repair History is not set up yet. Run supabase/add_work_order_updates.sql.',
+    pmSchedule,
+    vendors,
+    lists,
+    priorityOrder: Array.isArray(priorityOrder) ? priorityOrder : []
+  };
 }
 
 async function saveMaintenancePriorityOrder(payload, actor) {
@@ -5400,12 +5440,81 @@ async function maintenanceStateForActor(actor, locationId = 'all') {
     .filter(location => assignedNames.has(maintenanceLocationKey(location['Location Name'])))
     .map(location => String(location['Location ID'])));
   const allowedRow = row => allowedMaintenanceIds.has(String(row['Location ID'])) || assignedNames.has(maintenanceLocationKey(row['Location Name']));
+  const workOrders = state.workOrders.filter(allowedRow);
+  const visibleOrderIds = new Set(workOrders.map(row => String(row['Work Order ID'])));
   return {
     ...state,
     locations: state.locations.filter(allowedRow),
     equipment: state.equipment.filter(allowedRow),
-    workOrders: state.workOrders.filter(allowedRow),
+    workOrders,
+    workOrderUpdates: (state.workOrderUpdates || []).filter(update => visibleOrderIds.has(String(update.workOrderId))),
     pmSchedule: state.pmSchedule.filter(allowedRow)
+  };
+}
+
+async function addWorkOrderUpdate(payload, actor) {
+  const workOrders = await readMaintenanceKey('workOrders', []);
+  const row = workOrders.find(entry => String(entry['Work Order ID']) === String(payload.workOrderId || ''));
+  if (!row) throw Object.assign(new Error('Work order not found'), { statusCode: 404 });
+  const technician = actor?.role === MAINTENANCE_ROLE;
+  if (AUTH_REQUIRED && !technician && !canManage(actor)) throw Object.assign(new Error('You do not have permission to update work orders'), { statusCode: 403 });
+  if (!(await canAccessMaintenanceRecord(actor, row))) throw Object.assign(new Error('You can only update work orders for your assigned location'), { statusCode: 403 });
+
+  const note = String(payload.note || '').trim().slice(0, 2000);
+  if (!note) throw Object.assign(new Error('Enter a repair update before saving'), { statusCode: 400 });
+  const updateTypes = ['Progress update', 'Diagnosis', 'Parts ordered', 'Vendor visit', 'Testing', 'Correction', 'Other'];
+  const updateType = updateTypes.includes(payload.updateType) ? payload.updateType : 'Progress update';
+  const validStatuses = new Set(['New', 'Assigned', 'In Progress', 'Waiting on Parts', 'Waiting on Vendor', 'Scheduled', 'On Hold', 'Completed', 'Cancelled']);
+  const status = String(payload.status || '').trim();
+  if (status && !validStatuses.has(status)) throw Object.assign(new Error('Choose a valid work-order status'), { statusCode: 400 });
+  if (['Completed', 'Cancelled'].includes(status)) {
+    throw Object.assign(new Error('Use the work-order completion controls so a final resolution is recorded'), { statusCode: 400 });
+  }
+  const hours = payload.timeSpentHours === '' || payload.timeSpentHours === null || payload.timeSpentHours === undefined
+    ? null
+    : Number(payload.timeSpentHours);
+  if (hours !== null && (!Number.isFinite(hours) || hours < 0 || hours > 1000)) {
+    throw Object.assign(new Error('Time spent must be between 0 and 1,000 hours'), { statusCode: 400 });
+  }
+  const followUpDate = /^\d{4}-\d{2}-\d{2}$/.test(String(payload.followUpDate || '')) ? payload.followUpDate : null;
+  const attachmentUrl = String(payload.attachmentUrl || '').trim();
+  const insert = withTenant({
+    work_order_id: String(row['Work Order ID']),
+    location_id: String(row['Location ID'] || ''),
+    update_type: updateType,
+    status,
+    note,
+    time_spent_hours: hours,
+    follow_up_date: followUpDate,
+    attachment_url: dehydrateStorageReferences(attachmentUrl),
+    attachment_name: String(payload.attachmentName || '').trim().slice(0, 180),
+    created_by_id: String(actor?.id || ''),
+    created_by_name: String(actor?.name || actor?.email || 'App User').slice(0, 180)
+  });
+  let savedRows;
+  try {
+    savedRows = await supabase('/rest/v1/work_order_updates?select=*', {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify(insert)
+    });
+  } catch (error) {
+    if ([400, 404].includes(error.statusCode)) {
+      throw Object.assign(new Error('Repair History is not set up yet. Run supabase/add_work_order_updates.sql.'), { statusCode: 409 });
+    }
+    throw error;
+  }
+
+  if (status) {
+    row.Status = status;
+  }
+  row['Last Updated'] = today();
+  await writeMaintenanceKey('workOrders', workOrders);
+  const hydrated = await hydrateStorageReferences(savedRows[0] || insert);
+  return {
+    update: clientWorkOrderUpdate(hydrated),
+    workOrder: row,
+    state: await maintenanceStateForActor(actor, 'all')
   };
 }
 
@@ -6009,6 +6118,9 @@ async function routeRequest(event) {
     if (method === 'POST' && apiPath === '/maintenance/work-order/update') {
       const workOrder = await updateWorkOrder(body, actor);
       return json(200, { workOrder, state: await maintenanceStateForActor(actor, 'all') });
+    }
+    if (method === 'POST' && apiPath === '/maintenance/work-order/update-entry') {
+      return json(200, await addWorkOrderUpdate(body, actor));
     }
     if (method === 'POST' && apiPath === '/maintenance/equipment') {
       const equipment = await writeEquipment(body);

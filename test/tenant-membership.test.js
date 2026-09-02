@@ -102,5 +102,5 @@ test('legacy storage objects remain available only to the original HIS tenant', 
 test('public requests still use the safe HIS fallback tenant', async () => {
   const response = await apiModule.handler({ path: '/api/version', httpMethod: 'GET', headers: {} });
   assert.equal(response.statusCode, 200);
-  assert.equal(JSON.parse(response.body).version, '1.31.0');
+  assert.equal(JSON.parse(response.body).version, '1.32.0');
 });
