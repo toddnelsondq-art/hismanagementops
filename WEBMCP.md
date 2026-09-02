@@ -6,8 +6,8 @@ HIS OPS includes an experimental, progressively enhanced WebMCP adapter. The nor
 
 | Tool | Purpose | Saved-data effect |
 | --- | --- | --- |
-| `get_due_tasks` | Lists incomplete checklist tasks for the signed-in user's selected location and date. | Read only |
-| `get_due_temperatures` | Lists missing temperature readings for the signed-in user's selected location and date. | Read only |
+| `get_due_tasks` | Lists incomplete checklist tasks for an assigned location and date, with category, store-area, and section filters. | Read only |
+| `get_due_temperatures` | Lists missing temperature readings for an assigned location and date, with session and list filters. | Read only |
 | `open_help_section` | Opens a named Help topic. | Navigation only |
 | `draft_maintenance_request` | Opens and prefills the normal maintenance form. | Draft only; never submits |
 | `draft_incident_report` | Opens and prefills the normal incident form. | Draft only; never submits |
@@ -17,6 +17,8 @@ The browser-neutral registry is exposed as `window.HISOpsAgent` after sign-in. T
 ## Security boundaries
 
 - Existing HIS OPS authentication, role, subscription, tenant, and assigned-location checks remain authoritative.
+- A location-scoped tool automatically uses the store only when the user has exactly one assigned location. Multi-location users must identify an assigned location by name or ID; the tool never silently falls back to the home location.
+- Every task and temperature result repeats the location name used for the query.
 - No tools are exposed to cross-origin frames or sites.
 - Operational data returned by tools is annotated as untrusted content.
 - Read-only tools are marked with `readOnlyHint: true`.
@@ -39,7 +41,12 @@ HISOpsAgent.listTools()
 The same local adapter can be exercised without WebMCP:
 
 ```js
-await HISOpsAgent.executeTool('get_due_tasks', { scope: 'now', category: 'all' })
+await HISOpsAgent.executeTool('get_due_tasks', {
+  location: 'North St Paul',
+  scope: 'now',
+  category: 'Manager',
+  area: 'Exterior'
+})
 ```
 
 Do not add a new write-capable tool without a permission review, narrow input schema, explicit confirmation boundary, and automated test proving what it cannot submit.

@@ -1581,51 +1581,76 @@ function formattedTemperatureReading(reading = {}) {
 let dqOpsAgentTools = [];
 let dqOpsWebMcpRegistration = { attempted: false, available: false, names: [], controller: null };
 
-function assignedAgentLocation(locationId = currentLocationId) {
-  const requested = String(locationId || currentLocationId);
-  if (!accessibleLocationIds().includes(requested)) throw new Error('You do not have access to that HIS OPS location.');
-  const location = locations.find(entry => entry.id === requested);
-  if (!location) throw new Error('That HIS OPS location was not found.');
-  return location;
+function assignedAgentLocation(locationReference = '', { requireExplicitForMultiple = false } = {}) {
+  return window.DqOpsAgentTools.resolveAssignedLocation(
+    locations,
+    accessibleLocationIds(),
+    locationReference,
+    { requireExplicitForMultiple, fallbackLocationId: currentLocationId }
+  );
 }
 
-function agentDueTasks({ scope = 'now', category = 'all', section = '' } = {}) {
+async function agentDailyOpsContext(locationReference = '') {
+  const location = assignedAgentLocation(locationReference, { requireExplicitForMultiple: true });
+  if (String(location.id) === String(currentLocationId)) {
+    return { location, daily: day, definitions: temperatureItems };
+  }
+  if (!apiOnline) throw new Error('Live data is required to review a different location.');
+  const state = await api(`/api/state?date=${dateKey}&locationId=${encodeURIComponent(location.id)}&historyScope=location`);
+  return {
+    location,
+    daily: state.day || { locationId: location.id, tasks: [], temps: [] },
+    definitions: state.temperatureItems || temperatureItems
+  };
+}
+
+async function agentDueTasks({ location: locationReference = '', scope = 'now', category = 'all', area = '', section = '' } = {}) {
   if (!canUseDailyOps() || !subscriptionFeatureEnabled('daily_operations')) throw new Error('Task Lists are not available to this account.');
-  const due = (day.tasks || [])
+  const context = await agentDailyOpsContext(locationReference);
+  const requestedArea = String(area || '').trim().toLowerCase();
+  const due = (context.daily.tasks || [])
     .filter(task => !task.done)
     .filter(task => scope === 'today' || taskMatchesCurrentTime(task))
     .filter(task => category === 'all' || taskCategory(task) === category)
+    .filter(task => !requestedArea || [task.area, taskCategory(task)].some(value => String(value || '').trim().toLowerCase() === requestedArea))
     .filter(task => !section || String(task.section || '') === section)
     .map(task => ({
       name: task.name,
       section: task.section || 'All Day',
       category: taskCategory(task),
+      area: task.area || taskCategory(task),
       photoRequired: Boolean(task.photo),
       qrRequired: Boolean(task.qrCheckpointId || task.requiresQr)
     }));
-  return { date: dateKey, location: currentLocation().name, scope, dueCount: due.length, items: due.slice(0, 25), moreItems: Math.max(due.length - 25, 0) };
+  return { date: dateKey, location: context.location.name, scope, category, area: area || 'all', dueCount: due.length, items: due.slice(0, 25), moreItems: Math.max(due.length - 25, 0) };
 }
 
-function temperatureListDueToday(listName) {
-  const definition = temperatureItems[listName] || {};
-  if (definition.requiredDaily !== false) return temperatureListScheduledToday(listName);
+function agentTemperatureListDueToday(listName, definitions, locationId) {
+  const definition = definitions[listName] || {};
   const schedules = definition.deliveryDaysByLocation;
-  return Boolean(schedules && Object.prototype.hasOwnProperty.call(schedules, currentLocationId) && temperatureListScheduledToday(listName));
+  if (!schedules || !Object.prototype.hasOwnProperty.call(schedules, locationId)) return definition.requiredDaily !== false;
+  const scheduledDays = Array.isArray(schedules[locationId]) ? schedules[locationId] : [];
+  return scheduledDays.includes(weekdayOptions[new Date().getDay()]);
 }
 
-function agentDueTemperatures({ session = selectedTempSession, list = '' } = {}) {
+async function agentDueTemperatures({ location: locationReference = '', session = selectedTempSession, list = '' } = {}) {
   if (!canUseDailyOps() || !subscriptionFeatureEnabled('daily_operations')) throw new Error('Temperature Logs are not available to this account.');
   if (!tempSessions.includes(session)) throw new Error('Choose the Day or Afternoon temperature session.');
-  const dueLists = temperatureListNames().filter(temperatureListDueToday);
+  const context = await agentDailyOpsContext(locationReference);
+  const definitions = context.definitions || {};
+  const listFormat = Object.values(definitions).some(value => value?.areas);
+  const listNames = listFormat ? Object.keys(definitions) : ['Grill', 'Chill'];
+  const areasForList = listName => listFormat ? (definitions[listName]?.areas || {}) : definitions;
+  const dueLists = listNames.filter(listName => agentTemperatureListDueToday(listName, definitions, context.location.id));
   if (list && !dueLists.includes(list)) throw new Error('That temperature list is not scheduled for the selected location today.');
   const missing = dueLists
     .filter(listName => !list || listName === list)
-    .flatMap(listName => Object.entries(temperatureAreasForList(listName)).flatMap(([area, items]) => items
-      .filter(item => !(day.temps || []).some(reading => readingList(reading) === listName && readingSession(reading) === session && reading.area === area && reading.item === item))
+    .flatMap(listName => Object.entries(areasForList(listName)).flatMap(([area, items]) => items
+      .filter(item => !(context.daily.temps || []).some(reading => readingList(reading) === listName && readingSession(reading) === session && reading.area === area && reading.item === item))
       .map(item => ({ list: listName, area, item, unit: isOverrunReading(listName, item) ? '%' : '°F' }))));
   return {
     date: dateKey,
-    location: currentLocation().name,
+    location: context.location.name,
     session,
     entryLocked: session === 'Day' && !dayTempsAvailable(),
     dueCount: missing.length,
@@ -1657,10 +1682,10 @@ function setSelectIfAvailable(selector, value) {
   return true;
 }
 
-async function agentDraftMaintenanceRequest({ description, location_id: locationId, category = '', priority = 'Medium', target_date: targetDate = '' } = {}) {
+async function agentDraftMaintenanceRequest({ description, location: locationReference = '', location_id: locationId = '', category = '', priority = 'Medium', target_date: targetDate = '' } = {}) {
   if (!canUseHub() || !subscriptionFeatureEnabled('maintenance')) throw new Error('Maintenance requests are not available to this account.');
   if (!String(description || '').trim()) throw new Error('Enter a maintenance issue description.');
-  const location = assignedAgentLocation(locationId);
+  const location = assignedAgentLocation(locationReference || locationId, { requireExplicitForMultiple: true });
   maintenanceLocationId = location.id;
   localStorage.setItem('maintenance-location', maintenanceLocationId);
   await loadMaintenanceState();
@@ -1676,10 +1701,10 @@ async function agentDraftMaintenanceRequest({ description, location_id: location
   return { draftReady: true, location: location.name, submitted: false, reviewRequired: true };
 }
 
-function agentDraftIncidentReport({ title, details, location_id: locationId, issue_type: issueType = '', severity = 'Medium', immediate_action: immediateAction = '', amount } = {}) {
+function agentDraftIncidentReport({ title, details, location: locationReference = '', location_id: locationId = '', issue_type: issueType = '', severity = 'Medium', immediate_action: immediateAction = '', amount } = {}) {
   if (!canUseManagementReports() || !subscriptionFeatureEnabled('advanced_reports')) throw new Error('Incident Reports are not available to this account.');
   if (!String(title || '').trim() || !String(details || '').trim()) throw new Error('Enter both an incident subject and the facts.');
-  const location = assignedAgentLocation(locationId);
+  const location = assignedAgentLocation(locationReference || locationId, { requireExplicitForMultiple: true });
   switchView('managementReportsView');
   renderManagementReports();
   $('#managementReportLocation').value = location.id;
