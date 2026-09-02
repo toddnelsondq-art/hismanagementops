@@ -6,6 +6,7 @@ const Busboy = require('busboy');
 const XLSX = require('xlsx');
 const QRCode = require('qrcode');
 const financialParser = require('../../app/financial-reports.js');
+const { parseFpcPdf } = require('./fpc-report-parser.js');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -15,7 +16,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.33.0';
+const APP_VERSION = '1.34.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -4010,6 +4011,67 @@ async function readFpcRecords() {
   return Array.isArray(records) ? records : [];
 }
 
+async function readFpcEmailImports() {
+  const entries = await readMaintenanceKey('fpcEmailImports', []);
+  return Array.isArray(entries) ? entries : [];
+}
+
+function supportedFpcEmailFile(file = {}) {
+  return path.extname(file.filename || '').toLowerCase() === '.pdf' || /application\/pdf/i.test(file.mimeType || '');
+}
+
+function fpcEmailItemId(sourceHash, failure = {}) {
+  return `FPCITEM-${crypto.createHash('sha256').update(`${sourceHash}|${failure.section || ''}|${failure.id || ''}|${failure.description || ''}`).digest('hex').slice(0, 18)}`;
+}
+
+function fileParsedFpcReport({ records, entry, location, actorName = 'Automatic FPC email' }) {
+  const inspectionDate = String(entry.inspectionDate || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(inspectionDate)) throw Object.assign(new Error('Choose a valid FPC inspection date'), { statusCode: 400 });
+  const now = new Date().toISOString();
+  let record = records.find(item => item.active !== false && item.locationId === location.id && item.inspectionDate === inspectionDate);
+  if (!record) {
+    record = {
+      id: nextFpcId(records), locationId: location.id, locationName: location.name, inspectionDate,
+      inspectionFiles: [], items: [], sourceHashes: [], createdBy: actorName, createdAt: now, active: true
+    };
+    records.unshift(record);
+  }
+  const inspectionFile = { url: entry.url, name: entry.sourceFilename || 'Emailed FPC report' };
+  const files = fpcInspectionFiles({ inspectionFiles: [...fpcInspectionFiles(record), inspectionFile] });
+  record.inspectionFiles = files;
+  record.inspectionUrl = files[0]?.url || '';
+  record.inspectionName = files[0]?.name || '';
+  record.locationName = location.name;
+  record.items ||= [];
+  record.sourceHashes = [...new Set([...(record.sourceHashes || []), entry.sourceHash].filter(Boolean))];
+  let createdCount = 0;
+  let duplicateItemCount = 0;
+  for (const failure of entry.failures || []) {
+    const itemId = fpcEmailItemId(entry.sourceHash || entry.id, failure);
+    const duplicate = record.items.some(item => item.id === itemId || (
+      String(item.sourceHash || '') === String(entry.sourceHash || '')
+      && String(item.sourceSection || '') === String(failure.section || '')
+      && String(item.sourceCriterionId || '') === String(failure.id || '')
+    ));
+    if (duplicate) { duplicateItemCount += 1; continue; }
+    record.items.push({
+      id: itemId,
+      description: String(failure.description || '').trim(),
+      priority: 'Medium', status: 'Open', assignedTo: '', assignmentType: '',
+      assigneeId: '', assigneeName: '', assigneeEmail: '', assigneePhone: '',
+      vendorId: '', vendorName: '', assignmentNotify: 'none', targetDate: '', photos: [],
+      photoUrl: '', photoName: '', comments: [],
+      sourceHash: entry.sourceHash || '', sourceEmailId: entry.id || '',
+      sourceSection: failure.section || '', sourceCriterion: failure.criterion || '', sourceCriterionId: failure.id || '',
+      createdBy: actorName, createdAt: now, updatedAt: now
+    });
+    createdCount += 1;
+  }
+  record.updatedBy = actorName;
+  record.updatedAt = now;
+  return { record, createdCount, duplicateItemCount };
+}
+
 function fpcInspectionFiles(record = {}) {
   const source = Array.isArray(record.inspectionFiles)
     ? record.inspectionFiles
@@ -4092,9 +4154,144 @@ async function fpcState(actor = null) {
   const repaired = consolidateFpcRecords(storedRecords, appLocations);
   if (repaired.changed) await writeMaintenanceKey('fpcRecords', repaired.records);
   const records = repaired.records.filter(record => record && record.active !== false);
-  if (!AUTH_REQUIRED || !actor || isFullAccess(actor)) return { records };
+  const canReview = !AUTH_REQUIRED || Boolean(actor && isFullAccess(actor));
+  const allowedSenders = process.env.FPC_ALLOWED_SENDERS || process.env.STORE_DOCUMENT_ALLOWED_SENDERS || process.env.FINANCIAL_REPORT_ALLOWED_SENDERS || '';
+  const inboundAddress = process.env.FPC_INBOUND_ADDRESS || '';
+  const emailDetails = canReview ? {
+    emailImports: await readFpcEmailImports(),
+    mappings: await readDocumentStoreMappings(appLocations),
+    canReview,
+    emailAutomation: {
+      configured: Boolean(process.env.MAILGUN_WEBHOOK_SIGNING_KEY && allowedSenders && inboundAddress),
+      inboundAddress,
+      allowedSenders: allowedSenders.split(',').map(mailgunSenderAddress).filter(Boolean)
+    }
+  } : { emailImports: [], mappings: {}, canReview: false, emailAutomation: { configured: false, inboundAddress: '', allowedSenders: [] } };
+  if (!AUTH_REQUIRED || !actor || isFullAccess(actor)) return { records, ...emailDetails };
   const allowed = userLocationIds(actor);
-  return { records: records.filter(record => allowed.includes(record.locationId)) };
+  return { records: records.filter(record => allowed.includes(record.locationId)), ...emailDetails };
+}
+
+async function saveFpcEmailMapping(payload, actor) {
+  await saveDocumentStoreMapping(payload, actor);
+  return fpcState(actor);
+}
+
+async function receiveFpcEmail(event) {
+  requireSupabase();
+  const entitlement = await effectiveSubscription(tenantId());
+  if (!entitlement.features.fpc_repairs) throw Object.assign(new Error('FPC repairs are not enabled for this subscription'), { statusCode: 406 });
+  const { fields, files } = await parseMultipartForm(event, { files: 6, fileSize: 4 * 1024 * 1024 });
+  const allowedSenders = process.env.FPC_ALLOWED_SENDERS || process.env.STORE_DOCUMENT_ALLOWED_SENDERS || process.env.FINANCIAL_REPORT_ALLOWED_SENDERS || '';
+  const sender = verifyMailgunRequest(fields, { label: 'FPC', allowedSenders });
+  const recipient = String(fields.recipient || fields.to || '').slice(0, 300);
+  if (!documentEmailRecipientMatches(recipient, process.env.FPC_INBOUND_ADDRESS || '')) {
+    throw Object.assign(new Error('This recipient is not configured for FPC imports'), { statusCode: 406 });
+  }
+  const subject = String(fields.subject || 'FPC report').slice(0, 200);
+  const [locations, mappings, records, imports] = await Promise.all([
+    readLocations(), readDocumentStoreMappings(), readFpcRecords(), readFpcEmailImports()
+  ]);
+  let filed = 0;
+  let review = 0;
+  let duplicates = 0;
+  let unsupported = 0;
+  let repairItemsCreated = 0;
+
+  for (const file of files) {
+    if (!supportedFpcEmailFile(file)) { unsupported += 1; continue; }
+    const sourceHash = crypto.createHash('sha256').update(file.buffer).digest('hex');
+    const prior = imports.find(entry => entry.sourceHash === sourceHash && ['filed', 'needs_review'].includes(entry.status));
+    if (prior) {
+      duplicates += 1;
+      imports.unshift({
+        id: `FPCMAIL-${Date.now()}-${crypto.randomUUID()}`, status: 'duplicate', sender, recipient, subject,
+        sourceFilename: file.filename, sourceHash, locationId: prior.locationId || '', locationName: prior.locationName || '',
+        message: 'This FPC report was already received.', createdAt: new Date().toISOString()
+      });
+      continue;
+    }
+
+    try {
+      const parsed = await parseFpcPdf(file.buffer);
+      if (parsed.taskCount < 5) throw new Error('The PDF does not look like an FPC report');
+      const match = resolveDocumentEmailLocation({
+        recipient,
+        subject: `${subject} ${parsed.storeCode || ''} ${parsed.locationText || ''}`,
+        filename: file.filename,
+        mappings,
+        locations
+      });
+      const url = await saveBufferAttachment(file, match.location?.id || 'fpc-email-review', 'fpc-email-report');
+      const baseEntry = {
+        id: `FPCMAIL-${Date.now()}-${crypto.randomUUID()}`, sender, recipient, subject,
+        sourceFilename: file.filename, sourceHash, url, detectedCodes: match.detectedCodes,
+        detectedCode: parsed.storeCode || match.code || '', inspectionDate: parsed.inspectionDate || '',
+        inspector: parsed.inspector || '', locationText: parsed.locationText || '', failures: parsed.failures || [],
+        failureCount: parsed.failures?.length || 0, createdAt: new Date().toISOString()
+      };
+      if (match.location && parsed.inspectionDate) {
+        const result = fileParsedFpcReport({ records, entry: baseEntry, location: match.location });
+        repairItemsCreated += result.createdCount;
+        imports.unshift({
+          ...baseEntry, status: 'filed', locationId: match.location.id, locationName: match.location.name,
+          createdItemCount: result.createdCount,
+          message: `Filed automatically under ${match.location.name}; ${result.createdCount} repair item${result.createdCount === 1 ? '' : 's'} created.`
+        });
+        filed += 1;
+      } else {
+        const reason = !parsed.inspectionDate
+          ? 'The inspection date could not be read. Choose the date and location.'
+          : match.status === 'ambiguous'
+            ? 'More than one location matched. Choose the correct location.'
+            : 'No saved store-number or location match was found.';
+        imports.unshift({ ...baseEntry, status: 'needs_review', locationId: '', locationName: '', message: reason });
+        review += 1;
+      }
+    } catch (error) {
+      imports.unshift({
+        id: `FPCMAIL-${Date.now()}-${crypto.randomUUID()}`, status: 'failed', sender, recipient, subject,
+        sourceFilename: file.filename, sourceHash, locationId: '', locationName: '', failureCount: 0,
+        message: `FPC report could not be read: ${error.message}`, createdAt: new Date().toISOString()
+      });
+      review += 1;
+    }
+  }
+
+  if (!files.length || (!filed && !review && !duplicates && unsupported)) {
+    imports.unshift({
+      id: `FPCMAIL-${Date.now()}-${crypto.randomUUID()}`, status: 'failed', sender, recipient, subject,
+      sourceFilename: '', sourceHash: '', locationId: '', locationName: '', failureCount: 0,
+      message: unsupported ? 'No PDF attachment was found.' : 'The email did not contain an attachment.', createdAt: new Date().toISOString()
+    });
+  }
+  await writeMaintenanceKey('fpcRecords', records);
+  await writeMaintenanceKey('fpcEmailImports', imports.slice(0, 100));
+  return json(200, { accepted: true, filed, review, duplicates, unsupported, repairItemsCreated });
+}
+
+async function fileReviewedFpcEmail(payload, actor) {
+  if (AUTH_REQUIRED && !isFullAccess(actor)) throw Object.assign(new Error('Only Directors and Owners can file emailed FPC reports'), { statusCode: 403 });
+  const [imports, records, locations] = await Promise.all([readFpcEmailImports(), readFpcRecords(), readLocations()]);
+  const index = imports.findIndex(entry => entry.id === String(payload.id || ''));
+  const entry = imports[index];
+  if (!entry || entry.status !== 'needs_review' || !entry.url) throw Object.assign(new Error('That FPC report is no longer waiting for review'), { statusCode: 404 });
+  const location = locations.find(item => item.id === String(payload.locationId || ''));
+  if (!location) throw Object.assign(new Error('Choose the correct location'), { statusCode: 400 });
+  const inspectionDate = String(payload.inspectionDate || entry.inspectionDate || '').slice(0, 10);
+  const actorName = actor?.name || actor?.email || 'Director';
+  const result = fileParsedFpcReport({ records, entry: { ...entry, inspectionDate }, location, actorName });
+  imports[index] = {
+    ...entry, inspectionDate, status: 'filed', locationId: location.id, locationName: location.name,
+    createdItemCount: result.createdCount,
+    message: `Filed after review under ${location.name}; ${result.createdCount} repair item${result.createdCount === 1 ? '' : 's'} created.`,
+    completedAt: new Date().toISOString(), completedBy: actorName
+  };
+  await writeMaintenanceKey('fpcRecords', records);
+  await writeMaintenanceKey('fpcEmailImports', imports.slice(0, 100));
+  const storeCode = String(payload.storeCode || entry.detectedCode || '').trim();
+  if (/^\d{4,6}$/.test(storeCode)) await saveDocumentStoreMapping({ storeCode, locationId: location.id }, actor);
+  return fpcState(actor);
 }
 
 async function saveFpcInspection(payload, actor) {
@@ -6059,6 +6256,9 @@ if (process.env.NODE_ENV === 'test') exports.__test = {
   dehydrateStorageReferences,
   fpcInspectionFiles,
   consolidateFpcRecords,
+  supportedFpcEmailFile,
+  fpcEmailItemId,
+  fileParsedFpcReport,
   signQrCheckpointToken,
   verifyQrCheckpointToken
 };
@@ -6072,6 +6272,7 @@ async function routeRequest(event) {
     if (method === 'OPTIONS') return json(200, {});
     if (method === 'POST' && apiPath === '/financial-reports/email-ingest') return await receiveFinancialReportEmail(event);
     if (method === 'POST' && apiPath === '/store-documents/email-ingest') return await receiveStoreDocumentEmail(event);
+    if (method === 'POST' && apiPath === '/fpc/email-ingest') return await receiveFpcEmail(event);
     const body = event.body ? JSON.parse(event.body) : {};
 
     if (method === 'GET' && apiPath === '/version') {
@@ -6352,6 +6553,12 @@ async function routeRequest(event) {
     }
     if (method === 'POST' && apiPath === '/fpc/comment') {
       return json(200, await addFpcComment(body, actor));
+    }
+    if (method === 'POST' && apiPath === '/fpc/email-mapping') {
+      return json(200, await saveFpcEmailMapping(body, actor));
+    }
+    if (method === 'POST' && apiPath === '/fpc/email-file') {
+      return json(200, await fileReviewedFpcEmail(body, actor));
     }
     if (method === 'POST' && apiPath === '/store-documents/document') {
       return json(200, await saveStoreDocument(body, actor));

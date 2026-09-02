@@ -128,6 +128,8 @@ For financial Day/Week/Month dashboard reporting, also run [`supabase/add_financ
 
 Store inspection documents can be filed automatically from an approved email sender. Configure the Netlify variables and Mailgun recipient route in [`DOCUMENT_EMAIL_SETUP.md`](DOCUMENT_EMAIL_SETUP.md), then maintain store-number mappings from Resources → Documents → Email document intake. Unclear documents remain in a Director/Owner review queue instead of being assigned by a guess.
 
+Completed FPC PDF reports can also be emailed to the app. Follow [`FPC_EMAIL_SETUP.md`](FPC_EMAIL_SETUP.md). HIS OPS attaches the original report to the correct location/date and creates an open repair item from each failed “No” standard that includes a deficiency description. Unknown or conflicting stores remain in the Director/Owner FPC review queue.
+
 1. Sign in with a Manager, Area Manager, Director, or Owner account.
 2. Open Manage and set a four-digit PIN while adding or editing an Employee.
 3. In **Store tablets & employee PINs**, choose the store, name the tablet, and generate a setup code.

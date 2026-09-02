@@ -1,6 +1,6 @@
 {
   "name": "his-ops",
-  "version": "1.33.0",
+  "version": "1.34.0",
   "private": true,
   "description": "HIS OPS web and native application",
   "scripts": {
@@ -14,6 +14,7 @@
     "@capacitor/android": "8.5.0",
     "@capacitor/core": "8.5.0",
     "busboy": "^1.6.0",
+    "pdf-parse": "2.4.5",
     "qrcode": "^1.5.4",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },

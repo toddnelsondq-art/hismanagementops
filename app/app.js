@@ -287,7 +287,7 @@ let storeAlarmPollBusy = false;
 let calendarEvents = { events: [] };
 let calendarLocationFilter = localStorage.getItem('calendar-location-filter') || 'all';
 let maintenancePriorityOrder = [];
-let fpc = { records: [] };
+let fpc = { records: [], emailImports: [], mappings: {}, canReview: false, emailAutomation: { configured: false, inboundAddress: '', allowedSenders: [] } };
 let fpcLocationId = localStorage.getItem('fpc-location') || 'all';
 let storeDocuments = { documents: [], emailImports: [], mappings: {}, canReview: false, emailAutomation: { configured: false, inboundAddress: '', allowedSenders: [] } };
 let storeDocsLocationId = localStorage.getItem('store-docs-location') || 'all';
@@ -1082,7 +1082,7 @@ async function loadFpcState() {
   try {
     fpc = await api('/api/fpc/state');
   } catch {
-    fpc = { records: [] };
+    fpc = { records: [], emailImports: [], mappings: {}, canReview: false, emailAutomation: { configured: false, inboundAddress: '', allowedSenders: [] } };
   }
 }
 
@@ -3054,6 +3054,49 @@ function fpcRepairItemHtml(record, item) {
   `;
 }
 
+function renderFpcEmailAdmin() {
+  const admin = $('#fpcEmailAdmin');
+  if (!admin) return;
+  admin.hidden = !fpc.canReview;
+  if (!fpc.canReview) return;
+  const automation = fpc.emailAutomation || {};
+  const inboundLabel = automation.inboundAddress ? ` Send completed FPC PDF reports to ${automation.inboundAddress}.` : '';
+  $('#fpcEmailStatus').textContent = automation.configured
+    ? `Email intake is configured.${inboundLabel} PDF attachments must be under 4 MB.`
+    : 'Email intake code is ready. Add the FPC inbound address and approved senders in Netlify, then add the Mailgun route.';
+  const locationOptions = locations.map(location => `<option value="${escapeHtml(location.id)}">${escapeHtml(location.name)}</option>`).join('');
+  $('#fpcEmailMappingLocation').innerHTML = locationOptions;
+  const mappings = Object.entries(fpc.mappings || {}).sort(([a], [b]) => a.localeCompare(b));
+  $('#fpcEmailMappings').innerHTML = mappings.length
+    ? mappings.map(([code, value]) => {
+      const locationId = typeof value === 'string' ? value : value.locationId;
+      return `<span><b>${escapeHtml(code)}</b> → ${escapeHtml(locationName(locationId))}</span>`;
+    }).join('')
+    : '<span class="hint">No store-number mappings are saved yet.</span>';
+
+  const imports = fpc.emailImports || [];
+  const pending = imports.filter(entry => entry.status === 'needs_review');
+  $('#fpcEmailReviewCount').textContent = `${pending.length} to review`;
+  $('#fpcEmailReviewList').innerHTML = pending.length ? pending.map(entry => {
+    const detectedCode = entry.detectedCode || (Array.isArray(entry.detectedCodes) && entry.detectedCodes.length === 1 ? entry.detectedCodes[0] : '');
+    const failurePreview = (entry.failures || []).slice(0, 3).map(item => `<small>• ${escapeHtml(item.description)}</small>`).join('');
+    return `
+      <article class="store-doc-email-row" data-fpc-email-review-row="${escapeHtml(entry.id)}">
+        <div><b>${escapeHtml(entry.sourceFilename || entry.subject || 'Emailed FPC report')}</b><small>${escapeHtml(entry.sender || '')}${entry.createdAt ? ` · ${escapeHtml(new Date(entry.createdAt).toLocaleString())}` : ''}</small><small>${escapeHtml(entry.message || '')}</small><small>${Number(entry.failureCount || 0)} repair item${Number(entry.failureCount || 0) === 1 ? '' : 's'} detected${entry.inspector ? ` · Inspector ${escapeHtml(entry.inspector)}` : ''}</small>${failurePreview}${entry.url ? `<a href="${escapeHtml(entry.url)}" target="_blank" rel="noopener">Open FPC PDF</a>` : ''}</div>
+        <div class="store-doc-email-review-controls"><select data-fpc-email-location>${locationOptions}</select><input data-fpc-email-date type="date" value="${escapeHtml(entry.inspectionDate || '')}"><input data-fpc-email-code inputmode="numeric" maxlength="6" value="${escapeHtml(detectedCode)}" placeholder="Store #"><button data-file-fpc-email="${escapeHtml(entry.id)}" type="button">Create repair list</button></div>
+      </article>`;
+  }).join('') : '<p class="hint">No emailed FPC reports need review.</p>';
+  document.querySelectorAll('[data-file-fpc-email]').forEach(button => { button.onclick = () => fileFpcEmail(button); });
+
+  const statusClass = status => status === 'filed' ? 'done' : status === 'needs_review' ? 'open' : status === 'duplicate' ? '' : 'critical';
+  $('#fpcEmailHistory').innerHTML = imports.length ? imports.slice(0, 30).map(entry => `
+    <article class="store-doc-email-row compact">
+      <div><b>${escapeHtml(entry.sourceFilename || entry.subject || 'Email')}</b><small>${escapeHtml(entry.locationName || entry.sender || '')}${entry.createdAt ? ` · ${escapeHtml(new Date(entry.createdAt).toLocaleString())}` : ''}</small><small>${escapeHtml(entry.message || '')}</small></div>
+      <span class="status-pill ${statusClass(entry.status)}">${escapeHtml(String(entry.status || 'received').replace('_', ' '))}</span>
+    </article>
+  `).join('') : '<p class="hint">No FPC report emails have been received yet.</p>';
+}
+
 function renderFpc() {
   if (!$('#fpcLocation')) return;
   const visibleLocations = fpcVisibleLocations();
@@ -3074,6 +3117,7 @@ function renderFpc() {
     : '<option value="">Create from selected location</option>';
 
   setAssignmentFields('fpc', {});
+  renderFpcEmailAdmin();
   $('#fpcList').innerHTML = records.length ? records.map(record => {
     const activeItems = (record.items || []).filter(item => item.status !== 'Completed');
     const completedItems = (record.items || []).filter(item => item.status === 'Completed');
@@ -5409,6 +5453,46 @@ async function saveStoreDocumentEmailMapping() {
   }
 }
 
+async function saveFpcEmailMapping() {
+  const storeCode = $('#fpcEmailStoreCode').value.trim();
+  const locationId = $('#fpcEmailMappingLocation').value;
+  if (!/^\d{4,6}$/.test(storeCode)) return toast('Enter a 4- to 6-digit store number');
+  const button = $('#saveFpcEmailMappingBtn');
+  button.disabled = true;
+  try {
+    fpc = await api('/api/fpc/email-mapping', { method: 'POST', body: JSON.stringify({ storeCode, locationId }) });
+    $('#fpcEmailStoreCode').value = '';
+    renderFpc();
+    toast(`Store ${storeCode} FPC mapping saved`);
+  } catch (error) {
+    toast(`Mapping did not save: ${error.message}`);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function fileFpcEmail(button) {
+  const row = button.closest('[data-fpc-email-review-row]');
+  const id = button.dataset.fileFpcEmail;
+  const locationId = row?.querySelector('[data-fpc-email-location]')?.value || '';
+  const inspectionDate = row?.querySelector('[data-fpc-email-date]')?.value || '';
+  const storeCode = row?.querySelector('[data-fpc-email-code]')?.value.trim() || '';
+  if (!locationId) return toast('Choose the correct location');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(inspectionDate)) return toast('Choose the inspection date');
+  if (storeCode && !/^\d{4,6}$/.test(storeCode)) return toast('The optional store number must be 4 to 6 digits');
+  button.disabled = true;
+  button.textContent = 'Creating…';
+  try {
+    fpc = await api('/api/fpc/email-file', { method: 'POST', body: JSON.stringify({ id, locationId, inspectionDate, storeCode }) });
+    renderFpc();
+    toast('FPC report filed and repair items created');
+  } catch (error) {
+    toast(`FPC report did not file: ${error.message}`);
+    button.disabled = false;
+    button.textContent = 'Create repair list';
+  }
+}
+
 async function fileStoreDocumentEmail(button) {
   const row = button.closest('[data-document-email-review-row]');
   const id = button.dataset.fileDocumentEmail;
@@ -5433,6 +5517,7 @@ async function fileStoreDocumentEmail(button) {
 }
 
 $('#saveStoreDocEmailMappingBtn').onclick = saveStoreDocumentEmailMapping;
+$('#saveFpcEmailMappingBtn').onclick = saveFpcEmailMapping;
 
 function resetResourceForm() {
   $('#resourceId').value = '';
