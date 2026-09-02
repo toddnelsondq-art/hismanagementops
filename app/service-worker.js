@@ -12,6 +12,7 @@ const APP_SHELL = [
   '/auth.js',
   '/i18n.js',
   '/financial-reports.js',
+  '/agent-tools.js',
   '/version.js',
   '/app.js',
   '/food-safety-questions.js',

@@ -1046,6 +1046,7 @@
           <a href="#help-inspections">Store inspections</a>
           <a href="#help-users">Users, tablets, and alerts</a>
           <a href="#help-feedback">Feedback and ideas</a>
+          <a href="#help-agent-tools">AI agent tools</a>
           <a href="#help-about">About HIS OPS</a>
         </div>
       </article>
@@ -1194,6 +1195,15 @@
         <article class="card help-section" id="help-feedback">
           <h3>Feedback and ideas</h3>
           <p>Every signed-in user can open their name at the bottom of the menu and select Send feedback. Use it to suggest an improvement, report a problem, or ask a product question. The submission includes the user and organization so Average Guys Business Services can review and follow up.</p>
+          <a href="#helpContents">Back to contents</a>
+        </article>
+
+        <article class="card help-section" id="help-agent-tools">
+          <h3>AI agent tools (experimental)</h3>
+          <p>HIS OPS provides a small set of structured tools for compatible browser agents. An agent can review incomplete checklist tasks and missing temperature readings for only the signed-in user’s selected location, open a Help topic, or prepare a maintenance or incident draft.</p>
+          <p><b>Human review is required:</b> agent tools cannot complete checklists, record temperatures, create work orders, or submit incident reports. Drafts open the normal HIS OPS form so the signed-in user can verify every field and choose whether to submit it.</p>
+          <p class="hint" id="webMcpStatus">Checking this browser for WebMCP support…</p>
+          <p class="hint">WebMCP is experimental and may require a supported Chrome version or preview setting. HIS OPS continues to work normally when WebMCP is unavailable.</p>
           <a href="#helpContents">Back to contents</a>
         </article>
 
@@ -2218,11 +2228,12 @@
   <div id="appUpdateBanner" class="app-update-banner" hidden><div><b>A new DQ OPS version is ready.</b><span>Refresh to use the latest features and fixes.</span></div><button id="refreshAppUpdateBtn" type="button">Refresh now</button></div>
   <div id="toast"></div>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="version.js?v=2026-09-01-1"></script>
+  <script src="version.js?v=2026-09-01-2"></script>
   <script src="i18n.js?v=2026-09-01-qr-checkpoints"></script>
   <script src="auth.js?v=2026-08-31-spanish"></script>
   <script src="financial-reports.js?v=2026-08-30-email-import"></script>
-  <script src="app.js?v=2026-09-01-qr-checkpoints"></script>
+  <script src="agent-tools.js?v=2026-09-01-webmcp"></script>
+  <script src="app.js?v=2026-09-01-webmcp"></script>
   <script src="food-safety-questions.js?v=2026-07-28"></script>
   <script src="food-safety-manager-expanded.js?v=2026-07-28"></script>
   <script src="food-safety-quiz.js?v=2026-07-28-200"></script>

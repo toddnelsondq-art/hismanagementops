@@ -901,6 +901,7 @@ async function loadState() {
   await loadStoreAlarmState();
   await loadTemperatureStandards();
   render();
+  setupDqOpsAgentTools();
   processPendingQrLink();
 }
 
@@ -1575,6 +1576,157 @@ function temperatureReadingUnit(reading = {}) {
 
 function formattedTemperatureReading(reading = {}) {
   return `${escapeHtml(reading.value)}${temperatureReadingUnit(reading)}`;
+}
+
+let dqOpsAgentTools = [];
+let dqOpsWebMcpRegistration = { attempted: false, available: false, names: [], controller: null };
+
+function assignedAgentLocation(locationId = currentLocationId) {
+  const requested = String(locationId || currentLocationId);
+  if (!accessibleLocationIds().includes(requested)) throw new Error('You do not have access to that HIS OPS location.');
+  const location = locations.find(entry => entry.id === requested);
+  if (!location) throw new Error('That HIS OPS location was not found.');
+  return location;
+}
+
+function agentDueTasks({ scope = 'now', category = 'all', section = '' } = {}) {
+  if (!canUseDailyOps() || !subscriptionFeatureEnabled('daily_operations')) throw new Error('Task Lists are not available to this account.');
+  const due = (day.tasks || [])
+    .filter(task => !task.done)
+    .filter(task => scope === 'today' || taskMatchesCurrentTime(task))
+    .filter(task => category === 'all' || taskCategory(task) === category)
+    .filter(task => !section || String(task.section || '') === section)
+    .map(task => ({
+      name: task.name,
+      section: task.section || 'All Day',
+      category: taskCategory(task),
+      photoRequired: Boolean(task.photo),
+      qrRequired: Boolean(task.qrCheckpointId || task.requiresQr)
+    }));
+  return { date: dateKey, location: currentLocation().name, scope, dueCount: due.length, items: due.slice(0, 25), moreItems: Math.max(due.length - 25, 0) };
+}
+
+function temperatureListDueToday(listName) {
+  const definition = temperatureItems[listName] || {};
+  if (definition.requiredDaily !== false) return temperatureListScheduledToday(listName);
+  const schedules = definition.deliveryDaysByLocation;
+  return Boolean(schedules && Object.prototype.hasOwnProperty.call(schedules, currentLocationId) && temperatureListScheduledToday(listName));
+}
+
+function agentDueTemperatures({ session = selectedTempSession, list = '' } = {}) {
+  if (!canUseDailyOps() || !subscriptionFeatureEnabled('daily_operations')) throw new Error('Temperature Logs are not available to this account.');
+  if (!tempSessions.includes(session)) throw new Error('Choose the Day or Afternoon temperature session.');
+  const dueLists = temperatureListNames().filter(temperatureListDueToday);
+  if (list && !dueLists.includes(list)) throw new Error('That temperature list is not scheduled for the selected location today.');
+  const missing = dueLists
+    .filter(listName => !list || listName === list)
+    .flatMap(listName => Object.entries(temperatureAreasForList(listName)).flatMap(([area, items]) => items
+      .filter(item => !(day.temps || []).some(reading => readingList(reading) === listName && readingSession(reading) === session && reading.area === area && reading.item === item))
+      .map(item => ({ list: listName, area, item, unit: isOverrunReading(listName, item) ? '%' : '°F' }))));
+  return {
+    date: dateKey,
+    location: currentLocation().name,
+    session,
+    entryLocked: session === 'Day' && !dayTempsAvailable(),
+    dueCount: missing.length,
+    items: missing.slice(0, 25),
+    moreItems: Math.max(missing.length - 25, 0)
+  };
+}
+
+function agentOpenHelpSection({ section } = {}) {
+  if (!canUseManage()) throw new Error('Help is available to Managers and above in this version of HIS OPS.');
+  const helpSections = {
+    contents: 'helpContents', navigation: 'help-navigation', dashboard: 'help-dashboard', tasks: 'help-task-lists',
+    temperatures: 'help-temp-logs', maintenance: 'help-maintenance', incidents: 'help-management-reports',
+    users: 'help-users', notifications: 'help-notices', 'agent-tools': 'help-agent-tools'
+  };
+  const targetId = helpSections[section];
+  if (!targetId) throw new Error('That Help topic is not available.');
+  switchView('helpView');
+  window.requestAnimationFrame(() => document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  return { opened: section, savedDataChanged: false };
+}
+
+function setSelectIfAvailable(selector, value) {
+  if (!value) return false;
+  const select = $(selector);
+  const option = [...(select?.options || [])].find(entry => entry.value.toLowerCase() === String(value).toLowerCase());
+  if (!option) return false;
+  select.value = option.value;
+  return true;
+}
+
+async function agentDraftMaintenanceRequest({ description, location_id: locationId, category = '', priority = 'Medium', target_date: targetDate = '' } = {}) {
+  if (!canUseHub() || !subscriptionFeatureEnabled('maintenance')) throw new Error('Maintenance requests are not available to this account.');
+  if (!String(description || '').trim()) throw new Error('Enter a maintenance issue description.');
+  const location = assignedAgentLocation(locationId);
+  maintenanceLocationId = location.id;
+  localStorage.setItem('maintenance-location', maintenanceLocationId);
+  await loadMaintenanceState();
+  renderMaintenance();
+  switchView('maintenanceView');
+  $('#createWorkOrderCard')?.classList.remove('collapsed');
+  $('#woIssue').value = String(description).trim().slice(0, 2000);
+  $('#woTargetDate').value = /^\d{4}-\d{2}-\d{2}$/.test(targetDate) ? targetDate : '';
+  setSelectIfAvailable('#woCategory', category);
+  setSelectIfAvailable('#woPriority', priority);
+  $('#createWorkOrderCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  toast('Maintenance draft ready — review it before creating the work order');
+  return { draftReady: true, location: location.name, submitted: false, reviewRequired: true };
+}
+
+function agentDraftIncidentReport({ title, details, location_id: locationId, issue_type: issueType = '', severity = 'Medium', immediate_action: immediateAction = '', amount } = {}) {
+  if (!canUseManagementReports() || !subscriptionFeatureEnabled('advanced_reports')) throw new Error('Incident Reports are not available to this account.');
+  if (!String(title || '').trim() || !String(details || '').trim()) throw new Error('Enter both an incident subject and the facts.');
+  const location = assignedAgentLocation(locationId);
+  switchView('managementReportsView');
+  renderManagementReports();
+  $('#managementReportLocation').value = location.id;
+  $('#managementReportTitle').value = String(title).trim().slice(0, 120);
+  $('#managementReportDetails').value = String(details).trim().slice(0, 4000);
+  $('#managementReportAction').value = String(immediateAction || '').trim().slice(0, 2000);
+  $('#managementReportAmount').value = Number.isFinite(Number(amount)) && Number(amount) >= 0 ? String(Number(amount)) : '';
+  setSelectIfAvailable('#managementReportType', issueType);
+  setSelectIfAvailable('#managementReportSeverity', severity);
+  document.querySelector('.management-report-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  toast('Incident draft ready — review it before submitting the report');
+  return { draftReady: true, location: location.name, submitted: false, reviewRequired: true };
+}
+
+function updateAgentToolsHelpStatus(message, state = '') {
+  const status = $('#webMcpStatus');
+  if (!status) return;
+  status.textContent = message;
+  status.dataset.state = state;
+}
+
+async function setupDqOpsAgentTools() {
+  if (dqOpsWebMcpRegistration.attempted || !window.DqOpsAgentTools || !currentUser()?.id) return;
+  dqOpsWebMcpRegistration.attempted = true;
+  dqOpsAgentTools = window.DqOpsAgentTools.createToolDefinitions({
+    getDueTasks: agentDueTasks,
+    getDueTemperatures: agentDueTemperatures,
+    openHelpSection: agentOpenHelpSection,
+    draftMaintenanceRequest: agentDraftMaintenanceRequest,
+    draftIncidentReport: agentDraftIncidentReport
+  });
+  window.HISOpsAgent = {
+    listTools: () => dqOpsAgentTools.map(({ name, description, inputSchema, annotations }) => ({ name, description, inputSchema, annotations })),
+    executeTool: (name, args) => window.DqOpsAgentTools.executeTool(dqOpsAgentTools, name, args)
+  };
+  try {
+    dqOpsWebMcpRegistration = { attempted: true, ...(await window.DqOpsAgentTools.registerWebMcpTools(document, dqOpsAgentTools)) };
+    updateAgentToolsHelpStatus(
+      dqOpsWebMcpRegistration.available
+        ? `Ready in this browser · ${dqOpsWebMcpRegistration.names.length} safe tools available`
+        : 'The shared agent tools are ready; this browser does not currently expose WebMCP.',
+      dqOpsWebMcpRegistration.available ? 'ready' : 'unsupported'
+    );
+  } catch (error) {
+    console.warn('HIS OPS WebMCP tools did not register', error);
+    updateAgentToolsHelpStatus('WebMCP is not active in this browser. Normal HIS OPS features are unaffected.', 'error');
+  }
 }
 
 function taskSectionProgress(section) {
