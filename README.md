@@ -139,3 +139,42 @@ Completed FPC PDF reports can also be emailed to the app. Follow [`FPC_EMAIL_SET
 Managers can remove a lost or replaced tablet from the same Manage card. Employee PINs never grant management access and are stored only as salted password hashes.
 
 Locally, the Python server still works for quick testing. Hosted email/password login requires Netlify + Supabase environment variables.
+# Public review ingestion
+
+HIS OPS accepts location reviews from trusted automation clients at:
+
+```http
+POST /api/reviews/ingest
+Authorization: Bearer <tenant review-ingestion key>
+X-DQOPS-Tenant: his-management
+Content-Type: application/json
+```
+
+Configure `REVIEW_INGEST_API_KEYS` in Netlify as a JSON object mapping tenant IDs to long random secrets. Keep these server-side credentials out of the app and rotate them if they are disclosed.
+
+```json
+{
+  "his-management": "replace-with-at-least-32-random-characters"
+}
+```
+
+The endpoint accepts either one review or `{ "reviews": [...] }` with up to 100 records. Retries are safe: `source` plus `externalReviewId` uniquely identifies a review within a tenant.
+
+```json
+{
+  "locationId": "store-01",
+  "source": "google",
+  "externalReviewId": "review-987",
+  "reviewUrl": "https://example.com/reviews/review-987",
+  "rating": 4,
+  "reviewText": "The staff was very helpful.",
+  "reviewerDisplayName": "Jane D.",
+  "reviewedAt": "2026-09-03T18:42:00Z",
+  "retrievedAt": "2026-09-04T02:15:00Z",
+  "sentiment": "positive",
+  "summary": "Reviewer praised the staff.",
+  "topics": ["staff", "service"]
+}
+```
+
+Run `supabase/add_public_reviews.sql` in Supabase before deploying the endpoint. Managers see imported records in **Resources → Location reviews**, filtered to their assigned locations.

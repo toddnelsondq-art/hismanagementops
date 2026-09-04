@@ -16,7 +16,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.34.0';
+const APP_VERSION = '1.35.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -255,6 +255,31 @@ function verifyQrCheckpointToken(token, expectedTenantId = tenantId()) {
 
 function bearerToken(event) {
   return String(event?.headers?.authorization || event?.headers?.Authorization || '').replace(/^Bearer\s+/i, '');
+}
+
+function reviewIntegrationKeys() {
+  const configured = String(process.env.REVIEW_INGEST_API_KEYS || '').trim();
+  if (configured) {
+    try {
+      const parsed = JSON.parse(configured);
+      if (parsed && !Array.isArray(parsed) && typeof parsed === 'object') {
+        return Object.fromEntries(Object.entries(parsed).map(([key, value]) => [safeName(key), String(value || '')]).filter(([, value]) => value));
+      }
+    } catch {
+      throw Object.assign(new Error('REVIEW_INGEST_API_KEYS must be a valid JSON object'), { statusCode: 503 });
+    }
+  }
+  const legacyKey = String(process.env.REVIEW_INGEST_API_KEY || '').trim();
+  return legacyKey ? { [DEFAULT_TENANT_ID]: legacyKey } : {};
+}
+
+function reviewIntegrationTenant(event) {
+  const supplied = bearerToken(event);
+  const requested = requestedTenantId(event);
+  const keys = reviewIntegrationKeys();
+  if (requested) return secureTokenMatches(supplied, keys[requested]) ? requested : '';
+  const matches = Object.entries(keys).filter(([, key]) => secureTokenMatches(supplied, key));
+  return matches.length === 1 ? matches[0][0] : '';
 }
 
 function randomCode(length = 8) {
@@ -2531,6 +2556,11 @@ async function resolveTenantForEvent(event) {
   if (kiosk?.tenantId) return kiosk.tenantId;
 
   const apiPath = String(event?.path || '').replace(/^\/api/, '').replace(/^\/\.netlify\/functions\/api/, '') || '/';
+  if (apiPath === '/reviews/ingest') {
+    const integrationTenant = reviewIntegrationTenant(event);
+    if (!integrationTenant) throw Object.assign(new Error('Invalid review-ingestion credentials'), { statusCode: 401 });
+    return integrationTenant;
+  }
   if (apiPath === '/kiosk/enroll' && event?.body) {
     try {
       const code = String(JSON.parse(event.body)?.code || '').trim().toUpperCase();
@@ -5123,6 +5153,108 @@ async function resourcesState() {
   return { resources: await readResources() };
 }
 
+function normalizedReviewInput(payload = {}) {
+  const source = String(payload.source || '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-|-$/g, '').slice(0, 50);
+  const externalReviewId = String(payload.externalReviewId || payload.external_review_id || '').trim().slice(0, 300);
+  const locationId = String(payload.locationId || payload.location_id || '').trim().slice(0, 120);
+  if (!source) throw Object.assign(new Error('Each review requires a source'), { statusCode: 400 });
+  if (!externalReviewId) throw Object.assign(new Error('Each review requires an externalReviewId'), { statusCode: 400 });
+  if (!locationId) throw Object.assign(new Error('Each review requires a locationId'), { statusCode: 400 });
+
+  const ratingValue = payload.rating === null || payload.rating === undefined || payload.rating === '' ? null : Number(payload.rating);
+  if (ratingValue !== null && (!Number.isFinite(ratingValue) || ratingValue < 0 || ratingValue > 5)) {
+    throw Object.assign(new Error('Review rating must be between 0 and 5'), { statusCode: 400 });
+  }
+  const reviewUrl = String(payload.reviewUrl || payload.review_url || '').trim().slice(0, 2000);
+  if (reviewUrl && !/^https?:\/\//i.test(reviewUrl)) throw Object.assign(new Error('reviewUrl must start with http:// or https://'), { statusCode: 400 });
+  const sentiment = String(payload.sentiment || '').trim().toLowerCase();
+  if (!['', 'positive', 'neutral', 'negative', 'mixed'].includes(sentiment)) {
+    throw Object.assign(new Error('Sentiment must be positive, neutral, negative, mixed, or empty'), { statusCode: 400 });
+  }
+  const reviewedValue = payload.reviewedAt || payload.reviewed_at || '';
+  const retrievedValue = payload.retrievedAt || payload.retrieved_at || new Date().toISOString();
+  const reviewedAt = reviewedValue ? new Date(reviewedValue) : null;
+  const retrievedAt = new Date(retrievedValue);
+  if (reviewedAt && Number.isNaN(reviewedAt.valueOf())) throw Object.assign(new Error('reviewedAt must be a valid date'), { statusCode: 400 });
+  if (Number.isNaN(retrievedAt.valueOf())) throw Object.assign(new Error('retrievedAt must be a valid date'), { statusCode: 400 });
+
+  return {
+    tenant_id: tenantId(),
+    location_id: locationId,
+    source,
+    external_review_id: externalReviewId,
+    review_url: reviewUrl,
+    rating: ratingValue,
+    review_text: String(payload.reviewText || payload.review_text || '').trim().slice(0, 20000),
+    reviewer_display_name: String(payload.reviewerDisplayName || payload.reviewer_display_name || '').trim().slice(0, 300),
+    reviewed_at: reviewedAt?.toISOString() || null,
+    retrieved_at: retrievedAt.toISOString(),
+    sentiment,
+    summary: String(payload.summary || '').trim().slice(0, 2000),
+    topics: [...new Set((Array.isArray(payload.topics) ? payload.topics : []).map(topic => String(topic).trim().slice(0, 100)).filter(Boolean))].slice(0, 30),
+    raw_payload: payload.rawPayload && typeof payload.rawPayload === 'object' ? payload.rawPayload : {},
+    updated_at: new Date().toISOString()
+  };
+}
+
+function publicReviewRecord(row = {}) {
+  return {
+    id: row.id,
+    locationId: row.location_id,
+    source: row.source,
+    externalReviewId: row.external_review_id,
+    reviewUrl: row.review_url,
+    rating: row.rating === null ? null : Number(row.rating),
+    reviewText: row.review_text,
+    reviewerDisplayName: row.reviewer_display_name,
+    reviewedAt: row.reviewed_at,
+    retrievedAt: row.retrieved_at,
+    sentiment: row.sentiment,
+    summary: row.summary,
+    topics: row.topics || [],
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+async function ingestPublicReviews(event, payload) {
+  if (!reviewIntegrationTenant(event) || reviewIntegrationTenant(event) !== tenantId()) {
+    throw Object.assign(new Error('Invalid review-ingestion credentials'), { statusCode: 401 });
+  }
+  const submitted = Array.isArray(payload.reviews) ? payload.reviews : [payload];
+  if (!submitted.length) throw Object.assign(new Error('Submit at least one review'), { statusCode: 400 });
+  if (submitted.length > 100) throw Object.assign(new Error('A review batch cannot exceed 100 records'), { statusCode: 413 });
+  const records = submitted.map(normalizedReviewInput);
+  const locationIds = [...new Set(records.map(record => record.location_id))];
+  const encodedIds = locationIds.map(id => `\"${id.replace(/\"/g, '')}\"`).join(',');
+  const locations = await supabase(`/rest/v1/locations?${tenantQuery()}&id=in.(${encodedIds})&active=eq.true&select=id`);
+  const validIds = new Set(locations.map(location => String(location.id)));
+  const invalidId = locationIds.find(id => !validIds.has(id));
+  if (invalidId) throw Object.assign(new Error(`Unknown or inactive locationId: ${invalidId}`), { statusCode: 400 });
+
+  const rows = await supabase('/rest/v1/public_reviews?on_conflict=tenant_id,source,external_review_id&select=*', {
+    method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+    body: JSON.stringify(records)
+  });
+  return { accepted: rows.length, reviews: rows.map(publicReviewRecord) };
+}
+
+async function publicReviewsState(actor, query = {}) {
+  if (AUTH_REQUIRED && !canManage(actor)) throw Object.assign(new Error('Only managers and above can view public reviews'), { statusCode: 403 });
+  const requestedLocation = String(query.locationId || 'all');
+  if (requestedLocation !== 'all' && AUTH_REQUIRED && !canAccessLocation(actor, requestedLocation)) {
+    throw Object.assign(new Error('You do not have access to that location'), { statusCode: 403 });
+  }
+  const allowed = AUTH_REQUIRED && !isFullAccess(actor) ? userLocationIds(actor).filter(Boolean) : [];
+  const locationFilter = requestedLocation !== 'all'
+    ? `&location_id=eq.${encodeURIComponent(requestedLocation)}`
+    : allowed.length ? `&location_id=in.(${allowed.map(id => `\"${String(id).replace(/\"/g, '')}\"`).join(',')})` : '';
+  const limit = Math.min(Math.max(Number(query.limit) || 250, 1), 500);
+  const rows = await supabase(`/rest/v1/public_reviews?${tenantQuery()}${locationFilter}&select=*&order=reviewed_at.desc.nullslast,created_at.desc&limit=${limit}`);
+  return { reviews: rows.map(publicReviewRecord) };
+}
+
 async function saveResource(payload, actor) {
   if (AUTH_REQUIRED && !isFullAccess(actor)) throw Object.assign(new Error('Only Director of Operations and Owner can manage resources'), { statusCode: 403 });
   const title = String(payload.title || '').trim();
@@ -6260,7 +6392,11 @@ if (process.env.NODE_ENV === 'test') exports.__test = {
   fpcEmailItemId,
   fileParsedFpcReport,
   signQrCheckpointToken,
-  verifyQrCheckpointToken
+  verifyQrCheckpointToken,
+  reviewIntegrationKeys,
+  reviewIntegrationTenant,
+  normalizedReviewInput,
+  publicReviewRecord
 };
 
 async function routeRequest(event) {
@@ -6274,6 +6410,10 @@ async function routeRequest(event) {
     if (method === 'POST' && apiPath === '/store-documents/email-ingest') return await receiveStoreDocumentEmail(event);
     if (method === 'POST' && apiPath === '/fpc/email-ingest') return await receiveFpcEmail(event);
     const body = event.body ? JSON.parse(event.body) : {};
+
+    if (method === 'POST' && apiPath === '/reviews/ingest') {
+      return json(200, await ingestPublicReviews(event, body));
+    }
 
     if (method === 'GET' && apiPath === '/version') {
       return json(200, {
@@ -6421,6 +6561,7 @@ async function routeRequest(event) {
     if (method === 'GET' && apiPath === '/fpc/state') return json(200, await fpcState(actor));
     if (method === 'GET' && apiPath === '/store-documents/state') return json(200, await storeDocumentsState(actor));
     if (method === 'GET' && apiPath === '/resources/state') return json(200, await resourcesState());
+    if (method === 'GET' && apiPath === '/reviews/state') return json(200, await publicReviewsState(actor, query));
     if (method === 'GET' && apiPath === '/receipts/state') return json(200, await receiptState(actor));
     if (method === 'GET' && apiPath === '/inspections/state') return json(200, await inspectionState(actor));
     if (method === 'GET' && apiPath === '/smallwares/state') return json(200, await smallwaresState());

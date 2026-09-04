@@ -293,6 +293,7 @@ let storeDocuments = { documents: [], emailImports: [], mappings: {}, canReview:
 let storeDocsLocationId = localStorage.getItem('store-docs-location') || 'all';
 let resources = { resources: [] };
 let resourcesLocationId = localStorage.getItem('resources-location') || 'all';
+let publicReviews = { reviews: [] };
 let receipts = { receipts: [] };
 let inspections = { templates: [], inspections: [] };
 let inspectionChartMonths = Number(localStorage.getItem('inspection-chart-months')) || 1;
@@ -891,6 +892,7 @@ async function loadState() {
   await loadCalendarState();
   await loadStoreDocumentsState();
   await loadResourcesState();
+  await loadPublicReviewsState();
   await loadReceiptsState();
   await loadInspectionsState();
   await loadSmallwaresState();
@@ -1110,6 +1112,15 @@ async function loadResourcesState() {
     resources = await api('/api/resources/state');
   } catch {
     resources = { resources: [] };
+  }
+}
+
+async function loadPublicReviewsState() {
+  if (!apiOnline || !canManage(currentUser())) return;
+  try {
+    publicReviews = await api('/api/reviews/state?limit=500');
+  } catch {
+    publicReviews = { reviews: [] };
   }
 }
 
@@ -3259,6 +3270,23 @@ function renderResources() {
       ${canManageResources() ? `<button class="resource-pencil" data-resource-edit="${escapeHtml(resource.id)}" type="button" title="Edit or delete ${escapeHtml(resource.title)}" aria-label="Edit or delete ${escapeHtml(resource.title)}">✎</button>` : ''}
     </article>
   `).join('') : '<div class="empty">No resources for this view yet.</div>';
+
+  if ($('#publicReviewsCard')) {
+    $('#publicReviewsCard').hidden = !canManage(currentUser());
+    const reviewList = (publicReviews.reviews || []).filter(review => resourcesLocationId === 'all' || review.locationId === resourcesLocationId);
+    const rated = reviewList.filter(review => Number.isFinite(Number(review.rating)));
+    const average = rated.length ? (rated.reduce((sum, review) => sum + Number(review.rating), 0) / rated.length).toFixed(1) : '—';
+    $('#publicReviewsSummary').textContent = `${reviewList.length} review${reviewList.length === 1 ? '' : 's'} · ${average} average`;
+    $('#publicReviewsList').innerHTML = reviewList.length ? reviewList.map(review => {
+      const rating = Number.isFinite(Number(review.rating)) ? `${Number(review.rating).toFixed(1)} / 5` : 'No rating';
+      const date = review.reviewedAt ? new Date(review.reviewedAt).toLocaleDateString() : 'Date unavailable';
+      const body = review.reviewText || review.summary || 'No written review';
+      return `<article class="card resource-row">
+        <div><b>${escapeHtml(rating)} · ${escapeHtml(review.reviewerDisplayName || 'Public reviewer')}</b><p>${escapeHtml(locationName(review.locationId))} · ${escapeHtml(review.source || 'Public review')} · ${escapeHtml(date)}</p><p>${escapeHtml(body)}</p>${review.summary && review.reviewText ? `<small>Summary: ${escapeHtml(review.summary)}</small>` : ''}</div>
+        ${review.reviewUrl ? `<a class="resource-open-label" href="${escapeHtml(review.reviewUrl)}" target="_blank" rel="noopener">Original ↗</a>` : ''}
+      </article>`;
+    }).join('') : '<div class="empty">No public reviews have been imported for this view yet.</div>';
+  }
 }
 
 function areaManagerLocations() {
