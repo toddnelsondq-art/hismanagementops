@@ -293,7 +293,7 @@ let storeDocuments = { documents: [], emailImports: [], mappings: {}, canReview:
 let storeDocsLocationId = localStorage.getItem('store-docs-location') || 'all';
 let resources = { resources: [] };
 let resourcesLocationId = localStorage.getItem('resources-location') || 'all';
-let publicReviews = { reviews: [], metrics: [], insights: [] };
+let publicReviews = { reviews: [], metrics: [], insights: [], scorecards: [] };
 let receipts = { receipts: [] };
 let inspections = { templates: [], inspections: [] };
 let inspectionChartMonths = Number(localStorage.getItem('inspection-chart-months')) || 1;
@@ -1120,7 +1120,7 @@ async function loadPublicReviewsState() {
   try {
     publicReviews = await api('/api/reviews/state?limit=500');
   } catch {
-    publicReviews = { reviews: [], metrics: [], insights: [] };
+    publicReviews = { reviews: [], metrics: [], insights: [], scorecards: [] };
   }
 }
 
@@ -3286,7 +3286,22 @@ function renderResources() {
       ${latestInsight.opportunities?.length ? `<small><b>Opportunities:</b> ${latestInsight.opportunities.map(escapeHtml).join(' · ')}</small>` : ''}
       ${latestInsight.recommendedActions?.length ? `<small><b>Suggested actions:</b> ${latestInsight.recommendedActions.map(escapeHtml).join(' · ')}</small>` : ''}
       <small>${escapeHtml(latestInsight.periodStart || '')} through ${escapeHtml(latestInsight.periodEnd || '')}${latestInsight.status !== 'generated' ? ` · ${escapeHtml(latestInsight.status || '')}` : ''}</small>
-    </article>` : '';
+    </article>` : '<div class="empty">No AI trend commentary is available for this view yet.</div>';
+    const scorecardList = (publicReviews.scorecards || []).filter(scorecard => resourcesLocationId === 'all' || scorecard.locationId === resourcesLocationId);
+    const latestScorecardMonth = scorecardList.sort((left, right) => String(right.reportMonth || '').localeCompare(String(left.reportMonth || '')))[0]?.reportMonth;
+    const latestScorecards = scorecardList.filter(scorecard => scorecard.reportMonth === latestScorecardMonth);
+    $('#publicReviewScorecards').innerHTML = latestScorecards.length ? latestScorecards.map(scorecard => {
+      const overall = scorecard.benchmarks?.overall || {};
+      const onsite = scorecard.benchmarks?.onsite || {};
+      const digital = scorecard.benchmarks?.digital || {};
+      const benchmark = (label, item) => `<span><b>${label}</b><small>${item.responseCount ?? '—'} responses · DMA ${item.dmaRank ? `#${item.dmaRank} of ${item.dmaRankPopulation}` : 'rank unavailable'}${item.lowSample ? ' · low sample' : ''}</small></span>`;
+      return `<article class="card resource-row"><div>
+        <b>${escapeHtml(locationName(scorecard.locationId))} · ${escapeHtml(scorecard.reportMonth || '')}</b>
+        <p>${benchmark('Overall', overall)} ${benchmark('On-site', onsite)} ${benchmark('Digital', digital)}</p>
+        <small><b>On-site focus:</b> ${(scorecard.onsiteFocusAreas || []).map(escapeHtml).join(' · ') || 'Not provided'}</small>
+        <small><b>Digital focus:</b> ${(scorecard.digitalFocusAreas || []).map(escapeHtml).join(' · ') || 'Not provided'}</small>
+      </div>${scorecard.url ? `<a class="resource-open-label" href="${escapeHtml(scorecard.url)}" target="_blank" rel="noopener">Open scorecard ↗</a>` : ''}</article>`;
+    }).join('') : '<div class="empty">No monthly scorecards have been imported for this view yet.</div>';
     const metricList = (publicReviews.metrics || []).filter(metric => resourcesLocationId === 'all' || metric.locationId === resourcesLocationId);
     const latestMetricPeriod = metricList.sort((left, right) => String(right.periodEnd || '').localeCompare(String(left.periodEnd || '')))[0]?.periodEnd;
     const latestMetrics = metricList.filter(metric => metric.periodEnd === latestMetricPeriod).slice(0, 12);

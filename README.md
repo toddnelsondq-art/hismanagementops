@@ -188,7 +188,9 @@ OPENAI_API_KEY=<server-side OpenAI API key>
 OPENAI_REVIEW_MODEL=gpt-5.4-mini
 ```
 
-Create a signed Mailgun inbound route for `reviews@dqops.net` that forwards to `https://dqops.net/api/reviews/email-ingest`. The route verifies Mailgun's webhook signature and accepts only the configured SMG sender. Excel comment reports become readable fan-feedback entries; comparison reports become period metrics. Store numbers are resolved only through saved HIS OPS mappings, and unknown stores are logged as `needs_review` instead of being guessed. Attachment and row-level hashes make retries safe.
+Create a signed Mailgun inbound route for `reviews@dqops.net` that forwards to `https://dqops.net/api/reviews/email-ingest`. The route verifies Mailgun's webhook signature and accepts only the configured SMG sender. Excel comment reports become readable fan-feedback entries; comparison reports become period metrics; Monthly Store Summary PDFs become location scorecards with DMA rankings, response counts, and on-site/digital focus areas. Store numbers are resolved only through saved HIS OPS mappings, and unknown stores are logged as `needs_review` instead of being guessed. Attachment and row-level hashes make retries safe.
+
+Existing databases also need [`supabase/add_smg_monthly_scorecards.sql`](supabase/add_smg_monthly_scorecards.sql) before PDF scorecards are received. Fresh installations receive the same table through the main SMG migration and schema.
 
 After each successful email, HIS OPS asks the OpenAI Responses API for concise, evidence-grounded commentary per affected location and saves it with the reporting period. If the AI key is missing or generation fails, the underlying comments and metrics still import and the commentary status shows the configuration or retry requirement.
 

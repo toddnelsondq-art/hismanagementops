@@ -38,7 +38,8 @@ test('parses SMG comparison reports and their response counts', () => {
 
 test('SMG helper validation accepts workbooks and assigns conservative sentiment', () => {
   assert.equal(api.supportedSmgReportFile({ filename: 'CommentReport.xlsx' }), true);
-  assert.equal(api.supportedSmgReportFile({ filename: 'report.pdf' }), false);
+  assert.equal(api.supportedSmgReportFile({ filename: 'MonthlySummary.pdf' }), true);
+  assert.equal(api.supportedSmgReportFile({ filename: 'report.txt' }), false);
   assert.equal(api.smgSentiment('Why Not Satisfied'), 'negative');
   assert.equal(api.smgSentiment('Exceptional Service'), 'positive');
   assert.equal(api.smgSentiment('Crew Member Name'), 'neutral');
