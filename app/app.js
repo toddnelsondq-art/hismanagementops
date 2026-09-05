@@ -293,7 +293,7 @@ let storeDocuments = { documents: [], emailImports: [], mappings: {}, canReview:
 let storeDocsLocationId = localStorage.getItem('store-docs-location') || 'all';
 let resources = { resources: [] };
 let resourcesLocationId = localStorage.getItem('resources-location') || 'all';
-let publicReviews = { reviews: [] };
+let publicReviews = { reviews: [], metrics: [], insights: [] };
 let receipts = { receipts: [] };
 let inspections = { templates: [], inspections: [] };
 let inspectionChartMonths = Number(localStorage.getItem('inspection-chart-months')) || 1;
@@ -1120,7 +1120,7 @@ async function loadPublicReviewsState() {
   try {
     publicReviews = await api('/api/reviews/state?limit=500');
   } catch {
-    publicReviews = { reviews: [] };
+    publicReviews = { reviews: [], metrics: [], insights: [] };
   }
 }
 
@@ -3277,12 +3277,31 @@ function renderResources() {
     const rated = reviewList.filter(review => Number.isFinite(Number(review.rating)));
     const average = rated.length ? (rated.reduce((sum, review) => sum + Number(review.rating), 0) / rated.length).toFixed(1) : '—';
     $('#publicReviewsSummary').textContent = `${reviewList.length} review${reviewList.length === 1 ? '' : 's'} · ${average} average`;
+    const insightList = (publicReviews.insights || []).filter(insight => resourcesLocationId === 'all' || insight.locationId === resourcesLocationId);
+    const latestInsight = insightList.sort((left, right) => String(right.periodEnd || '').localeCompare(String(left.periodEnd || '')))[0];
+    $('#publicReviewInsight').innerHTML = latestInsight ? `<article class="financial-standout">
+      <b>${escapeHtml(latestInsight.headline || 'Location feedback trends')}</b>
+      <p>${escapeHtml(latestInsight.commentary || '')}</p>
+      ${latestInsight.strengths?.length ? `<small><b>Strengths:</b> ${latestInsight.strengths.map(escapeHtml).join(' · ')}</small>` : ''}
+      ${latestInsight.opportunities?.length ? `<small><b>Opportunities:</b> ${latestInsight.opportunities.map(escapeHtml).join(' · ')}</small>` : ''}
+      ${latestInsight.recommendedActions?.length ? `<small><b>Suggested actions:</b> ${latestInsight.recommendedActions.map(escapeHtml).join(' · ')}</small>` : ''}
+      <small>${escapeHtml(latestInsight.periodStart || '')} through ${escapeHtml(latestInsight.periodEnd || '')}${latestInsight.status !== 'generated' ? ` · ${escapeHtml(latestInsight.status || '')}` : ''}</small>
+    </article>` : '';
+    const metricList = (publicReviews.metrics || []).filter(metric => resourcesLocationId === 'all' || metric.locationId === resourcesLocationId);
+    const latestMetricPeriod = metricList.sort((left, right) => String(right.periodEnd || '').localeCompare(String(left.periodEnd || '')))[0]?.periodEnd;
+    const latestMetrics = metricList.filter(metric => metric.periodEnd === latestMetricPeriod).slice(0, 12);
+    $('#publicReviewMetrics').innerHTML = latestMetrics.length ? `<div class="table-scroll"><table><thead><tr><th>Location</th><th>Measure</th><th>Current</th><th>Prior</th><th>Change</th><th>Responses</th></tr></thead><tbody>${latestMetrics.map(metric => `<tr>
+      <td>${escapeHtml(locationName(metric.locationId))}</td><td>${escapeHtml(metric.measure)}</td>
+      <td>${metric.current === null ? '—' : `${(Number(metric.current) * 100).toFixed(1)}%`}</td>
+      <td>${metric.previous === null ? '—' : `${(Number(metric.previous) * 100).toFixed(1)}%`}</td>
+      <td>${metric.difference === null ? '—' : `${Number(metric.difference) >= 0 ? '+' : ''}${(Number(metric.difference) * 100).toFixed(1)} pts`}</td>
+      <td>${metric.responseCount ?? '—'}</td></tr>`).join('')}</tbody></table></div>` : '';
     $('#publicReviewsList').innerHTML = reviewList.length ? reviewList.map(review => {
       const rating = Number.isFinite(Number(review.rating)) ? `${Number(review.rating).toFixed(1)} / 5` : 'No rating';
       const date = review.reviewedAt ? new Date(review.reviewedAt).toLocaleDateString() : 'Date unavailable';
       const body = review.reviewText || review.summary || 'No written review';
       return `<article class="card resource-row">
-        <div><b>${escapeHtml(rating)} · ${escapeHtml(review.reviewerDisplayName || 'Public reviewer')}</b><p>${escapeHtml(locationName(review.locationId))} · ${escapeHtml(review.source || 'Public review')} · ${escapeHtml(date)}</p><p>${escapeHtml(body)}</p>${review.summary && review.reviewText ? `<small>Summary: ${escapeHtml(review.summary)}</small>` : ''}</div>
+        <div><b>${escapeHtml(review.surveyItem || rating)} · ${escapeHtml(review.reviewerDisplayName || (review.source === 'smg' ? 'Fan feedback' : 'Public reviewer'))}</b><p>${escapeHtml(locationName(review.locationId))} · ${escapeHtml(review.source || 'Public review')} · ${escapeHtml(date)}${review.sentiment ? ` · ${escapeHtml(review.sentiment)}` : ''}</p><p>${escapeHtml(body)}</p>${review.summary && review.reviewText ? `<small>Summary: ${escapeHtml(review.summary)}</small>` : ''}</div>
         ${review.reviewUrl ? `<a class="resource-open-label" href="${escapeHtml(review.reviewUrl)}" target="_blank" rel="noopener">Original ↗</a>` : ''}
       </article>`;
     }).join('') : '<div class="empty">No public reviews have been imported for this view yet.</div>';

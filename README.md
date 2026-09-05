@@ -177,4 +177,19 @@ The endpoint accepts either one review or `{ "reviews": [...] }` with up to 100 
 }
 ```
 
+## SMG review-report email intake
+
+Run [`supabase/add_smg_review_email_ingest.sql`](supabase/add_smg_review_email_ingest.sql), then configure these server-side Netlify variables:
+
+```text
+SMG_REVIEW_INBOUND_ADDRESS=reviews@dqops.net
+SMG_REVIEW_ALLOWED_SENDERS=SMGReporting@smg.com
+OPENAI_API_KEY=<server-side OpenAI API key>
+OPENAI_REVIEW_MODEL=gpt-5.4-mini
+```
+
+Create a signed Mailgun inbound route for `reviews@dqops.net` that forwards to `https://dqops.net/api/reviews/email-ingest`. The route verifies Mailgun's webhook signature and accepts only the configured SMG sender. Excel comment reports become readable fan-feedback entries; comparison reports become period metrics. Store numbers are resolved only through saved HIS OPS mappings, and unknown stores are logged as `needs_review` instead of being guessed. Attachment and row-level hashes make retries safe.
+
+After each successful email, HIS OPS asks the OpenAI Responses API for concise, evidence-grounded commentary per affected location and saves it with the reporting period. If the AI key is missing or generation fails, the underlying comments and metrics still import and the commentary status shows the configuration or retry requirement.
+
 Run `supabase/add_public_reviews.sql` in Supabase before deploying the endpoint. Managers see imported records in **Resources → Location reviews**, filtered to their assigned locations.

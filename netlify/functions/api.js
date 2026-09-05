@@ -7,6 +7,7 @@ const XLSX = require('xlsx');
 const QRCode = require('qrcode');
 const financialParser = require('../../app/financial-reports.js');
 const { parseFpcPdf } = require('./fpc-report-parser.js');
+const { parseSmgWorkbook } = require('./smg-report-parser.js');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -16,7 +17,7 @@ const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'dailyops-uploads'
 const RECEIPTS_BUCKET = process.env.SUPABASE_RECEIPTS_BUCKET || 'dqops-receipts';
 const AUTH_REQUIRED = Boolean(process.env.SUPABASE_ANON_KEY);
 const FULL_ACCESS_ROLES = ['Director of Operations', 'Owner'];
-const APP_VERSION = '1.35.0';
+const APP_VERSION = '1.36.0';
 const MAINTENANCE_ROLE = 'Maintenance Tech';
 const UNIFI_API_KEY = process.env.UNIFI_API_KEY || '';
 const UNIFI_CONSOLE_ID = process.env.UNIFI_CONSOLE_ID || '';
@@ -5190,6 +5191,7 @@ function normalizedReviewInput(payload = {}) {
     reviewed_at: reviewedAt?.toISOString() || null,
     retrieved_at: retrievedAt.toISOString(),
     sentiment,
+    survey_item: String(payload.surveyItem || payload.survey_item || '').trim().slice(0, 300),
     summary: String(payload.summary || '').trim().slice(0, 2000),
     topics: [...new Set((Array.isArray(payload.topics) ? payload.topics : []).map(topic => String(topic).trim().slice(0, 100)).filter(Boolean))].slice(0, 30),
     raw_payload: payload.rawPayload && typeof payload.rawPayload === 'object' ? payload.rawPayload : {},
@@ -5210,11 +5212,186 @@ function publicReviewRecord(row = {}) {
     reviewedAt: row.reviewed_at,
     retrievedAt: row.retrieved_at,
     sentiment: row.sentiment,
+    surveyItem: row.survey_item || '',
     summary: row.summary,
     topics: row.topics || [],
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
+}
+
+function supportedSmgReportFile(file = {}) {
+  const extension = path.extname(file.filename || '').toLowerCase();
+  return ['.xlsx', '.xls'].includes(extension) || /spreadsheet|excel/i.test(file.mimeType || '');
+}
+
+function smgSentiment(surveyItem = '') {
+  const value = String(surveyItem).toLowerCase();
+  if (value.includes('not satisfied')) return 'negative';
+  if (value.includes('highly satisfied') || value.includes('exceptional service')) return 'positive';
+  return 'neutral';
+}
+
+function reviewMetricRecord(row = {}) {
+  return {
+    id: row.id, locationId: row.location_id, periodStart: row.period_start, periodEnd: row.period_end,
+    measure: row.measure, current: row.current_value === null ? null : Number(row.current_value),
+    previous: row.previous_value === null ? null : Number(row.previous_value),
+    difference: row.difference === null ? null : Number(row.difference),
+    responseCount: row.response_count === null ? null : Number(row.response_count),
+    previousResponseCount: row.previous_response_count === null ? null : Number(row.previous_response_count)
+  };
+}
+
+function reviewInsightRecord(row = {}) {
+  return {
+    id: row.id, locationId: row.location_id, periodStart: row.period_start, periodEnd: row.period_end,
+    headline: row.headline, commentary: row.commentary, strengths: row.strengths || [],
+    opportunities: row.opportunities || [], recommendedActions: row.recommended_actions || [],
+    status: row.status, model: row.model, updatedAt: row.updated_at
+  };
+}
+
+function responseOutputText(result = {}) {
+  if (result.output_text) return result.output_text;
+  return (result.output || []).flatMap(item => item.content || []).find(item => item.type === 'output_text')?.text || '';
+}
+
+async function generateSmgInsights(locationIds = [], period = {}) {
+  if (!locationIds.length || !period.start || !period.end) return { generated: 0, status: 'no_evidence' };
+  const encodedIds = locationIds.map(id => `\"${String(id).replace(/\"/g, '')}\"`).join(',');
+  const [comments, metrics, locations] = await Promise.all([
+    supabase(`/rest/v1/public_reviews?${tenantQuery()}&location_id=in.(${encodedIds})&reviewed_at=gte.${period.start}T00:00:00Z&reviewed_at=lte.${period.end}T23:59:59Z&select=location_id,survey_item,review_text,sentiment,reviewed_at&order=reviewed_at.desc&limit=500`),
+    supabase(`/rest/v1/public_review_metrics?${tenantQuery()}&location_id=in.(${encodedIds})&period_start=eq.${period.start}&period_end=eq.${period.end}&select=location_id,measure,current_value,previous_value,difference,response_count`),
+    supabase(`/rest/v1/locations?${tenantQuery()}&id=in.(${encodedIds})&select=id,name`)
+  ]);
+  const evidence = locations.map(location => ({
+    locationId: location.id,
+    locationName: location.name,
+    period,
+    comments: comments.filter(item => item.location_id === location.id).slice(0, 75).map(item => ({ surveyItem: item.survey_item, comment: item.review_text, sentiment: item.sentiment, date: item.reviewed_at })),
+    metrics: metrics.filter(item => item.location_id === location.id).map(item => ({ measure: item.measure, current: item.current_value, previous: item.previous_value, difference: item.difference, responses: item.response_count }))
+  }));
+  const apiKey = process.env.OPENAI_API_KEY || '';
+  const model = process.env.OPENAI_REVIEW_MODEL || 'gpt-5.4-mini';
+  if (!apiKey) {
+    const pending = evidence.map(item => ({
+      tenant_id: tenantId(), location_id: item.locationId, period_start: period.start, period_end: period.end,
+      headline: 'AI commentary is awaiting configuration',
+      commentary: `${item.comments.length} fan comments and ${item.metrics.length} comparison measures are available for this period. Add OPENAI_API_KEY to generate the location trend commentary.`,
+      strengths: [], opportunities: [], recommended_actions: [], status: 'pending_configuration', model: '',
+      evidence: { commentCount: item.comments.length, metricCount: item.metrics.length }, updated_at: new Date().toISOString()
+    }));
+    await supabase('/rest/v1/review_insights?on_conflict=tenant_id,location_id,period_start,period_end', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates' }, body: JSON.stringify(pending) });
+    return { generated: 0, status: 'pending_configuration' };
+  }
+  const schema = {
+    type: 'object', additionalProperties: false, required: ['locations'], properties: { locations: { type: 'array', items: {
+      type: 'object', additionalProperties: false,
+      required: ['locationId', 'headline', 'commentary', 'strengths', 'opportunities', 'recommendedActions'],
+      properties: {
+        locationId: { type: 'string' }, headline: { type: 'string' }, commentary: { type: 'string' },
+        strengths: { type: 'array', items: { type: 'string' } }, opportunities: { type: 'array', items: { type: 'string' } },
+        recommendedActions: { type: 'array', items: { type: 'string' } }
+      }
+    } } }
+  };
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model, store: false,
+      instructions: 'You are an operations coach for restaurant managers. Use only the supplied evidence. Give concise, constructive location-specific trends. Separate strengths from opportunities, suggest practical actions, avoid identifying fans, and explicitly note when evidence is sparse.',
+      input: JSON.stringify(evidence), text: { format: { type: 'json_schema', name: 'smg_location_insights', strict: true, schema } }
+    })
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error?.message || 'AI commentary could not be generated');
+  const parsed = JSON.parse(responseOutputText(result));
+  const validIds = new Set(locationIds);
+  const rows = (parsed.locations || []).filter(item => validIds.has(item.locationId)).map(item => ({
+    tenant_id: tenantId(), location_id: item.locationId, period_start: period.start, period_end: period.end,
+    headline: String(item.headline || '').slice(0, 300), commentary: String(item.commentary || '').slice(0, 4000),
+    strengths: (item.strengths || []).map(String).slice(0, 8), opportunities: (item.opportunities || []).map(String).slice(0, 8),
+    recommended_actions: (item.recommendedActions || []).map(String).slice(0, 8), status: 'generated', model,
+    evidence: { commentCount: evidence.find(entry => entry.locationId === item.locationId)?.comments.length || 0, metricCount: evidence.find(entry => entry.locationId === item.locationId)?.metrics.length || 0 },
+    updated_at: new Date().toISOString()
+  }));
+  if (rows.length) await supabase('/rest/v1/review_insights?on_conflict=tenant_id,location_id,period_start,period_end', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates' }, body: JSON.stringify(rows) });
+  return { generated: rows.length, status: 'generated' };
+}
+
+async function receiveSmgReviewEmail(event) {
+  requireSupabase();
+  const entitlement = await effectiveSubscription(tenantId());
+  if (!entitlement.features.advanced_reports) throw Object.assign(new Error('Review reports are not enabled for this subscription'), { statusCode: 406 });
+  const { fields, files } = await parseMultipartForm(event, { files: 8, fileSize: 10 * 1024 * 1024 });
+  const allowedSenders = process.env.SMG_REVIEW_ALLOWED_SENDERS || 'smgreporting@smg.com';
+  const sender = verifyMailgunRequest(fields, { label: 'SMG review', allowedSenders });
+  const recipient = String(fields.recipient || fields.to || '').slice(0, 300);
+  if (!documentEmailRecipientMatches(recipient, process.env.SMG_REVIEW_INBOUND_ADDRESS || 'reviews@dqops.net')) throw Object.assign(new Error('This recipient is not configured for SMG review imports'), { statusCode: 406 });
+  const subject = String(fields.subject || 'SMG review report').slice(0, 200);
+  const locations = await readLocations();
+  const mappings = await readDocumentStoreMappings(locations);
+  let importedFiles = 0, duplicates = 0, unsupported = 0, importedComments = 0, importedMetrics = 0, unmatchedRows = 0;
+  const insightPeriods = new Map();
+  for (const file of files) {
+    if (!supportedSmgReportFile(file)) { unsupported += 1; continue; }
+    const sourceHash = crypto.createHash('sha256').update(file.buffer).digest('hex');
+    const existing = await supabase(`/rest/v1/smg_report_imports?${tenantQuery()}&source_hash=eq.${sourceHash}&select=id&limit=1`);
+    if (existing.length) { duplicates += 1; continue; }
+    let parsed;
+    try { parsed = parseSmgWorkbook(file.buffer); } catch (error) {
+      await supabase('/rest/v1/smg_report_imports', { method: 'POST', body: JSON.stringify({ tenant_id: tenantId(), source_hash: sourceHash, source_filename: file.filename, sender, subject, status: 'failed', message: error.message }) });
+      continue;
+    }
+    const storageReference = await saveBufferAttachment(file, 'smg-review-reports', 'smg-review-report');
+    const mappedComments = [], mappedMetrics = [];
+    for (const comment of parsed.comments) {
+      const match = normalizeDocumentStoreMapping(mappings[comment.storeCode]);
+      if (!match.locationId) { unmatchedRows += 1; continue; }
+      if (parsed.period.start && parsed.period.end) {
+        const key = `${parsed.period.start}|${parsed.period.end}`;
+        if (!insightPeriods.has(key)) insightPeriods.set(key, { period: parsed.period, locationIds: new Set() });
+        insightPeriods.get(key).locationIds.add(match.locationId);
+      }
+      mappedComments.push(normalizedReviewInput({
+        source: 'smg', externalReviewId: comment.externalReviewId, locationId: match.locationId,
+        reviewText: comment.commentText, reviewedAt: comment.visitDate || comment.commentDate, retrievedAt: new Date().toISOString(),
+        sentiment: smgSentiment(comment.surveyItem), surveyItem: comment.surveyItem, topics: [comment.surveyItem],
+        rawPayload: { storeCode: comment.storeCode, unitName: comment.unitName, commentDate: comment.commentDate, visitDate: comment.visitDate, surveyItem: comment.surveyItem, reportPeriod: parsed.period, sourceFilename: file.filename }
+      }));
+    }
+    if (mappedComments.length) {
+      await supabase('/rest/v1/public_reviews?on_conflict=tenant_id,source,external_review_id', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates' }, body: JSON.stringify(mappedComments) });
+      importedComments += mappedComments.length;
+    }
+    for (const metric of parsed.metrics) {
+      const match = normalizeDocumentStoreMapping(mappings[metric.storeCode]);
+      if (!match.locationId || !parsed.period.start || !parsed.period.end) { unmatchedRows += 1; continue; }
+      const key = `${parsed.period.start}|${parsed.period.end}`;
+      if (!insightPeriods.has(key)) insightPeriods.set(key, { period: parsed.period, locationIds: new Set() });
+      insightPeriods.get(key).locationIds.add(match.locationId);
+      mappedMetrics.push({ tenant_id: tenantId(), location_id: match.locationId, period_start: parsed.period.start, period_end: parsed.period.end, measure: metric.measure, current_value: metric.current, previous_value: metric.previous, difference: metric.difference, response_count: metric.responseCount, previous_response_count: metric.previousResponseCount, source_hash: sourceHash, updated_at: new Date().toISOString() });
+    }
+    if (mappedMetrics.length) {
+      await supabase('/rest/v1/public_review_metrics?on_conflict=tenant_id,location_id,period_start,period_end,measure', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates' }, body: JSON.stringify(mappedMetrics) });
+      importedMetrics += mappedMetrics.length;
+    }
+    const unmatched = parsed.comments.length + parsed.metrics.length - mappedComments.length - mappedMetrics.length;
+    await supabase('/rest/v1/smg_report_imports', { method: 'POST', body: JSON.stringify({ tenant_id: tenantId(), source_hash: sourceHash, source_filename: file.filename, sender, subject, report_type: parsed.type, period_start: parsed.period.start || null, period_end: parsed.period.end || null, storage_reference: storageReference, status: unmatched ? 'needs_review' : 'imported', imported_count: mappedComments.length + mappedMetrics.length, unmatched_count: unmatched, message: unmatched ? `${unmatched} row(s) need a saved store-number mapping.` : 'Imported automatically.' }) });
+    importedFiles += 1;
+  }
+  const insightResults = [];
+  for (const { period, locationIds } of insightPeriods.values()) {
+    try { insightResults.push(await generateSmgInsights([...locationIds], period)); }
+    catch (error) { insightResults.push({ generated: 0, status: 'generation_failed', message: error.message }); }
+  }
+  const insightsGenerated = insightResults.reduce((total, result) => total + Number(result.generated || 0), 0);
+  const insightStatus = insightResults.some(result => result.status === 'generation_failed') ? 'generation_failed'
+    : insightResults.some(result => result.status === 'pending_configuration') ? 'pending_configuration'
+      : insightResults.length ? 'generated' : 'no_evidence';
+  return json(200, { accepted: true, importedFiles, duplicates, unsupported, importedComments, importedMetrics, unmatchedRows, insightsGenerated, insightStatus });
 }
 
 async function ingestPublicReviews(event, payload) {
@@ -5251,8 +5428,12 @@ async function publicReviewsState(actor, query = {}) {
     ? `&location_id=eq.${encodeURIComponent(requestedLocation)}`
     : allowed.length ? `&location_id=in.(${allowed.map(id => `\"${String(id).replace(/\"/g, '')}\"`).join(',')})` : '';
   const limit = Math.min(Math.max(Number(query.limit) || 250, 1), 500);
-  const rows = await supabase(`/rest/v1/public_reviews?${tenantQuery()}${locationFilter}&select=*&order=reviewed_at.desc.nullslast,created_at.desc&limit=${limit}`);
-  return { reviews: rows.map(publicReviewRecord) };
+  const [rows, metrics, insights] = await Promise.all([
+    supabase(`/rest/v1/public_reviews?${tenantQuery()}${locationFilter}&select=*&order=reviewed_at.desc.nullslast,created_at.desc&limit=${limit}`),
+    supabase(`/rest/v1/public_review_metrics?${tenantQuery()}${locationFilter}&select=*&order=period_end.desc,measure.asc&limit=500`),
+    supabase(`/rest/v1/review_insights?${tenantQuery()}${locationFilter}&select=*&order=period_end.desc&limit=100`)
+  ]);
+  return { reviews: rows.map(publicReviewRecord), metrics: metrics.map(reviewMetricRecord), insights: insights.map(reviewInsightRecord) };
 }
 
 async function saveResource(payload, actor) {
@@ -6396,7 +6577,10 @@ if (process.env.NODE_ENV === 'test') exports.__test = {
   reviewIntegrationKeys,
   reviewIntegrationTenant,
   normalizedReviewInput,
-  publicReviewRecord
+  publicReviewRecord,
+  supportedSmgReportFile,
+  smgSentiment,
+  responseOutputText
 };
 
 async function routeRequest(event) {
@@ -6409,6 +6593,7 @@ async function routeRequest(event) {
     if (method === 'POST' && apiPath === '/financial-reports/email-ingest') return await receiveFinancialReportEmail(event);
     if (method === 'POST' && apiPath === '/store-documents/email-ingest') return await receiveStoreDocumentEmail(event);
     if (method === 'POST' && apiPath === '/fpc/email-ingest') return await receiveFpcEmail(event);
+    if (method === 'POST' && apiPath === '/reviews/email-ingest') return await receiveSmgReviewEmail(event);
     const body = event.body ? JSON.parse(event.body) : {};
 
     if (method === 'POST' && apiPath === '/reviews/ingest') {
